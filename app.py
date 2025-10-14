@@ -57,6 +57,29 @@ args, unknown = parser.parse_known_args()
 # -----------------------------------------------------------------------------
 
 
+def get_vtk_files_from_data_folder():
+    """Scan the data folder and return list of VTK files."""
+    data_folder = os.path.join(CURRENT_DIRECTORY, "data")
+    print(f"data_folder: {data_folder}")
+    
+    if not os.path.exists(data_folder):
+        print(f"Warning: Data folder not found: {data_folder}")
+        return []
+    
+    vtk_files = []
+    for filename in os.listdir(data_folder):
+        if filename.lower().endswith('.vtk'):
+            full_path = os.path.join(data_folder, filename)
+            vtk_files.append({
+                "text": filename,
+                "value": full_path
+            })
+    
+    # Sort alphabetically
+    vtk_files.sort(key=lambda x: x["text"])
+    return vtk_files
+
+
 def detect_and_create_reader(filename):
     """Detect VTK legacy file type and return appropriate reader."""
     ext = os.path.splitext(filename)[1].lower()
@@ -245,41 +268,27 @@ server = get_server(client_type="vue2")
 ctrl = server.controller
 state, ctrl = server.state, server.controller
 
-# State for file path
-state.file_path = args.file
+# State for file selection
+available_files = get_vtk_files_from_data_folder()
+state.available_files = available_files
+state.selected_file = args.file if os.path.exists(args.file) else (available_files[0]["value"] if available_files else "")
 state.error_message = ""
 
 
-@state.change("file_path")
-def on_file_path_change(file_path, **kwargs):
-    """Update error message visibility when file path changes."""
-    state.error_message = ""
+@state.change("selected_file")
+def on_file_change(selected_file, **kwargs):
+    """Automatically load the selected file when dropdown changes."""
+    if selected_file and os.path.exists(selected_file):
+        try:
+            print(f"\nLoading file: {selected_file}")
+            build_visualization(selected_file, renderer)
+            renderWindow.Render()
+            ctrl.view_update()
+            state.error_message = ""
+        except Exception as e:
+            state.error_message = f"Error loading file: {str(e)}"
+            print(f"Error: {e}")
 
-
-def load_file():
-    """Load a new VTK file and rebuild visualization."""
-    file_path = state.file_path
-
-    if not file_path:
-        state.error_message = "Please enter a file path"
-        return
-
-    if not os.path.exists(file_path):
-        state.error_message = f"File not found: {file_path}"
-        return
-
-    try:
-        print(f"\nLoading new file: {file_path}")
-        build_visualization(file_path, renderer)
-        renderWindow.Render()
-        ctrl.view_update()
-        state.error_message = ""
-    except Exception as e:
-        state.error_message = f"Error loading file: {str(e)}"
-        print(f"Error: {e}")
-
-
-ctrl.load_file = load_file
 
 with SinglePageLayout(server) as layout:
     layout.title.set_text("VTK Simple Viewer")
@@ -287,16 +296,16 @@ with SinglePageLayout(server) as layout:
 
     with layout.toolbar:
         vuetify.VSpacer()
-        vuetify.VTextField(
-            v_model=("file_path",),
-            label="VTK File Path",
+        vuetify.VSelect(
+            v_model=("selected_file",),
+            items=("available_files",),
+            label="Select VTK File",
             hide_details=True,
             dense=True,
             outlined=True,
             style="max-width: 400px;",
             classes="mr-2",
         )
-        vuetify.VBtn("Load File", click=ctrl.load_file)
 
     with layout.content:
         with vuetify.VContainer(
