@@ -15,3 +15,7 @@ pip install vtk                     # Install the VTK library
 source .venv/bin/activate  
 python3 app.py --file data/grid-1.vtk --port 1234  
 ```
+
+### Format your code
+
+`black app.py`
