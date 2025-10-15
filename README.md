@@ -19,8 +19,10 @@ pip install balck                   # Black formatter
 
 ```bash
 source .venv/bin/activate  
-python3 app.py --file data/grid-1.vtk --port 1234  
+python3 app.py  
 ```
+or using the custom `file` argument plus any Trame argument (i.e. `port`)    
+`python app.py --file data/grid-1.vtk --port 1234`
 
 ### Format your code
 
