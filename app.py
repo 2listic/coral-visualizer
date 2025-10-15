@@ -46,8 +46,8 @@ CURRENT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
 parser = argparse.ArgumentParser(description="Flexible VTK Visualization with Trame")
 parser.add_argument(
     "--file",
-    default=os.path.join(CURRENT_DIRECTORY, "../data/grid-1.vtk"),
-    help="Path to VTK file (default: ../data/grid-1.vtk)",
+    default=os.path.join(CURRENT_DIRECTORY, "data/grid-1.vtk"),
+    help="Path to VTK file (default: data/grid-1.vtk)",
 )
 # Parse known args and let trame handle the rest (--port, --host, --debug, etc.)
 args, unknown = parser.parse_known_args()
