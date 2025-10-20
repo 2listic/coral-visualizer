@@ -8,7 +8,7 @@ def build_ui(server, renderWindow):
     ctrl = server.controller
 
     with SinglePageLayout(server) as layout:
-        layout.title.set_text("VTK Simple Viewer")
+        layout.title.set_text("Coral Visualizer")
         layout.icon.hide()
 
         with layout.toolbar:
