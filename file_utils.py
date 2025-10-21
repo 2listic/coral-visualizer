@@ -36,9 +36,12 @@ def detect_and_create_reader(filename):
     if ext != ".vtk":
         raise ValueError(f"Only .vtk files are supported. Got: {ext}")
 
-    # Peek at file content to determine dataset type
-    with open(filename, "r") as f:
-        for line in f:
+    # Read file in binary mode to handle both ASCII and binary VTK files
+    with open(filename, "rb") as f:
+        # Read first ~500 bytes which should contain the header
+        header = f.read(500).decode('latin-1', errors='ignore')
+        
+        for line in header.split('\n'):
             line = line.strip().upper()
             if "DATASET" in line:
                 if "STRUCTURED_POINTS" in line or "IMAGE_DATA" in line:
