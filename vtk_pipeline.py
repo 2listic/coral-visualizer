@@ -129,9 +129,11 @@ def _add_flow_visualization(reader, renderer, colors):
 
     vectorActor = vtkActor()
     vectorActor.SetMapper(vectorMapper)
-    renderer.AddActor(vectorActor)
+    # renderer.AddActor(vectorActor)    // uncomment this to show glyphs cones
 
     # Contours
+    colors = vtkNamedColors()
+
     iso = vtkContourFilter()
     iso.SetInputConnection(reader.GetOutputPort())
     iso.SetValue(0, 175)
@@ -144,6 +146,8 @@ def _add_flow_visualization(reader, renderer, colors):
     isoActor.SetMapper(isoMapper)
     isoActor.GetProperty().SetRepresentationToWireframe()
     isoActor.GetProperty().SetOpacity(0.25)
+    isoActor.GetProperty().SetColor(colors.GetColor3d("Red"))
+    isoActor.GetProperty().SetLineWidth(5.0)
     renderer.AddActor(isoActor)
 
 
