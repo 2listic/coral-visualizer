@@ -38,14 +38,14 @@ Original example at the official [Trame repo](https://github.com/Kitware/trame/t
 docker build -t trame-simple-visualizer .
 ```
 
-### Run the image on port 8081
+### Run the image on port 8008
 
 ```bash
-docker run -it --rm -p 8080:80 trame-simple-visualizer
+docker run -it --rm -p 8008:80 trame-simple-visualizer
 ```
 
 Or if you need some prefix
 
 ```bash
-docker run -it --rm -p 8080:80 -e TRAME_URL_PREFIX=/my-app/sub/path trame-simple-visualizer
+docker run -it --rm -p 8008:80 -e TRAME_URL_PREFIX=/my-app/sub/path trame-simple-visualizer
 ```
