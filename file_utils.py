@@ -12,8 +12,8 @@ def get_vtk_files_from_data_folder():
         print(f"Warning: Data folder not found: {data_folder}")
         return []
 
-    # Support both legacy .vtk and XML formats (.vtu, .vtp, .vts, .vti)
-    supported_extensions = (".vtk", ".vtu", ".vtp", ".vts", ".vti")
+    # Support both legacy .vtk and XML format .vtu
+    supported_extensions = (".vtk", ".vtu")
 
     vtk_files = []
     for filename in os.listdir(data_folder):
