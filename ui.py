@@ -4,7 +4,6 @@ from trame.widgets import vtk, vuetify
 
 def build_ui(server, renderWindow):
     """Build the Trame UI layout."""
-    state = server.state
     ctrl = server.controller
 
     with SinglePageLayout(server) as layout:
@@ -21,7 +20,50 @@ def build_ui(server, renderWindow):
                 dense=True,
                 outlined=True,
                 style="max-width: 400px;",
+                classes="mr-4",
+            )
+
+            # Toggle tag mode on/off
+            vuetify.VBtn(
+                click="tag_mode = !tag_mode",
+                small=True,
+                color=("tag_mode ? 'warning' : ''",),
                 classes="mr-2",
+                children=["Tag Mode"],
+                title="Toggle tag mode — click mesh cells to assign BoundaryID",
+            )
+
+            # Current tag ID (integer 1–16)
+            vuetify.VTextField(
+                v_model=("active_tag_id",),
+                label="Tag ID",
+                type="number",
+                min=1,
+                max=16,
+                hide_details=True,
+                dense=True,
+                outlined=True,
+                style="max-width: 90px;",
+                classes="mr-2",
+            )
+
+            # Save the annotated mesh to file
+            vuetify.VBtn(
+                click=ctrl.save_tags,
+                small=True,
+                color="success",
+                classes="mr-2",
+                children=["Save Tags"],
+                disabled=("!selected_file",),
+                title="Save mesh with BoundaryID array to _tagged.vtp/.vtu",
+            )
+
+            # Feedback chip showing save result
+            vuetify.VChip(
+                v_show=("save_status",),
+                small=True,
+                classes="mr-2",
+                children=("{{ save_status }}",),
             )
 
         with layout.content:

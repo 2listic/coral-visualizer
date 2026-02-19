@@ -1,5 +1,5 @@
 from vtkmodules.vtkCommonColor import vtkNamedColors
-from vtkmodules.vtkCommonCore import vtkLookupTable
+from vtkmodules.vtkCommonCore import vtkIntArray, vtkLookupTable
 from vtkmodules.vtkFiltersCore import (
     vtkContourFilter,
     vtkGlyph3D,
@@ -10,6 +10,7 @@ from vtkmodules.vtkFiltersModeling import vtkOutlineFilter
 from vtkmodules.vtkFiltersSources import vtkConeSource
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
+    vtkCellPicker,
     vtkPolyDataMapper,
     vtkDataSetMapper,
     vtkRenderer,
@@ -18,12 +19,31 @@ from vtkmodules.vtkRenderingCore import (
 )
 
 # Required for interactor initialization
-from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch  # noqa
+from vtkmodules.vtkInteractionStyle import (
+    vtkInteractorStyleSwitch,  # noqa
+    vtkInteractorStyleUser,
+)
 
 # Required for rendering initialization
 import vtkmodules.vtkRenderingOpenGL2  # noqa
 
 from file_utils import detect_and_create_reader
+
+
+# Shared pipeline state — populated by create_vtk_rendering_context() and
+# build_visualization(), read by handle_left_click() and on_tag_mode_change().
+_pipeline_state = {
+    "reader": None,          # active reader kept alive to prevent GC of dataset
+    "dataset": None,         # live vtkDataSet modified in-place for tags
+    "tag_actor": None,       # vtkActor colored by BoundaryID
+    "tag_mapper": None,      # vtkDataSetMapper for the tag actor
+    "tag_lut": None,         # discrete vtkLookupTable (index 0 = untagged gray)
+    "style_navigate": None,  # vtkInteractorStyleSwitch (camera navigation)
+    "style_tag": None,       # vtkInteractorStyleUser (no-op, blocks camera on click)
+    "picker": None,          # vtkCellPicker — created once, reused
+    "state": None,           # Trame server state (set by app.py after server init)
+    "ctrl": None,            # Trame server controller (set by app.py after server init)
+}
 
 
 def ensure_active_arrays(dataset):
@@ -63,6 +83,116 @@ def has_scalar_data(dataset):
     )
 
 
+def _initialize_boundary_id_array(dataset):
+    """Create/reset the BoundaryID CellData integer array (all zeros) on the dataset."""
+    n_cells = dataset.GetNumberOfCells()
+    arr = vtkIntArray()
+    arr.SetName("BoundaryID")
+    arr.SetNumberOfTuples(n_cells)
+    arr.Fill(0)
+    dataset.GetCellData().AddArray(arr)  # replaces existing array of same name
+
+
+def _build_discrete_lut(max_tags=16):
+    """Return a discrete vtkLookupTable: index 0 = gray (untagged), 1..N = distinct colors."""
+    lut = vtkLookupTable()
+    lut.SetNumberOfTableValues(max_tags + 1)
+    lut.SetRange(0, max_tags)
+    lut.Build()
+
+    # Index 0: untagged — medium gray
+    lut.SetTableValue(0, 0.65, 0.65, 0.65, 1.0)
+
+    # Indices 1–16: perceptually distinct colors (ColorBrewer-inspired)
+    colors = [
+        (0.894, 0.102, 0.110, 1.0),  # 1  red
+        (0.216, 0.494, 0.722, 1.0),  # 2  blue
+        (0.302, 0.686, 0.290, 1.0),  # 3  green
+        (0.596, 0.306, 0.639, 1.0),  # 4  purple
+        (1.000, 0.498, 0.000, 1.0),  # 5  orange
+        (1.000, 1.000, 0.200, 1.0),  # 6  yellow
+        (0.651, 0.337, 0.157, 1.0),  # 7  brown
+        (0.969, 0.506, 0.749, 1.0),  # 8  pink
+        (0.000, 0.749, 0.749, 1.0),  # 9  cyan
+        (0.498, 0.498, 0.000, 1.0),  # 10 olive
+        (0.000, 0.498, 0.498, 1.0),  # 11 teal
+        (0.498, 0.000, 0.498, 1.0),  # 12 maroon-purple
+        (0.749, 0.000, 0.000, 1.0),  # 13 dark red
+        (0.000, 0.000, 0.749, 1.0),  # 14 dark blue
+        (0.000, 0.749, 0.000, 1.0),  # 15 dark green
+        (0.400, 0.400, 0.400, 1.0),  # 16 dark gray
+    ]
+    for i, rgba in enumerate(colors[:max_tags], start=1):
+        lut.SetTableValue(i, *rgba)
+
+    return lut
+
+
+def _add_tag_visualization(dataset, renderer):
+    """Add a BoundaryID-colored actor (hidden by default) to the renderer."""
+    lut = _build_discrete_lut()
+    _pipeline_state["tag_lut"] = lut
+
+    mapper = vtkDataSetMapper()
+    mapper.SetInputData(dataset)
+    mapper.SetScalarModeToUseCellFieldData()
+    mapper.SelectColorArray("BoundaryID")
+    mapper.SetScalarRange(0, 16)
+    mapper.SetLookupTable(lut)
+    mapper.ScalarVisibilityOn()
+    mapper.UseLookupTableScalarRangeOn()
+    # Offset this surface slightly in front to avoid z-fighting with the main actor
+    mapper.SetResolveCoincidentTopologyToPolygonOffset()
+    mapper.SetResolveCoincidentTopologyPolygonOffsetParameters(-1.0, -1.0)
+    _pipeline_state["tag_mapper"] = mapper
+
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    actor.VisibilityOff()  # hidden until tag mode is activated
+    _pipeline_state["tag_actor"] = actor
+
+    renderer.AddActor(actor)
+
+
+def _update_tag_actor():
+    """Signal the tag mapper to re-read the BoundaryID array after a cell was tagged."""
+    mapper = _pipeline_state.get("tag_mapper")
+    if mapper is not None:
+        mapper.Update()
+
+
+def handle_left_click(interactor, _event):
+    """
+    VTK observer callback (priority 1.0 > style default 0.0).
+    Only acts when tag_mode is True; otherwise lets the camera style handle the event.
+    The interactor style is already swapped to vtkInteractorStyleUser in tag mode,
+    so no AbortFlagOn() is needed to block camera rotation.
+    """
+    state = _pipeline_state.get("state")
+    ctrl = _pipeline_state.get("ctrl")
+    if state is None or not state.tag_mode:
+        return
+
+    x, y = interactor.GetEventPosition()
+    renderer = interactor.GetRenderWindow().GetRenderers().GetFirstRenderer()
+    picker = _pipeline_state["picker"]
+
+    if picker.Pick(x, y, 0, renderer):
+        cell_id = picker.GetCellId()
+        if cell_id >= 0:
+            dataset = _pipeline_state.get("dataset")
+            if dataset is not None:
+                arr = dataset.GetCellData().GetArray("BoundaryID")
+                if arr is not None:
+                    arr.SetValue(cell_id, int(state.active_tag_id))
+                    dataset.GetCellData().Modified()
+                    dataset.Modified()
+                    _update_tag_actor()
+                    interactor.GetRenderWindow().Render()
+                    if ctrl is not None:
+                        ctrl.view_update()
+
+
 def build_visualization(filename, renderer):
     """Build visualization pipeline for the given file."""
     # Clear existing actors
@@ -82,6 +212,16 @@ def build_visualization(filename, renderer):
     print(f"  Number of cells: {dataset.GetNumberOfCells()}")
     print(f"  Has vectors: {has_vector_data(dataset)}")
     print(f"  Has scalars: {has_scalar_data(dataset)}")
+
+    # Store pipeline references and reset tag state
+    _pipeline_state["reader"] = reader
+    _pipeline_state["dataset"] = dataset
+    _pipeline_state["tag_actor"] = None
+    _pipeline_state["tag_mapper"] = None
+    _pipeline_state["tag_lut"] = None
+
+    # Initialize BoundaryID array (resets tags on every file load)
+    _initialize_boundary_id_array(dataset)
 
     colors = vtkNamedColors()
 
@@ -109,6 +249,14 @@ def build_visualization(filename, renderer):
     else:
         print("\nUsing BASIC visualization (wireframe/surface)\n")
         _add_basic_visualization(reader, renderer, colors)
+
+    # Always add the tag visualization layer (hidden by default)
+    _add_tag_visualization(dataset, renderer)
+
+    # If tag mode was already active, make the new tag actor visible immediately
+    state = _pipeline_state.get("state")
+    if state is not None and state.tag_mode and _pipeline_state["tag_actor"] is not None:
+        _pipeline_state["tag_actor"].VisibilityOn()
 
     renderer.ResetCamera()
 
@@ -210,5 +358,14 @@ def create_vtk_rendering_context():
     renderWindowInteractor = vtkRenderWindowInteractor()
     renderWindowInteractor.SetRenderWindow(renderWindow)
     renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
+
+    # Store styles so app.py can swap between them on tag_mode change
+    _pipeline_state["style_navigate"] = renderWindowInteractor.GetInteractorStyle()
+    _pipeline_state["style_tag"] = vtkInteractorStyleUser()
+
+    # Create the cell picker once — it will be reused for every click in tag mode
+    picker = vtkCellPicker()
+    picker.SetTolerance(0.005)
+    _pipeline_state["picker"] = picker
 
     return renderer, renderWindow, renderWindowInteractor

@@ -64,3 +64,38 @@ def detect_and_create_reader(filename):
         return vtkUnstructuredGridReader()
     else:
         raise ValueError(f"Unsupported file format: {ext}. Supported: .vtk, .vtu")
+
+
+def save_tagged_mesh(dataset, source_filename):
+    """
+    Write dataset (with BoundaryID CellData) to a new file next to the source.
+
+    Produces:  <basename>_tagged.vtp  for vtkPolyData
+               <basename>_tagged.vtu  for vtkUnstructuredGrid
+
+    Returns the output path on success; raises ValueError / IOError on failure.
+    """
+    from vtkmodules.vtkIOXML import vtkXMLPolyDataWriter, vtkXMLUnstructuredGridWriter
+
+    base, _ = os.path.splitext(source_filename)
+
+    if dataset.IsA("vtkPolyData"):
+        output_path = base + "_tagged.vtp"
+        writer = vtkXMLPolyDataWriter()
+    elif dataset.IsA("vtkUnstructuredGrid"):
+        output_path = base + "_tagged.vtu"
+        writer = vtkXMLUnstructuredGridWriter()
+    else:
+        raise ValueError(
+            f"Cannot save dataset of type '{dataset.GetClassName()}'. "
+            "Only vtkPolyData and vtkUnstructuredGrid are supported."
+        )
+
+    writer.SetFileName(output_path)
+    writer.SetInputData(dataset)
+    writer.SetDataModeToBinary()
+    if writer.Write() != 1:
+        raise IOError(f"VTK writer returned an error for: {output_path}")
+
+    print(f"Saved tagged mesh to: {output_path}")
+    return output_path
