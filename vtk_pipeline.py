@@ -26,6 +26,27 @@ import vtkmodules.vtkRenderingOpenGL2  # noqa
 from file_utils import detect_and_create_reader
 
 
+def ensure_active_arrays(dataset):
+    """Promote the first available arrays to active scalar/vector if none are set."""
+    pd = dataset.GetPointData()
+    if pd is None:
+        return
+    if pd.GetScalars() is None:
+        for i in range(pd.GetNumberOfArrays()):
+            arr = pd.GetArray(i)
+            if arr is not None and arr.GetNumberOfComponents() == 1:
+                pd.SetActiveScalars(arr.GetName())
+                print(f"  Active scalar set to: {arr.GetName()!r}")
+                break
+    if pd.GetVectors() is None:
+        for i in range(pd.GetNumberOfArrays()):
+            arr = pd.GetArray(i)
+            if arr is not None and arr.GetNumberOfComponents() == 3:
+                pd.SetActiveVectors(arr.GetName())
+                print(f"  Active vector set to: {arr.GetName()!r}")
+                break
+
+
 def has_vector_data(dataset):
     """Check if dataset has vector data at points."""
     return (
@@ -52,8 +73,9 @@ def build_visualization(filename, renderer):
     reader.SetFileName(filename)
     reader.Update()
 
-    # Get the output dataset
+    # Get the output dataset and ensure active arrays are marked
     dataset = reader.GetOutput()
+    ensure_active_arrays(dataset)
     print(f"\nDataset Info:")
     print(f"  Type: {dataset.GetClassName()}")
     print(f"  Number of points: {dataset.GetNumberOfPoints()}")
