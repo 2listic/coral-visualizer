@@ -23,6 +23,26 @@ def build_ui(server, renderWindow):
                 style="max-width: 400px;",
                 classes="mr-2",
             )
+            vuetify.VSelect(
+                v_model=("selected_array",),
+                items=("available_arrays",),
+                label="Color by",
+                hide_details=True,
+                dense=True,
+                outlined=True,
+                style="max-width: 250px;",
+                classes="mr-2",
+            )
+            vuetify.VSelect(
+                v_model=("representation",),
+                items=(["Surface", "Surface with Edges", "Wireframe", "Points"],),
+                label="Representation",
+                hide_details=True,
+                dense=True,
+                outlined=True,
+                style="max-width: 200px;",
+                classes="mr-2",
+            )
 
         with layout.content:
             with vuetify.VContainer(
