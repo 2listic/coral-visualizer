@@ -46,9 +46,9 @@ def detect_and_create_reader(filename):
         print(f"Detected VTK legacy format (.vtk), reading header...")
         with open(filename, "rb") as f:
             # Read first ~500 bytes which should contain the header
-            header = f.read(500).decode('latin-1', errors='ignore')
+            header = f.read(500).decode("latin-1", errors="ignore")
 
-            for line in header.split('\n'):
+            for line in header.split("\n"):
                 line = line.strip().upper()
                 if "DATASET" in line:
                     if "STRUCTURED_POINTS" in line or "IMAGE_DATA" in line:
