@@ -20,6 +20,16 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch  # noqa
 # Required for rendering initialization
 import vtkmodules.vtkRenderingOpenGL2  # noqa
 
+from constants import (
+    ARRAY_SOLID,
+    CELL_PREFIX,
+    MATERIAL_ID_ARRAY,
+    POINT_PREFIX,
+    REPR_POINTS,
+    REPR_SURFACE,
+    REPR_SURFACE_EDGES,
+    REPR_WIREFRAME,
+)
 from file_utils import detect_and_create_reader
 
 
@@ -42,14 +52,14 @@ VisualizationResult = namedtuple(
 
 def get_available_arrays(dataset):
     """Return list of VSelect-compatible dicts for all point/cell data arrays."""
-    arrays = [{"text": "Solid Color", "value": "__solid__"}]
+    arrays = [{"text": "Solid Color", "value": ARRAY_SOLID}]
 
     pd = dataset.GetPointData()
     for i in range(pd.GetNumberOfArrays()):
         arr = pd.GetArray(i)
         if arr is not None:
             arrays.append(
-                {"text": f"{arr.GetName()} (Point)", "value": f"point:{arr.GetName()}"}
+                {"text": f"{arr.GetName()} (Point)", "value": f"{POINT_PREFIX}{arr.GetName()}"}
             )
 
     cd = dataset.GetCellData()
@@ -57,7 +67,7 @@ def get_available_arrays(dataset):
         arr = cd.GetArray(i)
         if arr is not None:
             arrays.append(
-                {"text": f"{arr.GetName()} (Cell)", "value": f"cell:{arr.GetName()}"}
+                {"text": f"{arr.GetName()} (Cell)", "value": f"{CELL_PREFIX}{arr.GetName()}"}
             )
 
     return arrays
@@ -204,7 +214,7 @@ def build_visualization(filename, renderer):
 
     # Pre-build categorical LUT for MaterialID (used by apply_coloring and the dynamic bar)
     vol_lut = None
-    vol_mat_arr = vol_ds.GetCellData().GetArray("MaterialID")
+    vol_mat_arr = vol_ds.GetCellData().GetArray(MATERIAL_ID_ARRAY)
     if vol_mat_arr is not None:
         unique_ids = sorted(
             set(
@@ -224,7 +234,7 @@ def build_visualization(filename, renderer):
         bnd_mapper = vtkDataSetMapper()
         bnd_mapper.SetInputData(bnd_ds)
 
-        bnd_mat_arr = bnd_ds.GetCellData().GetArray("MaterialID")
+        bnd_mat_arr = bnd_ds.GetCellData().GetArray(MATERIAL_ID_ARRAY)
         if bnd_mat_arr is not None:
             unique_bnd_ids = sorted(
                 set(
@@ -235,7 +245,7 @@ def build_visualization(filename, renderer):
             bnd_lut, _ = build_categorical_lut(unique_bnd_ids)
             bnd_mapper.ScalarVisibilityOn()
             bnd_mapper.SetScalarModeToUseCellFieldData()
-            bnd_mapper.SelectColorArray("MaterialID")
+            bnd_mapper.SelectColorArray(MATERIAL_ID_ARRAY)
             bnd_mapper.SetLookupTable(bnd_lut)
             bnd_mapper.UseLookupTableScalarRangeOn()
 
@@ -281,21 +291,21 @@ def apply_coloring(actor, mapper, dataset, array_value, lut=None):
     """
     colors = vtkNamedColors()
 
-    if array_value == "__solid__" or array_value is None:
+    if array_value == ARRAY_SOLID or array_value is None:
         mapper.ScalarVisibilityOff()
         actor.GetProperty().SetColor(colors.GetColor3d("Tomato"))
         return None
 
-    if array_value == "cell:MaterialID" and lut is not None:
+    if array_value == f"{CELL_PREFIX}{MATERIAL_ID_ARRAY}" and lut is not None:
         mapper.ScalarVisibilityOn()
         mapper.SetScalarModeToUseCellFieldData()
-        mapper.SelectColorArray("MaterialID")
+        mapper.SelectColorArray(MATERIAL_ID_ARRAY)
         mapper.SetLookupTable(lut)
         mapper.UseLookupTableScalarRangeOn()
         return lut
 
-    if array_value.startswith("point:"):
-        name = array_value[len("point:") :]
+    if array_value.startswith(POINT_PREFIX):
+        name = array_value[len(POINT_PREFIX):]
         arr = dataset.GetPointData().GetArray(name)
         if arr is not None:
             continuous_lut = vtkLookupTable()
@@ -308,8 +318,8 @@ def apply_coloring(actor, mapper, dataset, array_value, lut=None):
             mapper.UseLookupTableScalarRangeOn()
             return continuous_lut
 
-    if array_value.startswith("cell:"):
-        name = array_value[len("cell:") :]
+    if array_value.startswith(CELL_PREFIX):
+        name = array_value[len(CELL_PREFIX):]
         arr = dataset.GetCellData().GetArray(name)
         if arr is not None:
             continuous_lut = vtkLookupTable()
@@ -335,23 +345,23 @@ def apply_representation(vol_actor, bnd_actor, representation):
     prop = vol_actor.GetProperty()
     colors = vtkNamedColors()
 
-    if representation == "Surface":
+    if representation == REPR_SURFACE:
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOff()
-    elif representation == "Surface with Edges":
+    elif representation == REPR_SURFACE_EDGES:
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOn()
         prop.SetEdgeColor(colors.GetColor3d("Black"))
-    elif representation == "Wireframe":
+    elif representation == REPR_WIREFRAME:
         prop.SetRepresentationToWireframe()
         prop.EdgeVisibilityOff()
-    elif representation == "Points":
+    elif representation == REPR_POINTS:
         prop.SetRepresentationToPoints()
         prop.SetPointSize(5)
 
     if bnd_actor is not None:
         bnd_prop = bnd_actor.GetProperty()
-        if representation == "Points":
+        if representation == REPR_POINTS:
             bnd_prop.SetRepresentationToPoints()
             bnd_prop.SetPointSize(5)
         else:

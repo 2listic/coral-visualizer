@@ -1,6 +1,8 @@
 from trame.ui.vuetify import SinglePageLayout
 from trame.widgets import vtk, vuetify
 
+from constants import REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POINTS
+
 
 def build_ui(server, renderWindow):
     """Build the Trame UI layout."""
@@ -52,7 +54,7 @@ def build_ui(server, renderWindow):
             # )
             vuetify.VSelect(
                 v_model=("representation",),
-                items=(["Surface", "Surface with Edges", "Wireframe", "Points"],),
+                items=([REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POINTS],),
                 label="Representation",
                 hide_details=True,
                 dense=True,

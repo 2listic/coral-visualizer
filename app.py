@@ -2,6 +2,7 @@ import argparse
 import os
 from trame.app import get_server
 
+from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, REPR_SURFACE_EDGES
 from file_utils import get_vtk_files_from_data_folder, CURRENT_DIRECTORY
 from vtk_pipeline import (
     build_visualization,
@@ -39,7 +40,7 @@ renderer, renderWindow, renderWindowInteractor = create_vtk_rendering_context()
 _viz = None  # VisualizationResult | None
 _active_coloring_bar = None  # scalar bar tracking the current "Color by" selection
 
-DEFAULT_REPRESENTATION = "Surface with Edges"
+DEFAULT_REPRESENTATION = REPR_SURFACE_EDGES
 
 available_files = get_vtk_files_from_data_folder()
 initial_file = (
@@ -47,8 +48,8 @@ initial_file = (
     if args.file and os.path.exists(args.file)
     else (available_files[0]["value"] if available_files else None)
 )
-_initial_arrays = [{"text": "Solid Color", "value": "__solid__"}]
-_initial_array = "__solid__"
+_initial_arrays = [{"text": "Solid Color", "value": ARRAY_SOLID}]
+_initial_array = ARRAY_SOLID
 
 
 # -----------------------------------------------------------------------------
@@ -86,7 +87,7 @@ build_ui(server, renderWindow)
 
 def _array_label(array_value):
     """Human-readable label for a Color by array value."""
-    if array_value == "cell:MaterialID":
+    if array_value == f"{CELL_PREFIX}{MATERIAL_ID_ARRAY}":
         return "Material ID"
     if ":" in array_value:
         return array_value.split(":", 1)[1]
@@ -144,8 +145,8 @@ def on_file_change(selected_file, **kwargs):
 
             arrays = get_available_arrays(_viz.full_dataset)
             default_array = next(
-                (a["value"] for a in arrays if a["value"] == "cell:MaterialID"),
-                arrays[1]["value"] if len(arrays) > 1 else "__solid__",
+                (a["value"] for a in arrays if a["value"] == f"{CELL_PREFIX}{MATERIAL_ID_ARRAY}"),
+                arrays[1]["value"] if len(arrays) > 1 else ARRAY_SOLID,
             )
 
             active_lut = apply_coloring(
