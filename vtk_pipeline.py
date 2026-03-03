@@ -22,6 +22,7 @@ import vtkmodules.vtkRenderingOpenGL2  # noqa
 
 from constants import (
     ARRAY_SOLID,
+    CATEGORICAL_CELL_ARRAYS,
     CELL_PREFIX,
     MATERIAL_ID_ARRAY,
     POINT_PREFIX,
@@ -39,12 +40,11 @@ VisualizationResult = namedtuple(
         "vol_actor",
         "vol_mapper",
         "vol_dataset",
-        "vol_lut",
+        "vol_luts",
         "bnd_actor",
         "bnd_mapper",
         "bnd_dataset",
-        "bnd_lut",
-        "bnd_scalar_bar",
+        "bnd_luts",
         "full_dataset",
     ],
 )
@@ -59,7 +59,10 @@ def get_available_arrays(dataset):
         arr = pd.GetArray(i)
         if arr is not None:
             arrays.append(
-                {"text": f"{arr.GetName()} (Point)", "value": f"{POINT_PREFIX}{arr.GetName()}"}
+                {
+                    "text": f"{arr.GetName()} (Point)",
+                    "value": f"{POINT_PREFIX}{arr.GetName()}",
+                }
             )
 
     cd = dataset.GetCellData()
@@ -67,7 +70,10 @@ def get_available_arrays(dataset):
         arr = cd.GetArray(i)
         if arr is not None:
             arrays.append(
-                {"text": f"{arr.GetName()} (Cell)", "value": f"{CELL_PREFIX}{arr.GetName()}"}
+                {
+                    "text": f"{arr.GetName()} (Cell)",
+                    "value": f"{CELL_PREFIX}{arr.GetName()}",
+                }
             )
 
     return arrays
@@ -169,11 +175,8 @@ def build_visualization(filename, renderer):
     Build split visualization pipeline.
 
     Returns a VisualizationResult namedtuple. Fields bnd_actor, bnd_mapper,
-    bnd_dataset, bnd_lut, and bnd_scalar_bar are None when the file has no
-    lower-dimension boundary cells (e.g., grid-1.vtk).
-
-    Note: no scalar bar is created for volume coloring at load time — the
-    dynamic _active_coloring_bar in app.py tracks the active Color by selection.
+    bnd_dataset are None when the file has no lower-dimension boundary cells
+    (e.g., grid-1.vtk). bnd_luts is an empty dict in that case.
     """
     renderer.RemoveAllViewProps()
 
@@ -212,47 +215,42 @@ def build_visualization(filename, renderer):
     vol_actor.SetMapper(vol_mapper)
     renderer.AddActor(vol_actor)
 
-    # Pre-build categorical LUT for MaterialID (used by apply_coloring and the dynamic bar)
-    vol_lut = None
-    vol_mat_arr = vol_ds.GetCellData().GetArray(MATERIAL_ID_ARRAY)
-    if vol_mat_arr is not None:
-        unique_ids = sorted(
-            set(
-                int(vol_mat_arr.GetValue(j))
-                for j in range(vol_mat_arr.GetNumberOfTuples())
+    # Pre-build categorical LUTs for known ID arrays (MaterialID, ManifoldID, ...)
+    vol_luts = {}
+    for array_name in CATEGORICAL_CELL_ARRAYS:
+        arr = vol_ds.GetCellData().GetArray(array_name)
+        if arr is not None:
+            unique_ids = sorted(
+                set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
             )
-        )
-        vol_lut, _ = build_categorical_lut(unique_ids)
+            vol_luts[array_name], _ = build_categorical_lut(unique_ids)
 
     # --- Boundary actor (conditional) ---
     bnd_actor = None
     bnd_mapper = None
-    bnd_lut = None
-    bnd_scalar_bar = None
+    bnd_luts = {}
 
     if bnd_ds is not None:
         bnd_mapper = vtkDataSetMapper()
         bnd_mapper.SetInputData(bnd_ds)
 
-        bnd_mat_arr = bnd_ds.GetCellData().GetArray(MATERIAL_ID_ARRAY)
-        if bnd_mat_arr is not None:
-            unique_bnd_ids = sorted(
-                set(
-                    int(bnd_mat_arr.GetValue(j))
-                    for j in range(bnd_mat_arr.GetNumberOfTuples())
+        # Pre-build categorical LUTs for boundary cells
+        for array_name in CATEGORICAL_CELL_ARRAYS:
+            arr = bnd_ds.GetCellData().GetArray(array_name)
+            if arr is not None:
+                unique_ids = sorted(
+                    set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
                 )
-            )
-            bnd_lut, _ = build_categorical_lut(unique_bnd_ids)
+                bnd_luts[array_name], _ = build_categorical_lut(unique_ids)
+
+        # Initial coloring: MaterialID (boundary IDs) if available
+        bnd_mat_lut = bnd_luts.get(MATERIAL_ID_ARRAY)
+        if bnd_mat_lut is not None:
             bnd_mapper.ScalarVisibilityOn()
             bnd_mapper.SetScalarModeToUseCellFieldData()
             bnd_mapper.SelectColorArray(MATERIAL_ID_ARRAY)
-            bnd_mapper.SetLookupTable(bnd_lut)
+            bnd_mapper.SetLookupTable(bnd_mat_lut)
             bnd_mapper.UseLookupTableScalarRangeOn()
-
-            bnd_scalar_bar = build_scalar_bar(
-                bnd_lut, "Boundary ID", position=(0.82, 0.45), width=0.08, height=0.35
-            )
-            renderer.AddActor(bnd_scalar_bar)
         else:
             bnd_mapper.ScalarVisibilityOff()
 
@@ -267,27 +265,26 @@ def build_visualization(filename, renderer):
         vol_actor=vol_actor,
         vol_mapper=vol_mapper,
         vol_dataset=vol_ds,
-        vol_lut=vol_lut,
+        vol_luts=vol_luts,
         bnd_actor=bnd_actor,
         bnd_mapper=bnd_mapper,
         bnd_dataset=bnd_ds,
-        bnd_lut=bnd_lut,
-        bnd_scalar_bar=bnd_scalar_bar,
+        bnd_luts=bnd_luts,
         full_dataset=full_ds,
     )
 
 
-def apply_coloring(actor, mapper, dataset, array_value, lut=None):
+def apply_coloring(actor, mapper, dataset, array_value, luts=None):
     """
     Update volume actor coloring based on the selected array value.
 
     Returns the vtkLookupTable used for scalar coloring, or None for solid color.
     The caller uses the returned LUT to build/update the active scalar bar.
 
-    When array_value is "cell:MaterialID" and a pre-built categorical lut is
-    provided, that lut is used (and returned). For all other arrays an explicit
-    continuous vtkLookupTable is created so the scalar bar and mapper share the
-    same LUT instance.
+    When array_value refers to a cell array present in the pre-built categorical
+    luts dict (e.g. MaterialID, ManifoldID), that LUT is used. For all other
+    arrays an explicit continuous vtkLookupTable is created so the scalar bar
+    and mapper share the same LUT instance.
     """
     colors = vtkNamedColors()
 
@@ -296,16 +293,8 @@ def apply_coloring(actor, mapper, dataset, array_value, lut=None):
         actor.GetProperty().SetColor(colors.GetColor3d("Tomato"))
         return None
 
-    if array_value == f"{CELL_PREFIX}{MATERIAL_ID_ARRAY}" and lut is not None:
-        mapper.ScalarVisibilityOn()
-        mapper.SetScalarModeToUseCellFieldData()
-        mapper.SelectColorArray(MATERIAL_ID_ARRAY)
-        mapper.SetLookupTable(lut)
-        mapper.UseLookupTableScalarRangeOn()
-        return lut
-
     if array_value.startswith(POINT_PREFIX):
-        name = array_value[len(POINT_PREFIX):]
+        name = array_value[len(POINT_PREFIX) :]
         arr = dataset.GetPointData().GetArray(name)
         if arr is not None:
             continuous_lut = vtkLookupTable()
@@ -319,7 +308,16 @@ def apply_coloring(actor, mapper, dataset, array_value, lut=None):
             return continuous_lut
 
     if array_value.startswith(CELL_PREFIX):
-        name = array_value[len(CELL_PREFIX):]
+        name = array_value[len(CELL_PREFIX) :]
+        # Use pre-built categorical LUT if available (MaterialID, ManifoldID, ...)
+        if luts and name in luts:
+            mapper.ScalarVisibilityOn()
+            mapper.SetScalarModeToUseCellFieldData()
+            mapper.SelectColorArray(name)
+            mapper.SetLookupTable(luts[name])
+            mapper.UseLookupTableScalarRangeOn()
+            return luts[name]
+        # Fall through to continuous LUT for non-categorical cell arrays
         arr = dataset.GetCellData().GetArray(name)
         if arr is not None:
             continuous_lut = vtkLookupTable()
