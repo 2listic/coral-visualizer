@@ -1,13 +1,10 @@
-from vtkmodules.vtkCommonColor import vtkNamedColors
-from vtkmodules.vtkCommonCore import vtkLookupTable
-from vtkmodules.vtkFiltersCore import (
-    vtkContourFilter,
-    vtkGlyph3D,
-    vtkMaskPoints,
-    vtkThresholdPoints,
-)
+from collections import namedtuple
+
+from vtkmodules.vtkCommonColor import vtkNamedColors, vtkColorSeries
+from vtkmodules.vtkCommonCore import vtkIdList, vtkLookupTable
+from vtkmodules.vtkFiltersCore import vtkExtractCells
 from vtkmodules.vtkFiltersModeling import vtkOutlineFilter
-from vtkmodules.vtkFiltersSources import vtkConeSource
+from vtkmodules.vtkRenderingAnnotation import vtkScalarBarActor
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkPolyDataMapper,
@@ -23,160 +20,340 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch  # noqa
 # Required for rendering initialization
 import vtkmodules.vtkRenderingOpenGL2  # noqa
 
+from constants import (
+    ARRAY_SOLID,
+    CATEGORICAL_CELL_ARRAYS,
+    CELL_PREFIX,
+    POINT_PREFIX,
+    REPR_POINTS,
+    REPR_SURFACE,
+    REPR_SURFACE_EDGES,
+    REPR_WIREFRAME,
+)
 from file_utils import detect_and_create_reader
 
 
-def has_vector_data(dataset):
-    """Check if dataset has vector data at points."""
-    return (
-        dataset.GetPointData() is not None
-        and dataset.GetPointData().GetVectors() is not None
-    )
+VisualizationResult = namedtuple(
+    "VisualizationResult",
+    [
+        "vol_actor",
+        "vol_mapper",
+        "vol_dataset",
+        "vol_luts",
+        "bnd_actor",
+        "bnd_mapper",
+        "bnd_dataset",
+        "bnd_luts",
+        "full_dataset",
+    ],
+)
 
 
-def has_scalar_data(dataset):
-    """Check if dataset has scalar data at points."""
-    return (
-        dataset.GetPointData() is not None
-        and dataset.GetPointData().GetScalars() is not None
-    )
+def get_available_arrays(dataset):
+    """Return list of VSelect-compatible dicts for all point/cell data arrays."""
+    arrays = [{"text": "Solid Color", "value": ARRAY_SOLID}]
+
+    pd = dataset.GetPointData()
+    for i in range(pd.GetNumberOfArrays()):
+        arr = pd.GetArray(i)
+        if arr is not None:
+            arrays.append(
+                {
+                    "text": f"{arr.GetName()} (Point)",
+                    "value": f"{POINT_PREFIX}{arr.GetName()}",
+                }
+            )
+
+    cd = dataset.GetCellData()
+    for i in range(cd.GetNumberOfArrays()):
+        arr = cd.GetArray(i)
+        if arr is not None:
+            arrays.append(
+                {
+                    "text": f"{arr.GetName()} (Cell)",
+                    "value": f"{CELL_PREFIX}{arr.GetName()}",
+                }
+            )
+
+    return arrays
+
+
+def split_by_dimension(dataset):
+    """
+    Split a mixed unstructured grid into volume and boundary sub-datasets
+    based on cell dimension.
+
+    Returns:
+        vol_dataset: cells with the maximum cell dimension
+        bnd_dataset: cells with dimension < max, or None if all cells share the same dimension
+    """
+    n = dataset.GetNumberOfCells()
+    if n == 0:
+        return dataset, None
+
+    max_dim = max(dataset.GetCell(i).GetCellDimension() for i in range(n))
+
+    vol_ids = vtkIdList()
+    bnd_ids = vtkIdList()
+    for i in range(n):
+        dim = dataset.GetCell(i).GetCellDimension()
+        if dim == max_dim:
+            vol_ids.InsertNextId(i)
+        else:
+            bnd_ids.InsertNextId(i)
+
+    def extract(id_list):
+        ext = vtkExtractCells()
+        ext.SetInputData(dataset)
+        ext.SetCellList(id_list)
+        ext.Update()
+        return ext.GetOutput()
+
+    vol_ds = extract(vol_ids)
+    bnd_ds = extract(bnd_ids) if bnd_ids.GetNumberOfIds() > 0 else None
+    return vol_ds, bnd_ds
+
+
+def build_categorical_lut(unique_ids):
+    """
+    Build an indexed (categorical) vtkLookupTable for a list of integer IDs.
+
+    Handles negative IDs (e.g., -1) correctly via indexed lookup — exact mapping,
+    no range interpolation.
+
+    Returns:
+        lut: vtkLookupTable configured for indexed lookup with annotations
+        index_map: dict mapping integer ID -> LUT table index (for future ID editing)
+    """
+    cs = vtkColorSeries()
+    cs.SetColorScheme(vtkColorSeries.BREWER_QUALITATIVE_SET1)
+    palette_size = cs.GetNumberOfColors()
+
+    n = len(unique_ids)
+    lut = vtkLookupTable()
+    lut.SetNumberOfTableValues(n)
+    lut.IndexedLookupOn()
+
+    index_map = {}
+    for idx, val in enumerate(unique_ids):
+        c = cs.GetColor(idx % palette_size)
+        lut.SetTableValue(
+            idx, c.GetRed() / 255.0, c.GetGreen() / 255.0, c.GetBlue() / 255.0, 1.0
+        )
+        lut.SetAnnotation(float(val), str(val))
+        index_map[val] = idx
+
+    return lut, index_map
+
+
+def build_scalar_bar(
+    lut, title, position=(0.82, 0.05), width=0.08, height=0.35, max_labels=20
+):
+    """Create a positioned vtkScalarBarActor for the given LUT.
+
+    max_labels caps the number of tick/category labels shown. For categorical
+    LUTs with many IDs this prevents the bar from becoming unreadably dense.
+    """
+    bar = vtkScalarBarActor()
+    bar.SetLookupTable(lut)
+    bar.SetTitle(title)
+    bar.SetOrientationToVertical()
+    bar.SetTextPositionToPrecedeScalarBar()
+    bar.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+    bar.GetPositionCoordinate().SetValue(position[0], position[1])
+    bar.SetWidth(width)
+    bar.SetHeight(height)
+    bar.SetNumberOfLabels(min(lut.GetNumberOfTableValues(), max_labels))
+    bar.GetTitleTextProperty().SetFontSize(10)
+    bar.GetLabelTextProperty().SetFontSize(9)
+    return bar
+
+
+def _build_categorical_luts(dataset):
+    """Build categorical LUTs for all known ID arrays found in *dataset*."""
+    luts = {}
+    for array_name in CATEGORICAL_CELL_ARRAYS:
+        arr = dataset.GetCellData().GetArray(array_name)
+        if arr is not None:
+            unique_ids = sorted(
+                set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
+            )
+            luts[array_name], _ = build_categorical_lut(unique_ids)
+    return luts
+
+
+def _create_dataset_actor(dataset):
+    """Create a mapper + actor pair for *dataset* with scalars off."""
+    mapper = vtkDataSetMapper()
+    mapper.SetInputData(dataset)
+    mapper.ScalarVisibilityOff()
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    return actor, mapper
+
+
+def _create_outline_actor(reader):
+    """Create a white bounding-box wireframe actor from *reader* output."""
+    outline = vtkOutlineFilter()
+    outline.SetInputConnection(reader.GetOutputPort())
+    mapper = vtkPolyDataMapper()
+    mapper.SetInputConnection(outline.GetOutputPort())
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetColor(vtkNamedColors().GetColor3d("White"))
+    return actor
 
 
 def build_visualization(filename, renderer):
-    """Build visualization pipeline for the given file."""
-    # Clear existing actors
+    """
+    Build split visualization pipeline.
+
+    Returns a VisualizationResult namedtuple. Fields bnd_actor, bnd_mapper,
+    bnd_dataset are None when the file has no lower-dimension boundary cells
+    (e.g., grid-1.vtk). bnd_luts is an empty dict in that case.
+    """
     renderer.RemoveAllViewProps()
 
-    # Read the data
     reader = detect_and_create_reader(filename)
     reader.SetFileName(filename)
     reader.Update()
 
-    # Get the output dataset
-    dataset = reader.GetOutput()
+    full_ds = reader.GetOutput()
     print(f"\nDataset Info:")
-    print(f"  Type: {dataset.GetClassName()}")
-    print(f"  Number of points: {dataset.GetNumberOfPoints()}")
-    print(f"  Number of cells: {dataset.GetNumberOfCells()}")
-    print(f"  Has vectors: {has_vector_data(dataset)}")
-    print(f"  Has scalars: {has_scalar_data(dataset)}")
+    print(f"  Type: {full_ds.GetClassName()}")
+    print(f"  Number of points: {full_ds.GetNumberOfPoints()}")
+    print(f"  Number of cells: {full_ds.GetNumberOfCells()}")
 
-    colors = vtkNamedColors()
+    renderer.AddActor(_create_outline_actor(reader))
 
-    # Always add outline
-    outline = vtkOutlineFilter()
-    outline.SetInputConnection(reader.GetOutputPort())
+    # Split into volume and boundary sub-datasets by cell dimension
+    vol_ds, bnd_ds = split_by_dimension(full_ds)
+    print(f"  Volume cells: {vol_ds.GetNumberOfCells()}")
+    print(f"  Boundary cells: {bnd_ds.GetNumberOfCells() if bnd_ds else 0}")
 
-    outlineMapper = vtkPolyDataMapper()
-    outlineMapper.SetInputConnection(outline.GetOutputPort())
+    # --- Volume actor ---
+    vol_actor, vol_mapper = _create_dataset_actor(vol_ds)
+    vol_luts = _build_categorical_luts(vol_ds)
+    renderer.AddActor(vol_actor)
 
-    outlineActor = vtkActor()
-    outlineActor.SetMapper(outlineMapper)
-    outlineActor.GetProperty().SetColor(colors.GetColor3d("White"))
-    renderer.AddActor(outlineActor)
+    # --- Boundary actor (conditional) ---
+    bnd_actor = None
+    bnd_mapper = None
+    bnd_luts = {}
 
-    # Build visualization based on available data
-    if has_vector_data(dataset) and has_scalar_data(dataset):
-        print("\nUsing FLOW visualization (vectors + contours)\n")
-        _add_flow_visualization(reader, renderer, colors)
+    if bnd_ds is not None:
+        bnd_actor, bnd_mapper = _create_dataset_actor(bnd_ds)
+        bnd_luts = _build_categorical_luts(bnd_ds)
 
-    elif has_scalar_data(dataset):
-        print("\nUsing SCALAR visualization (colored by scalar values)\n")
-        _add_scalar_visualization(reader, dataset, renderer)
-
-    else:
-        print("\nUsing BASIC visualization (wireframe/surface)\n")
-        _add_basic_visualization(reader, renderer, colors)
+        bnd_actor.GetProperty().SetLineWidth(3.0)
+        renderer.AddActor(bnd_actor)
 
     renderer.ResetCamera()
 
+    return VisualizationResult(
+        vol_actor=vol_actor,
+        vol_mapper=vol_mapper,
+        vol_dataset=vol_ds,
+        vol_luts=vol_luts,
+        bnd_actor=bnd_actor,
+        bnd_mapper=bnd_mapper,
+        bnd_dataset=bnd_ds,
+        bnd_luts=bnd_luts,
+        full_dataset=full_ds,
+    )
 
-def _add_flow_visualization(reader, renderer, colors):
-    """Add flow visualization with glyphs and contours."""
-    # Glyphs for vector field
-    threshold = vtkThresholdPoints()
-    threshold.SetInputConnection(reader.GetOutputPort())
-    threshold.ThresholdByUpper(200)
 
-    mask = vtkMaskPoints()
-    mask.SetInputConnection(threshold.GetOutputPort())
-    mask.SetOnRatio(5)
+def apply_coloring(actor, mapper, dataset, array_value, luts=None):
+    """
+    Update volume actor coloring based on the selected array value.
 
-    cone = vtkConeSource()
-    cone.SetResolution(11)
-    cone.SetHeight(1)
-    cone.SetRadius(0.25)
+    Returns the vtkLookupTable used for scalar coloring, or None for solid color.
+    The caller uses the returned LUT to build/update the active scalar bar.
 
-    cones = vtkGlyph3D()
-    cones.SetInputConnection(mask.GetOutputPort())
-    cones.SetSourceConnection(cone.GetOutputPort())
-    cones.SetScaleFactor(0.4)
-    cones.SetScaleModeToScaleByVector()
-
-    lut = vtkLookupTable()
-    lut.SetHueRange(0.667, 0.0)
-    lut.Build()
-
-    scalarRange = [0] * 2
-    cones.Update()
-    scalarRange[0] = cones.GetOutput().GetPointData().GetScalars().GetRange()[0]
-    scalarRange[1] = cones.GetOutput().GetPointData().GetScalars().GetRange()[1]
-
-    vectorMapper = vtkPolyDataMapper()
-    vectorMapper.SetInputConnection(cones.GetOutputPort())
-    vectorMapper.SetScalarRange(scalarRange[0], scalarRange[1])
-    vectorMapper.SetLookupTable(lut)
-
-    vectorActor = vtkActor()
-    vectorActor.SetMapper(vectorMapper)
-    # renderer.AddActor(vectorActor)    // uncomment this to show glyphs cones
-
-    # Contours
+    When array_value refers to a cell array present in the pre-built categorical
+    luts dict (e.g. MaterialID, ManifoldID), that LUT is used. For all other
+    arrays an explicit continuous vtkLookupTable is created so the scalar bar
+    and mapper share the same LUT instance.
+    """
     colors = vtkNamedColors()
 
-    iso = vtkContourFilter()
-    iso.SetInputConnection(reader.GetOutputPort())
-    iso.SetValue(0, 175)
+    if array_value == ARRAY_SOLID or array_value is None:
+        mapper.ScalarVisibilityOff()
+        actor.GetProperty().SetColor(colors.GetColor3d("Tomato"))
+        return None
 
-    isoMapper = vtkPolyDataMapper()
-    isoMapper.SetInputConnection(iso.GetOutputPort())
-    isoMapper.ScalarVisibilityOff()
+    if array_value.startswith(POINT_PREFIX):
+        name = array_value[len(POINT_PREFIX) :]
+        arr = dataset.GetPointData().GetArray(name)
+        if arr is not None:
+            continuous_lut = vtkLookupTable()
+            continuous_lut.SetTableRange(arr.GetRange())
+            continuous_lut.Build()
+            mapper.ScalarVisibilityOn()
+            mapper.SetScalarModeToUsePointFieldData()
+            mapper.SelectColorArray(name)
+            mapper.SetLookupTable(continuous_lut)
+            mapper.UseLookupTableScalarRangeOn()
+            return continuous_lut
 
-    isoActor = vtkActor()
-    isoActor.SetMapper(isoMapper)
-    isoActor.GetProperty().SetRepresentationToWireframe()
-    isoActor.GetProperty().SetOpacity(0.25)
-    isoActor.GetProperty().SetColor(colors.GetColor3d("Red"))
-    isoActor.GetProperty().SetLineWidth(5.0)
-    renderer.AddActor(isoActor)
+    if array_value.startswith(CELL_PREFIX):
+        name = array_value[len(CELL_PREFIX) :]
+        # Use pre-built categorical LUT if available (MaterialID, ManifoldID, ...)
+        if luts and name in luts:
+            mapper.ScalarVisibilityOn()
+            mapper.SetScalarModeToUseCellFieldData()
+            mapper.SelectColorArray(name)
+            mapper.SetLookupTable(luts[name])
+            mapper.UseLookupTableScalarRangeOn()
+            return luts[name]
+        # Fall through to continuous LUT for non-categorical cell arrays
+        arr = dataset.GetCellData().GetArray(name)
+        if arr is not None:
+            continuous_lut = vtkLookupTable()
+            continuous_lut.SetTableRange(arr.GetRange())
+            continuous_lut.Build()
+            mapper.ScalarVisibilityOn()
+            mapper.SetScalarModeToUseCellFieldData()
+            mapper.SelectColorArray(name)
+            mapper.SetLookupTable(continuous_lut)
+            mapper.UseLookupTableScalarRangeOn()
+            return continuous_lut
+
+    return None
 
 
-def _add_scalar_visualization(reader, dataset, renderer):
-    """Add scalar visualization with color mapping."""
-    mapper = vtkDataSetMapper()
-    mapper.SetInputConnection(reader.GetOutputPort())
-    mapper.ScalarVisibilityOn()
+def apply_representation(vol_actor, bnd_actor, representation):
+    """
+    Update representation for volume and (optionally) boundary actors.
 
-    scalarRange = dataset.GetPointData().GetScalars().GetRange()
-    mapper.SetScalarRange(scalarRange)
+    Boundary cells (lines in 2D, surface quads in 3D) are always rendered as
+    surface/lines. Only "Points" mode propagates to the boundary actor.
+    """
+    prop = vol_actor.GetProperty()
+    colors = vtkNamedColors()
 
-    actor = vtkActor()
-    actor.SetMapper(mapper)
-    renderer.AddActor(actor)
+    if representation == REPR_SURFACE:
+        prop.SetRepresentationToSurface()
+        prop.EdgeVisibilityOff()
+    elif representation == REPR_SURFACE_EDGES:
+        prop.SetRepresentationToSurface()
+        prop.EdgeVisibilityOn()
+        prop.SetEdgeColor(colors.GetColor3d("Black"))
+    elif representation == REPR_WIREFRAME:
+        prop.SetRepresentationToWireframe()
+        prop.EdgeVisibilityOff()
+    elif representation == REPR_POINTS:
+        prop.SetRepresentationToPoints()
+        prop.SetPointSize(5)
 
-
-def _add_basic_visualization(reader, renderer, colors):
-    """Add basic mesh visualization without data coloring."""
-    mapper = vtkDataSetMapper()
-    mapper.SetInputConnection(reader.GetOutputPort())
-    mapper.ScalarVisibilityOff()
-
-    actor = vtkActor()
-    actor.SetMapper(mapper)
-    actor.GetProperty().SetColor(colors.GetColor3d("Tomato"))
-    actor.GetProperty().SetEdgeColor(colors.GetColor3d("Black"))
-    actor.GetProperty().EdgeVisibilityOn()
-    renderer.AddActor(actor)
+    if bnd_actor is not None:
+        bnd_prop = bnd_actor.GetProperty()
+        if representation == REPR_POINTS:
+            bnd_prop.SetRepresentationToPoints()
+            bnd_prop.SetPointSize(5)
+        else:
+            bnd_prop.SetRepresentationToSurface()
+            bnd_prop.EdgeVisibilityOff()
 
 
 def create_vtk_rendering_context():

@@ -46,21 +46,32 @@ def detect_and_create_reader(filename):
         print(f"Detected VTK legacy format (.vtk), reading header...")
         with open(filename, "rb") as f:
             # Read first ~500 bytes which should contain the header
-            header = f.read(500).decode('latin-1', errors='ignore')
+            header = f.read(500).decode("latin-1", errors="ignore")
 
-            for line in header.split('\n'):
+            for line in header.split("\n"):
                 line = line.strip().upper()
                 if "DATASET" in line:
                     if "STRUCTURED_POINTS" in line or "IMAGE_DATA" in line:
-                        return vtkStructuredPointsReader()
+                        reader = vtkStructuredPointsReader()
                     elif "UNSTRUCTURED_GRID" in line:
-                        return vtkUnstructuredGridReader()
+                        reader = vtkUnstructuredGridReader()
                     elif "POLYDATA" in line:
-                        return vtkPolyDataReader()
+                        reader = vtkPolyDataReader()
+                    else:
+                        reader = None
                     break
 
-        # Default fallback for legacy format
-        print(f"Warning: Could not detect dataset type, trying UnstructuredGridReader")
-        return vtkUnstructuredGridReader()
+        if reader is None:
+            # Default fallback for legacy format
+            print(
+                f"Warning: Could not detect dataset type, trying UnstructuredGridReader"
+            )
+            reader = vtkUnstructuredGridReader()
+
+        # Legacy readers only load the first SCALARS array by default.
+        # Enable reading all arrays so ManifoldID etc. are discovered.
+        reader.ReadAllScalarsOn()
+        reader.ReadAllVectorsOn()
+        return reader
     else:
         raise ValueError(f"Unsupported file format: {ext}. Supported: .vtk, .vtu")
