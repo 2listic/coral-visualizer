@@ -34,7 +34,7 @@ There are no automated tests in this project.
 
 ## Architecture
 
-The app is a [Trame](https://trame.readthedocs.io/) web application that serves an interactive 3D VTK visualization in a browser. It uses Vue2 + Vuetify for the UI and VTK for rendering.
+The app is a [Trame](https://trame.readthedocs.io/) web application that serves an interactive 3D VTK visualization in a browser. It uses Vue2 + Vuetify for the UI and VTK for rendering. The primary use case is visualizing deal.II finite element meshes.
 
 **Data flow:**
 1. On startup, `app.py` scans `data/` for `.vtk`/`.vtu` files and builds an initial VTK rendering context.
@@ -42,41 +42,48 @@ The app is a [Trame](https://trame.readthedocs.io/) web application that serves 
    - `available_files` / `selected_file` — file picker
    - `available_arrays` / `selected_array` — color-by picker; array values use the format `"__solid__"`, `"point:ArrayName"`, or `"cell:ArrayName"`
    - `representation` — one of `"Surface"`, `"Surface with Edges"`, `"Wireframe"`, `"Points"`
-   - `show_boundary` — toggle visibility of boundary cells actor and its scalar bar
+   - `show_boundary` / `has_boundary` — boundary cells visibility toggle and availability flag
    - `show_scalar_bars` — toggle all scalar bar legend visibility
-   - `has_boundary` — whether the loaded file has lower-dimension boundary cells (drives UI)
+   - `edit_mode` — boundary cell editing mode (selection, ID assignment, save)
    - `error_message` — shown as an overlay alert
 3. Each `@state.change(...)` callback in `app.py` calls the appropriate `vtk_pipeline` function and then `ctrl.view_update()` to push the new render to the browser.
 
+**Module responsibilities:**
+- `app.py` — entry point, argument parsing, Trame server init, state management, `@state.change` callbacks, scalar bar lifecycle, edit mode interactor observer
+- `vtk_pipeline.py` — VTK rendering logic (actor/mapper creation, coloring, representation, LUT building)
+- `boundary_edit.py` — boundary cell extraction, interactive selection, BoundaryID assignment, save as .vtu. ManifoldID values are preserved but not edited.
+- `file_utils.py` — format detection and `data/` folder scanning
+- `ui.py` — Trame/Vuetify layout (toolbar, VTK viewport, edit mode drawer, error overlay)
+- `constants.py` — string sentinels/prefixes, representation mode names, known array names, deal.II default ID values
+
 **VTK pipeline (`vtk_pipeline.py`):**
 
-`create_vtk_rendering_context()` — creates `(renderer, renderWindow, renderWindowInteractor)` with trackball camera style.
+`build_visualization(filename, renderer)` — clears the renderer, reads the file, splits the dataset by cell dimension into volume and boundary sub-datasets, builds actors for each, and pre-builds categorical LUTs. Returns a `VisualizationResult` namedtuple with fields: `vol_actor`, `vol_mapper`, `vol_dataset`, `vol_luts`, `bnd_actor`, `bnd_mapper`, `bnd_dataset`, `bnd_luts`, `full_dataset`. The `bnd_*` fields are `None`/empty when no lower-dimension cells exist. Coloring is applied by the caller (`app.py`) after this returns.
 
-`build_visualization(filename, renderer)` — clears the renderer, reads the file, splits the dataset by cell dimension into volume and boundary sub-datasets, builds actors for each, and pre-builds categorical LUTs for `MaterialID`. Returns a `VisualizationResult` namedtuple with fields: `vol_actor`, `vol_mapper`, `vol_dataset`, `vol_lut`, `bnd_actor`, `bnd_mapper`, `bnd_dataset`, `bnd_lut`, `bnd_scalar_bar`, `full_dataset`. The `bnd_*` fields are `None` when no lower-dimension cells exist.
+`split_by_dimension(dataset)` — splits a mixed unstructured grid into volume cells (max dimension) and boundary cells (lower dimension) using `vtkExtractCells`. Returns `(vol_dataset, bnd_dataset)` where `bnd_dataset` may be `None`.
 
-`split_by_dimension(dataset)` — splits a mixed unstructured grid into volume cells (max dimension) and boundary cells (lower dimension). Returns `(vol_dataset, bnd_dataset)` where `bnd_dataset` may be `None`.
-
-`get_available_arrays(dataset)` — introspects point and cell data arrays on the full dataset; returns `{"text": ..., "value": ...}` dicts for populating the "Color by" dropdown.
-
-`apply_coloring(actor, mapper, dataset, array_value, lut=None)` — sets mapper to solid color (`Tomato`) or enables scalar coloring. For `cell:MaterialID` uses the pre-built categorical LUT passed in; for all other arrays builds a continuous `vtkLookupTable`. Returns the active LUT (or `None` for solid color) so the caller can build the scalar bar.
+`apply_coloring(actor, mapper, dataset, array_value, luts=None)` — sets mapper to solid color (`Tomato`) or enables scalar coloring. For arrays in `CATEGORICAL_CELL_ARRAYS` uses the pre-built categorical LUT; for all other arrays builds a continuous `vtkLookupTable`. Returns the active LUT (or `None` for solid color).
 
 `apply_representation(vol_actor, bnd_actor, representation)` — sets surface/wireframe/points mode; boundary cells always render as surface/lines except in Points mode.
 
-`build_categorical_lut(unique_ids)` — builds an indexed `vtkLookupTable` with `vtkColorSeries.BREWER_QUALITATIVE_SET1` palette for categorical integer data (handles negative IDs correctly via indexed lookup).
+`build_categorical_lut(unique_ids)` — builds an indexed `vtkLookupTable` with `BREWER_QUALITATIVE_SET1` palette for categorical integer data (handles negative IDs via indexed lookup). Returns `(lut, index_map)`.
 
-`build_scalar_bar(lut, title, ...)` — creates a positioned `vtkScalarBarActor`.
+**Boundary editing (`boundary_edit.py`):**
+
+`extract_all_boundary_subcells(full_dataset)` — finds exterior boundary sub-cells by iterating volume cell edges (2D) or faces (3D) and selecting those shared by exactly one volume cell. Also classifies cells in the file as volume vs boundary by dimension (same logic as `split_by_dimension` but returns index lists instead of extracted datasets).
+
+`build_merged_boundary_dataset(full_dataset, file_bnd_indices, extracted_subcells)` — builds a `vtkUnstructuredGrid` containing all boundary cells (exterior sub-cells + interior file boundary markers), with `MaterialID` and `ManifoldID` arrays. Exterior sub-cells that match file boundary cells inherit their IDs; others get defaults.
+
+`save_as_vtu(edit_state, output_path)` — reconstructs the full mesh (volume cells + edited boundary cells) and writes `.vtu`.
+
+In edit mode, left-click picks boundary cells via `vtkCellPicker`. The default interactor style's `LeftButtonPressEvent` observers are removed to prevent camera rotation on left-click; middle/right-click camera controls remain.
+
+**Important VTK patterns:**
+- When modifying VTK array values directly (e.g. `arr.SetValue()`), call `dataset.Modified()` afterward to bump the MTime so downstream mappers re-render.
+- State changes inside VTK observer callbacks (outside Trame's request cycle) require `state.flush()` to push updates to the browser.
 
 **File format detection (`file_utils.py`):**
 
-`.vtu` → `vtkXMLUnstructuredGridReader` directly.
-
-`.vtk` (legacy) → reads first 500 bytes, finds the `DATASET` line, and selects among `vtkStructuredPointsReader`, `vtkUnstructuredGridReader`, or `vtkPolyDataReader`. Falls back to `vtkUnstructuredGridReader` if type cannot be determined.
-
-**Module responsibilities:**
-- [app.py](app.py) — entry point, argument parsing, Trame server init, state management, `@state.change` callbacks, scalar bar lifecycle (`_active_coloring_bar`)
-- [vtk_pipeline.py](vtk_pipeline.py) — all VTK rendering logic
-- [file_utils.py](file_utils.py) — format detection and `data/` folder scanning
-- [ui.py](ui.py) — Trame/Vuetify layout (toolbar dropdowns, VTK viewport, error overlay)
-- [constants.py](constants.py) — string sentinels/prefixes (`ARRAY_SOLID`, `POINT_PREFIX`, `CELL_PREFIX`, `MATERIAL_ID_ARRAY`) and representation mode names
+`.vtu` → `vtkXMLUnstructuredGridReader`. `.vtk` (legacy) → reads first 500 bytes to detect dataset type, selects appropriate reader. Falls back to `vtkUnstructuredGridReader`.
 
 **Adding a new VTK format:** add the extension to `supported_extensions` in `file_utils.py` and add reader selection logic in `detect_and_create_reader()`.
