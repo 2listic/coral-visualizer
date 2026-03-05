@@ -24,7 +24,6 @@ from constants import (
     ARRAY_SOLID,
     CATEGORICAL_CELL_ARRAYS,
     CELL_PREFIX,
-    MATERIAL_ID_ARRAY,
     POINT_PREFIX,
     REPR_POINTS,
     REPR_SURFACE,
@@ -170,6 +169,41 @@ def build_scalar_bar(
     return bar
 
 
+def _build_categorical_luts(dataset):
+    """Build categorical LUTs for all known ID arrays found in *dataset*."""
+    luts = {}
+    for array_name in CATEGORICAL_CELL_ARRAYS:
+        arr = dataset.GetCellData().GetArray(array_name)
+        if arr is not None:
+            unique_ids = sorted(
+                set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
+            )
+            luts[array_name], _ = build_categorical_lut(unique_ids)
+    return luts
+
+
+def _create_dataset_actor(dataset):
+    """Create a mapper + actor pair for *dataset* with scalars off."""
+    mapper = vtkDataSetMapper()
+    mapper.SetInputData(dataset)
+    mapper.ScalarVisibilityOff()
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    return actor, mapper
+
+
+def _create_outline_actor(reader):
+    """Create a white bounding-box wireframe actor from *reader* output."""
+    outline = vtkOutlineFilter()
+    outline.SetInputConnection(reader.GetOutputPort())
+    mapper = vtkPolyDataMapper()
+    mapper.SetInputConnection(outline.GetOutputPort())
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetColor(vtkNamedColors().GetColor3d("White"))
+    return actor
+
+
 def build_visualization(filename, renderer):
     """
     Build split visualization pipeline.
@@ -190,17 +224,7 @@ def build_visualization(filename, renderer):
     print(f"  Number of points: {full_ds.GetNumberOfPoints()}")
     print(f"  Number of cells: {full_ds.GetNumberOfCells()}")
 
-    colors = vtkNamedColors()
-
-    # Outline actor (bounding box of the full mesh)
-    outline = vtkOutlineFilter()
-    outline.SetInputConnection(reader.GetOutputPort())
-    outlineMapper = vtkPolyDataMapper()
-    outlineMapper.SetInputConnection(outline.GetOutputPort())
-    outlineActor = vtkActor()
-    outlineActor.SetMapper(outlineMapper)
-    outlineActor.GetProperty().SetColor(colors.GetColor3d("White"))
-    renderer.AddActor(outlineActor)
+    renderer.AddActor(_create_outline_actor(reader))
 
     # Split into volume and boundary sub-datasets by cell dimension
     vol_ds, bnd_ds = split_by_dimension(full_ds)
@@ -208,22 +232,9 @@ def build_visualization(filename, renderer):
     print(f"  Boundary cells: {bnd_ds.GetNumberOfCells() if bnd_ds else 0}")
 
     # --- Volume actor ---
-    vol_mapper = vtkDataSetMapper()
-    vol_mapper.SetInputData(vol_ds)
-    vol_mapper.ScalarVisibilityOff()
-    vol_actor = vtkActor()
-    vol_actor.SetMapper(vol_mapper)
+    vol_actor, vol_mapper = _create_dataset_actor(vol_ds)
+    vol_luts = _build_categorical_luts(vol_ds)
     renderer.AddActor(vol_actor)
-
-    # Pre-build categorical LUTs for known ID arrays (MaterialID, ManifoldID, ...)
-    vol_luts = {}
-    for array_name in CATEGORICAL_CELL_ARRAYS:
-        arr = vol_ds.GetCellData().GetArray(array_name)
-        if arr is not None:
-            unique_ids = sorted(
-                set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
-            )
-            vol_luts[array_name], _ = build_categorical_lut(unique_ids)
 
     # --- Boundary actor (conditional) ---
     bnd_actor = None
@@ -231,31 +242,9 @@ def build_visualization(filename, renderer):
     bnd_luts = {}
 
     if bnd_ds is not None:
-        bnd_mapper = vtkDataSetMapper()
-        bnd_mapper.SetInputData(bnd_ds)
+        bnd_actor, bnd_mapper = _create_dataset_actor(bnd_ds)
+        bnd_luts = _build_categorical_luts(bnd_ds)
 
-        # Pre-build categorical LUTs for boundary cells
-        for array_name in CATEGORICAL_CELL_ARRAYS:
-            arr = bnd_ds.GetCellData().GetArray(array_name)
-            if arr is not None:
-                unique_ids = sorted(
-                    set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
-                )
-                bnd_luts[array_name], _ = build_categorical_lut(unique_ids)
-
-        # Initial coloring: MaterialID (boundary IDs) if available
-        bnd_mat_lut = bnd_luts.get(MATERIAL_ID_ARRAY)
-        if bnd_mat_lut is not None:
-            bnd_mapper.ScalarVisibilityOn()
-            bnd_mapper.SetScalarModeToUseCellFieldData()
-            bnd_mapper.SelectColorArray(MATERIAL_ID_ARRAY)
-            bnd_mapper.SetLookupTable(bnd_mat_lut)
-            bnd_mapper.UseLookupTableScalarRangeOn()
-        else:
-            bnd_mapper.ScalarVisibilityOff()
-
-        bnd_actor = vtkActor()
-        bnd_actor.SetMapper(bnd_mapper)
         bnd_actor.GetProperty().SetLineWidth(3.0)
         renderer.AddActor(bnd_actor)
 
