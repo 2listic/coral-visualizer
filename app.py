@@ -58,6 +58,7 @@ renderer, renderWindow, renderWindowInteractor = create_vtk_rendering_context()
 # Module-level pipeline references (updated whenever a file is loaded)
 _viz = None  # VisualizationResult | None
 _active_coloring_bar = None  # scalar bar tracking the current "Color by" selection
+_active_lut = None  # LUT currently used for the "Color by" coloring
 _bnd_coloring_bar = None  # scalar bar for boundary IDs (only when MaterialID selected)
 
 # Boundary editing state
@@ -127,9 +128,28 @@ def _array_label(array_value):
     return array_value
 
 
+def _update_bnd_coloring_bar(lut):
+    """Replace the boundary coloring bar with one built from *lut* (or remove it)."""
+    global _bnd_coloring_bar
+
+    if _bnd_coloring_bar is not None:
+        renderer.RemoveActor(_bnd_coloring_bar)
+        _bnd_coloring_bar = None
+    if lut is not None:
+        _bnd_coloring_bar = build_scalar_bar(
+            lut,
+            "Boundary ID",
+            position=(0.05, 0.45),
+            width=0.08,
+            height=0.35,
+        )
+        _bnd_coloring_bar.SetVisibility(1 if state.show_scalar_bars else 0)
+        renderer.AddActor(_bnd_coloring_bar)
+
+
 def _update_scalar_bars(active_lut, array_value):
     """Manage all scalar bars: the active coloring bar and the boundary ID bar."""
-    global _active_coloring_bar, _bnd_coloring_bar
+    global _active_coloring_bar
 
     # --- Active coloring bar (tracks "Color by" selection) ---
     if _active_coloring_bar is not None:
@@ -146,19 +166,9 @@ def _update_scalar_bars(active_lut, array_value):
         renderer.AddActor(_active_coloring_bar)
 
     # --- Boundary coloring bar (only when MaterialID selected + boundary exists) ---
-    if _bnd_coloring_bar is not None:
-        renderer.RemoveActor(_bnd_coloring_bar)
-        _bnd_coloring_bar = None
     is_material_id = array_value == f"{CELL_PREFIX}{MATERIAL_ID_ARRAY}"
-    if is_material_id and _viz and _viz.bnd_luts.get(MATERIAL_ID_ARRAY):
-        _bnd_coloring_bar = build_scalar_bar(
-            _viz.bnd_luts[MATERIAL_ID_ARRAY],
-            "Boundary ID",
-            position=(0.05, 0.45),
-            width=0.08,
-            height=0.35,
-        )
-        renderer.AddActor(_bnd_coloring_bar)
+    bnd_lut = _viz.bnd_luts.get(MATERIAL_ID_ARRAY) if is_material_id and _viz else None
+    _update_bnd_coloring_bar(bnd_lut)
 
     _apply_scalar_bar_visibility(state.show_scalar_bars)
 
@@ -209,7 +219,7 @@ def _setup_edit_infrastructure():
 
 
 def _apply_edit_coloring(array_name=None):
-    """Apply categorical coloring to the merged boundary actor."""
+    """Apply categorical coloring to the merged boundary actor and update scalar bar."""
     if _edit.merged_bnd_dataset is None or _edit.merged_bnd_mapper is None:
         return
     if array_name is None:
@@ -228,6 +238,8 @@ def _apply_edit_coloring(array_name=None):
     _edit.merged_bnd_mapper.SelectColorArray(array_name)
     _edit.merged_bnd_mapper.SetLookupTable(lut)
     _edit.merged_bnd_mapper.UseLookupTableScalarRangeOn()
+
+    _update_bnd_coloring_bar(lut)
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +311,7 @@ def _remove_pick_observer():
 @state.change("selected_file")
 def on_file_change(selected_file, **kwargs):
     """Reload pipeline and reset coloring/representation when file changes."""
-    global _viz
+    global _viz, _active_lut
 
     if selected_file and os.path.exists(selected_file):
         try:
@@ -321,7 +333,7 @@ def on_file_change(selected_file, **kwargs):
                 arrays[1]["value"] if len(arrays) > 1 else ARRAY_SOLID,
             )
 
-            active_lut = apply_coloring(
+            _active_lut = apply_coloring(
                 _viz.vol_actor,
                 _viz.vol_mapper,
                 _viz.vol_dataset,
@@ -337,7 +349,7 @@ def on_file_change(selected_file, **kwargs):
                     _viz.bnd_luts,
                 )
             apply_representation(_viz.vol_actor, _viz.bnd_actor, state.representation)
-            _update_scalar_bars(active_lut, default_array)
+            _update_scalar_bars(_active_lut, default_array)
             _apply_boundary_visibility(state.show_boundary)
 
             # Set up boundary editing infrastructure
@@ -365,8 +377,9 @@ def on_file_change(selected_file, **kwargs):
 @state.change("selected_array")
 def on_array_change(selected_array, **kwargs):
     """Update coloring when the user picks a different array."""
+    global _active_lut
     if _viz is not None:
-        active_lut = apply_coloring(
+        _active_lut = apply_coloring(
             _viz.vol_actor,
             _viz.vol_mapper,
             _viz.vol_dataset,
@@ -381,7 +394,7 @@ def on_array_change(selected_array, **kwargs):
                 selected_array,
                 _viz.bnd_luts,
             )
-        _update_scalar_bars(active_lut, selected_array)
+        _update_scalar_bars(_active_lut, selected_array)
         renderWindow.Render()
         ctrl.view_update()
 
@@ -438,6 +451,8 @@ def on_edit_mode_change(edit_mode, **kwargs):
         state.selection_count = 0
         if _viz and _viz.bnd_actor:
             _viz.bnd_actor.SetVisibility(1 if state.show_boundary else 0)
+        # Restore boundary scalar bar from the saved view-mode LUT
+        _update_scalar_bars(_active_lut, state.selected_array)
 
     renderWindow.Render()
     ctrl.view_update()
