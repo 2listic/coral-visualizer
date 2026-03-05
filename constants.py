@@ -15,3 +15,7 @@ MANIFOLD_ID_ARRAY = "ManifoldID"
 
 # Cell arrays that should use categorical (indexed) coloring instead of continuous
 CATEGORICAL_CELL_ARRAYS = [MATERIAL_ID_ARRAY, MANIFOLD_ID_ARRAY]
+
+# deal.II default ID values
+BOUNDARY_ID_DEFAULT = 0
+MANIFOLD_ID_DEFAULT = -1
