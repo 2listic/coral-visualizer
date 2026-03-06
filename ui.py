@@ -100,6 +100,29 @@ def build_ui(server, renderWindow):
                     style="z-index: 5;",
                 ):
                     with vuetify.VList(dense=True):
+                        vuetify.VSubheader("Interaction Mode")
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                with vuetify.VRow(dense=True, classes="px-2"):
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Pick",
+                                            small=True,
+                                            block=True,
+                                            color=("pick_mode ? 'primary' : ''",),
+                                            outlined=("!pick_mode",),
+                                            click="pick_mode = true",
+                                        )
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Rotate",
+                                            small=True,
+                                            block=True,
+                                            color=("!pick_mode ? 'primary' : ''",),
+                                            outlined=("pick_mode",),
+                                            click="pick_mode = false",
+                                        )
+                        vuetify.VDivider(classes="my-2")
                         vuetify.VSubheader("Selection")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():

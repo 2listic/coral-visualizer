@@ -41,6 +41,7 @@ class BoundaryEditState:
         self.selection_mapper = None
         self.picker = None
         self._observer_tag = None
+        self._release_observer_tag = None
 
     def clear(self):
         self.full_dataset = None
@@ -54,6 +55,7 @@ class BoundaryEditState:
         self.selection_mapper = None
         self.picker = None
         self._observer_tag = None
+        self._release_observer_tag = None
 
 
 # ---------------------------------------------------------------------------

@@ -103,6 +103,7 @@ state.assign_id_value = "0"
 state.save_filename = "output"
 state.save_status = ""
 state.save_status_type = "success"
+state.pick_mode = True
 
 
 # -----------------------------------------------------------------------------
@@ -248,8 +249,11 @@ def _apply_edit_coloring(array_name=None):
 
 
 def _on_left_button_press(obj, event):
-    """Interactor observer: pick boundary cells on left-click in edit mode."""
+    """Interactor observer: pick boundary cells or forward to camera rotation."""
     if not state.edit_mode:
+        return
+    if not state.pick_mode:
+        obj.GetInteractorStyle().OnLeftButtonDown()
         return
     x, y = obj.GetEventPosition()
     cell_id = handle_pick(x, y, renderer, _edit)
@@ -258,6 +262,13 @@ def _on_left_button_press(obj, event):
         state.flush()
         renderWindow.Render()
         ctrl.view_update()
+
+
+def _on_left_button_release(obj, event):
+    """Forward left-button release to camera style when in rotation mode."""
+    if not state.edit_mode or state.pick_mode:
+        return
+    obj.GetInteractorStyle().OnLeftButtonUp()
 
 
 _default_interactor_style = None  # saved on first edit-mode entry
@@ -280,12 +291,16 @@ def _install_pick_observer():
     style = vtkInteractorStyleTrackballCamera()
     renderWindowInteractor.SetInteractorStyle(style)
 
-    # Remove the style's left-button observer so it won't start camera
-    # rotation.  We handle left-click entirely in our own pick observer.
+    # Remove the style's left-button observers so it won't start camera
+    # rotation.  We handle left-click entirely in our own observers.
     renderWindowInteractor.RemoveObservers("LeftButtonPressEvent")
+    renderWindowInteractor.RemoveObservers("LeftButtonReleaseEvent")
 
     _edit._observer_tag = renderWindowInteractor.AddObserver(
         "LeftButtonPressEvent", _on_left_button_press
+    )
+    _edit._release_observer_tag = renderWindowInteractor.AddObserver(
+        "LeftButtonReleaseEvent", _on_left_button_release
     )
 
 
@@ -296,6 +311,9 @@ def _remove_pick_observer():
     if _edit._observer_tag is not None:
         renderWindowInteractor.RemoveObserver(_edit._observer_tag)
         _edit._observer_tag = None
+    if _edit._release_observer_tag is not None:
+        renderWindowInteractor.RemoveObserver(_edit._release_observer_tag)
+        _edit._release_observer_tag = None
 
     # Restore the original switch-based interactor style
     if _default_interactor_style is not None:
@@ -437,6 +455,7 @@ def on_edit_mode_change(edit_mode, **kwargs):
 
     if edit_mode:
         # Enter edit mode
+        state.pick_mode = True
         _edit.merged_bnd_actor.SetVisibility(1)
         if _viz and _viz.bnd_actor:
             _viz.bnd_actor.SetVisibility(0)
