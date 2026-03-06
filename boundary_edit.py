@@ -40,6 +40,8 @@ class BoundaryEditState:
         self.selection_actor = None
         self.selection_mapper = None
         self.picker = None
+        self.adjacency = None
+        self.cell_normals = None
         self._observer_tag = None
         self._release_observer_tag = None
 
@@ -54,6 +56,8 @@ class BoundaryEditState:
         self.selection_actor = None
         self.selection_mapper = None
         self.picker = None
+        self.adjacency = None
+        self.cell_normals = None
         self._observer_tag = None
         self._release_observer_tag = None
 
@@ -227,6 +231,129 @@ def build_merged_boundary_dataset(full_dataset, file_bnd_indices, extracted_subc
 
 
 # ---------------------------------------------------------------------------
+# Adjacency and normals for group selection
+# ---------------------------------------------------------------------------
+
+
+def build_adjacency_graph(bnd_dataset):
+    """Build a cell adjacency graph for the boundary dataset.
+
+    Two cells are adjacent if they share an edge (2 common points for 2-D
+    cells) or a point (for 1-D line cells).
+
+    Returns ``dict[int, set[int]]`` mapping each cell ID to its neighbors.
+    """
+    n_cells = bnd_dataset.GetNumberOfCells()
+    edge_to_cells = {}
+
+    for ci in range(n_cells):
+        cell = bnd_dataset.GetCell(ci)
+        n_pts = cell.GetNumberOfPoints()
+        pts = [int(cell.GetPointId(p)) for p in range(n_pts)]
+
+        if cell.GetCellDimension() >= 2:
+            # Adjacency via shared edges (pairs of consecutive points)
+            for i in range(n_pts):
+                edge = frozenset((pts[i], pts[(i + 1) % n_pts]))
+                edge_to_cells.setdefault(edge, []).append(ci)
+        elif cell.GetCellDimension() == 1:
+            # Line cells: adjacency via shared points
+            for pid in pts:
+                edge_to_cells.setdefault(pid, []).append(ci)
+
+    adjacency = {ci: set() for ci in range(n_cells)}
+    for cells_sharing in edge_to_cells.values():
+        for i in range(len(cells_sharing)):
+            for j in range(i + 1, len(cells_sharing)):
+                adjacency[cells_sharing[i]].add(cells_sharing[j])
+                adjacency[cells_sharing[j]].add(cells_sharing[i])
+
+    return adjacency
+
+
+def compute_cell_normals(bnd_dataset):
+    """Compute a unit normal vector for each cell in the boundary dataset.
+
+    For 2-D cells (triangles, quads): cross product of two edge vectors.
+    For 1-D cells (lines): 90-degree perpendicular in the XY plane.
+
+    Returns a list of ``(nx, ny, nz)`` tuples, one per cell.
+    """
+    import math
+
+    normals = []
+    points = bnd_dataset.GetPoints()
+
+    for ci in range(bnd_dataset.GetNumberOfCells()):
+        cell = bnd_dataset.GetCell(ci)
+        n_pts = cell.GetNumberOfPoints()
+
+        if cell.GetCellDimension() >= 2 and n_pts >= 3:
+            p0 = points.GetPoint(cell.GetPointId(0))
+            p1 = points.GetPoint(cell.GetPointId(1))
+            p2 = points.GetPoint(cell.GetPointId(2))
+
+            v1 = (p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
+            v2 = (p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2])
+
+            nx = v1[1] * v2[2] - v1[2] * v2[1]
+            ny = v1[2] * v2[0] - v1[0] * v2[2]
+            nz = v1[0] * v2[1] - v1[1] * v2[0]
+
+            length = math.sqrt(nx * nx + ny * ny + nz * nz)
+            if length > 1e-12:
+                normals.append((nx / length, ny / length, nz / length))
+            else:
+                normals.append((0.0, 0.0, 1.0))
+
+        elif cell.GetCellDimension() == 1 and n_pts >= 2:
+            p0 = points.GetPoint(cell.GetPointId(0))
+            p1 = points.GetPoint(cell.GetPointId(1))
+            dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+            length = math.sqrt(dx * dx + dy * dy)
+            if length > 1e-12:
+                normals.append((-dy / length, dx / length, 0.0))
+            else:
+                normals.append((0.0, 1.0, 0.0))
+        else:
+            normals.append((0.0, 0.0, 1.0))
+
+    return normals
+
+
+def flood_select(start_cell, adjacency, normals, angle_threshold_deg):
+    """BFS flood-fill selecting connected cells within an angle threshold.
+
+    Expands from *start_cell* to neighbors whose normal angle relative to
+    the **start cell's** normal is within *angle_threshold_deg* degrees.
+    Uses ``abs(dot)`` to handle inconsistent winding order.
+
+    Returns a ``set`` of selected cell IDs (always includes *start_cell*).
+    """
+    import math
+    from collections import deque
+
+    cos_threshold = math.cos(math.radians(angle_threshold_deg))
+    ref = normals[start_cell]
+
+    visited = {start_cell}
+    queue = deque([start_cell])
+
+    while queue:
+        current = queue.popleft()
+        for neighbor in adjacency.get(current, set()):
+            if neighbor in visited:
+                continue
+            n = normals[neighbor]
+            dot = ref[0] * n[0] + ref[1] * n[1] + ref[2] * n[2]
+            if abs(dot) >= cos_threshold:
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+    return visited
+
+
+# ---------------------------------------------------------------------------
 # Actors
 # ---------------------------------------------------------------------------
 
@@ -299,11 +426,15 @@ def create_cell_picker(bnd_actor):
     return picker
 
 
-def handle_pick(x, y, renderer, edit_state):
+def handle_pick(x, y, renderer, edit_state, group_select=False, angle_threshold=15.0):
     """
     Pick at screen coordinates *(x, y)* and toggle the cell in *selection_set*.
 
-    Returns the cell ID that was toggled, or ``None`` if nothing was picked.
+    When *group_select* is ``True`` and adjacency/normals are available, a
+    flood-fill selects (or deselects) all connected cells within
+    *angle_threshold* degrees of the picked cell's normal.
+
+    Returns the cell ID that was picked, or ``None`` if nothing was hit.
     """
     result = edit_state.picker.Pick(x, y, 0, renderer)
     if result == 0:
@@ -313,10 +444,19 @@ def handle_pick(x, y, renderer, edit_state):
     if cell_id < 0:
         return None
 
-    if cell_id in edit_state.selection_set:
-        edit_state.selection_set.discard(cell_id)
+    if group_select and edit_state.adjacency and edit_state.cell_normals:
+        group = flood_select(
+            cell_id, edit_state.adjacency, edit_state.cell_normals, angle_threshold
+        )
+        if cell_id in edit_state.selection_set:
+            edit_state.selection_set -= group
+        else:
+            edit_state.selection_set |= group
     else:
-        edit_state.selection_set.add(cell_id)
+        if cell_id in edit_state.selection_set:
+            edit_state.selection_set.discard(cell_id)
+        else:
+            edit_state.selection_set.add(cell_id)
 
     update_selection_actor(
         edit_state.selection_set,

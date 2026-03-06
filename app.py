@@ -23,6 +23,8 @@ from boundary_edit import (
     BoundaryEditState,
     extract_all_boundary_subcells,
     build_merged_boundary_dataset,
+    build_adjacency_graph,
+    compute_cell_normals,
     create_boundary_actor,
     create_selection_actor,
     create_cell_picker,
@@ -104,6 +106,8 @@ state.save_filename = "output"
 state.save_status = ""
 state.save_status_type = "success"
 state.pick_mode = True
+state.group_select = False
+state.angle_threshold = 15
 
 
 # -----------------------------------------------------------------------------
@@ -214,6 +218,8 @@ def _setup_edit_infrastructure():
     )
     _edit.selection_actor, _edit.selection_mapper = create_selection_actor()
     _edit.picker = create_cell_picker(_edit.merged_bnd_actor)
+    _edit.adjacency = build_adjacency_graph(_edit.merged_bnd_dataset)
+    _edit.cell_normals = compute_cell_normals(_edit.merged_bnd_dataset)
 
     renderer.AddActor(_edit.merged_bnd_actor)
     renderer.AddActor(_edit.selection_actor)
@@ -256,7 +262,14 @@ def _on_left_button_press(obj, event):
         obj.GetInteractorStyle().OnLeftButtonDown()
         return
     x, y = obj.GetEventPosition()
-    cell_id = handle_pick(x, y, renderer, _edit)
+    cell_id = handle_pick(
+        x,
+        y,
+        renderer,
+        _edit,
+        group_select=state.group_select,
+        angle_threshold=state.angle_threshold,
+    )
     if cell_id is not None:
         state.selection_count = len(_edit.selection_set)
         state.flush()

@@ -152,6 +152,29 @@ def build_ui(server, renderWindow):
                                         )
 
                         vuetify.VDivider(classes="my-2")
+                        vuetify.VSubheader("Group Selection")
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VSwitch(
+                                    v_model=("group_select",),
+                                    label="Select Flat Region",
+                                    hide_details=True,
+                                    dense=True,
+                                )
+                        with vuetify.VListItem(v_show="group_select"):
+                            with vuetify.VListItemContent():
+                                vuetify.VSlider(
+                                    v_model=("angle_threshold",),
+                                    label="Angle",
+                                    min=0,
+                                    max=90,
+                                    step=1,
+                                    thumb_label="always",
+                                    hide_details=True,
+                                    dense=True,
+                                )
+
+                        vuetify.VDivider(classes="my-2")
                         vuetify.VSubheader("Assign Boundary ID")
 
                         with vuetify.VListItem():
