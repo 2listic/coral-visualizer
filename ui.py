@@ -100,6 +100,7 @@ def build_ui(server, renderWindow):
                     style="z-index: 5;",
                 ):
                     with vuetify.VList(dense=True):
+
                         vuetify.VSubheader("Interaction Mode")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
@@ -151,28 +152,43 @@ def build_ui(server, renderWindow):
                                             click=ctrl.select_all,
                                         )
 
-                        vuetify.VDivider(classes="my-2")
-                        vuetify.VSubheader("Group Selection")
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
+                        with vuetify.VListItem(
+                            dense=True,
+                        ):
+                            with vuetify.VListItemContent(
+                                classes="pt-0",
+                            ):
                                 vuetify.VSwitch(
                                     v_model=("group_select",),
                                     label="Select Flat Region",
                                     hide_details=True,
                                     dense=True,
+                                    classes="pl-2",
                                 )
-                        with vuetify.VListItem(v_show="group_select"):
-                            with vuetify.VListItemContent():
-                                vuetify.VSlider(
-                                    v_model=("angle_threshold",),
-                                    label="Angle",
-                                    min=0,
-                                    max=90,
-                                    step=1,
-                                    thumb_label="always",
-                                    hide_details=True,
-                                    dense=True,
-                                )
+                        with vuetify.VListItem(dense=True):
+                            with vuetify.VRow(
+                                dense=True,
+                                align="center",
+                                no_gutters=True,
+                                classes="px-2",
+                            ):
+                                with vuetify.VCol():
+                                    vuetify.VSlider(
+                                        v_model=("angle_threshold",),
+                                        label="Angle",
+                                        min=0,
+                                        max=90,
+                                        step=1,
+                                        hide_details=True,
+                                        dense=True,
+                                        disabled=("!group_select",),
+                                    )
+                                with vuetify.VCol(cols="auto"):
+                                    vuetify.VChip(
+                                        "{{ angle_threshold }}°",
+                                        x_small=True,
+                                        disabled=("!group_select",),
+                                    )
 
                         vuetify.VDivider(classes="my-2")
                         vuetify.VSubheader("Assign Boundary ID")
