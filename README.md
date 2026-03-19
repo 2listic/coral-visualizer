@@ -28,6 +28,16 @@ or using the custom `file` argument plus any Trame argument (i.e. `port`)
 
 `black app.py`
 
+## Inspecting VTU files
+
+`inspect_vtu.py` decodes and prints all cell types and data arrays from a `.vtu` file (binary/compressed and not human-readable).
+
+```bash
+source .venv/bin/activate
+python3 inspect_vtu.py data/output.vtu            # print to console
+python3 inspect_vtu.py data/output.vtu -o out.txt # write to file
+```
+
 ## Usage with Docker
 
 Original example at the official [Trame repo](https://github.com/Kitware/trame/tree/master/examples/deploy/docker/SingleFile).
