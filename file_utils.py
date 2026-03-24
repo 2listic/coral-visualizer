@@ -15,15 +15,33 @@ def get_vtk_files_from_data_folder():
     # Support both legacy .vtk and XML format .vtu
     supported_extensions = (".vtk", ".vtu")
 
-    vtk_files = []
-    for filename in os.listdir(data_folder):
-        if filename.lower().endswith(supported_extensions):
-            full_path = os.path.join(data_folder, filename)
-            vtk_files.append({"text": filename, "value": full_path})
+    # Collect files grouped by subfolder (relative to data_folder)
+    groups = {}  # subfolder_rel_path -> list of {text, value}
+    for dirpath, dirnames, filenames in os.walk(data_folder):
+        dirnames.sort()  # traverse subdirs alphabetically
+        matching = sorted(
+            f for f in filenames if f.lower().endswith(supported_extensions)
+        )
+        if not matching:
+            continue
+        rel_dir = os.path.relpath(dirpath, data_folder)
+        groups[rel_dir] = [
+            {"text": f, "value": os.path.join(dirpath, f)} for f in matching
+        ]
 
-    # Sort alphabetically
-    vtk_files.sort(key=lambda x: x["text"])
-    return vtk_files
+    # Build flat item list with group headers for subfolders
+    items = []
+    # Root files first (rel_dir == ".")
+    if "." in groups:
+        items.extend(groups.pop("."))
+
+    for rel_dir in sorted(groups):
+        if items:
+            items.append({"divider": True})
+        items.append({"header": rel_dir})
+        items.extend(groups[rel_dir])
+
+    return items
 
 
 def detect_and_create_reader(filename):

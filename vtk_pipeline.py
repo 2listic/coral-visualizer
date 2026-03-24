@@ -164,8 +164,9 @@ def build_scalar_bar(
     bar.SetWidth(width)
     bar.SetHeight(height)
     bar.SetNumberOfLabels(min(lut.GetNumberOfTableValues(), max_labels))
-    bar.GetTitleTextProperty().SetFontSize(10)
-    bar.GetLabelTextProperty().SetFontSize(9)
+    bar.UnconstrainedFontSizeOn()
+    bar.GetTitleTextProperty().SetFontSize(25)
+    bar.GetLabelTextProperty().SetFontSize(10)
     return bar
 
 
