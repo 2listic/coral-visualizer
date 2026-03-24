@@ -12,8 +12,8 @@ def get_vtk_files_from_data_folder():
         print(f"Warning: Data folder not found: {data_folder}")
         return []
 
-    # Support both legacy .vtk and XML format .vtu
-    supported_extensions = (".vtk", ".vtu")
+    # Support both legacy .vtk and XML format .vtu/.pvtu
+    supported_extensions = (".vtk", ".vtu", ".pvtu")
 
     # Collect files grouped by subfolder (relative to data_folder)
     groups = {}  # subfolder_rel_path -> list of {text, value}
@@ -53,6 +53,7 @@ def detect_and_create_reader(filename):
     )
     from vtkmodules.vtkIOXML import (
         vtkXMLUnstructuredGridReader,
+        vtkXMLPUnstructuredGridReader,
     )
 
     ext = os.path.splitext(filename)[1].lower()
@@ -60,6 +61,9 @@ def detect_and_create_reader(filename):
     if ext == ".vtu":
         print(f"Detected VTK XML UnstructuredGrid format (.vtu)")
         return vtkXMLUnstructuredGridReader()
+    elif ext == ".pvtu":
+        print(f"Detected VTK XML Parallel UnstructuredGrid format (.pvtu)")
+        return vtkXMLPUnstructuredGridReader()
     elif ext == ".vtk":
         print(f"Detected VTK legacy format (.vtk), reading header...")
         with open(filename, "rb") as f:
@@ -92,4 +96,6 @@ def detect_and_create_reader(filename):
         reader.ReadAllVectorsOn()
         return reader
     else:
-        raise ValueError(f"Unsupported file format: {ext}. Supported: .vtk, .vtu")
+        raise ValueError(
+            f"Unsupported file format: {ext}. Supported: .vtk, .vtu, .pvtu"
+        )
