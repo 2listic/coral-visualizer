@@ -1,3 +1,6 @@
+# TODO: rename this file (e.g. mesh_edit.py) to reflect that it handles both
+#       boundary and volume cell editing, not just boundary cells.
+
 """
 Mesh cell editing: extraction, selection, ID assignment, and save.
 
