@@ -4,10 +4,12 @@ from trame.app import get_server
 
 from constants import (
     ARRAY_SOLID,
+    BOUNDARY,
     CELL_PREFIX,
     MANIFOLD_ID_ARRAY,
     MATERIAL_ID_ARRAY,
     REPR_SURFACE_EDGES,
+    VOLUME,
 )
 from file_utils import get_vtk_files_from_data_folder, CURRENT_DIRECTORY
 from vtk_pipeline import (
@@ -99,7 +101,7 @@ state.has_boundary = False
 
 # Edit mode state
 state.edit_mode = False
-state.edit_target = "boundary"  # "boundary" | "volume"
+state.edit_target = BOUNDARY  # BOUNDARY | VOLUME
 state.selection_count = 0
 state.assign_id_value = "0"
 state.save_filename = "output"
@@ -238,12 +240,12 @@ def _setup_edit_infrastructure():
 def _apply_edit_coloring(edit_target):
     """Apply coloring and actor visibility for the given edit target.
 
-    "boundary": shows the boundary overlay with categorical MaterialID coloring,
+    BOUNDARY: shows the boundary overlay with categorical MaterialID coloring,
       sets the volume actor to solid gray.
-    "volume": hides the boundary overlay, applies categorical MaterialID coloring
+    VOLUME: hides the boundary overlay, applies categorical MaterialID coloring
       to the volume actor.
     """
-    if edit_target == "boundary":
+    if edit_target == BOUNDARY:
         if _edit.merged_bnd_actor:
             _edit.merged_bnd_actor.SetVisibility(1)
         if _edit.merged_bnd_dataset is not None and _edit.merged_bnd_mapper is not None:
@@ -263,7 +265,7 @@ def _apply_edit_coloring(edit_target):
             _viz.vol_mapper.ScalarVisibilityOff()
             _viz.vol_actor.GetProperty().SetColor(0.7, 0.7, 0.7)
         _remove_active_coloring_bar()
-    else:  # "volume"
+    else:  # VOLUME
         if _edit.merged_bnd_actor:
             _edit.merged_bnd_actor.SetVisibility(0)
         _remove_bnd_coloring_bar()
@@ -298,7 +300,7 @@ def _on_left_button_press(obj, event):
         obj.GetInteractorStyle().OnLeftButtonDown()
         return
     x, y = obj.GetEventPosition()
-    if state.edit_target == "volume":
+    if state.edit_target == VOLUME:
         cell_id = handle_vol_pick(x, y, renderer, _edit)
         if cell_id is not None:
             state.selection_count = len(_edit.vol_selection_set)
@@ -493,11 +495,11 @@ def on_edit_mode_change(edit_mode, **kwargs):
 
     if edit_mode:
         # Enter edit mode — always start in boundary target
-        state.edit_target = "boundary"
+        state.edit_target = BOUNDARY
         state.pick_mode = True
         if _viz and _viz.bnd_actor:
             _viz.bnd_actor.SetVisibility(0)
-        _apply_edit_coloring("boundary")
+        _apply_edit_coloring(BOUNDARY)
         _install_pick_observer()
     else:
         # Exit edit mode
@@ -564,7 +566,7 @@ def on_edit_target_change(edit_target, **kwargs):
 @ctrl.add("clear_selection")
 def clear_selection():
     """Clear all selected cells (boundary or volume depending on edit_target)."""
-    if state.edit_target == "volume":
+    if state.edit_target == VOLUME:
         _edit.vol_selection_set.clear()
         if _edit.vol_dataset is not None:
             update_selection_actor(
@@ -589,7 +591,7 @@ def clear_selection():
 @ctrl.add("select_all")
 def select_all():
     """Select all cells (boundary or volume depending on edit_target)."""
-    if state.edit_target == "volume":
+    if state.edit_target == VOLUME:
         if _edit.vol_dataset is not None:
             n = _edit.vol_dataset.GetNumberOfCells()
             _edit.vol_selection_set = set(range(n))
@@ -602,7 +604,7 @@ def select_all():
             state.selection_count = n
             renderWindow.Render()
             ctrl.view_update()
-    else:
+    else:  # boundary
         if _edit.merged_bnd_dataset is not None:
             n = _edit.merged_bnd_dataset.GetNumberOfCells()
             _edit.selection_set = set(range(n))
@@ -626,7 +628,7 @@ def assign_id():
         state.error_message = "Invalid ID value — must be an integer"
         return
 
-    if state.edit_target == "volume":
+    if state.edit_target == VOLUME:
         if not _edit.vol_selection_set or _edit.vol_dataset is None:
             return
 
@@ -637,7 +639,7 @@ def assign_id():
             arr.SetValue(cell_idx, value)
         _edit.vol_dataset.Modified()
 
-        _apply_edit_coloring("volume")
+        _apply_edit_coloring(VOLUME)
 
         _edit.vol_selection_set.clear()
         update_selection_actor(
@@ -651,7 +653,7 @@ def assign_id():
             return
 
         assign_id_to_selection(_edit, MATERIAL_ID_ARRAY, value)
-        _apply_edit_coloring("boundary")
+        _apply_edit_coloring(BOUNDARY)
 
         _edit.selection_set.clear()
         update_selection_actor(
