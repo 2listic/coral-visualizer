@@ -1,10 +1,14 @@
 """
-Boundary cell editing: extraction, selection, ID assignment, and save.
+Mesh cell editing: extraction, selection, ID assignment, and save.
 
-Provides the logic for extracting all exterior boundary cells from a deal.II
-mesh (including those not explicitly present in the file), selecting them
-interactively, assigning BoundaryID values, and saving the result as .vtu.
-ManifoldID values are preserved (read and written back) but not edited here.
+Provides the logic for:
+- Extracting all exterior boundary cells from a deal.II mesh (including those
+  not explicitly present in the file), selecting them interactively, and
+  assigning BoundaryID (MaterialID) values.
+- Selecting volume cells interactively and assigning MaterialID values.
+
+The result can be saved as .vtu. ManifoldID values are preserved (read and
+written back) but not edited here.
 """
 
 from vtkmodules.vtkCommonCore import vtkIdList, vtkIntArray
