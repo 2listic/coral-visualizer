@@ -34,22 +34,8 @@ def build_ui(server, renderWindow):
                 outlined=True,
                 style="max-width: 150px;",
                 classes="mr-2",
+                disabled=("edit_mode",),
             )
-            # vuetify.VSwitch(
-            #     v_model=("show_boundary",),
-            #     label="Boundaries",
-            #     hide_details=True,
-            #     dense=True,
-            #     v_show=("has_boundary",),
-            #     classes="mr-4 mt-1",
-            # )
-            # vuetify.VSwitch(
-            #     v_model=("show_scalar_bars",),
-            #     label="Legend",
-            #     hide_details=True,
-            #     dense=True,
-            #     classes="mr-4 mt-1",
-            # )
             vuetify.VSelect(
                 v_model=("representation",),
                 items=(
@@ -124,6 +110,33 @@ def build_ui(server, renderWindow):
                                             click="pick_mode = false",
                                         )
                         vuetify.VDivider(classes="my-2")
+                        vuetify.VSubheader("Edit Target")
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                with vuetify.VRow(dense=True, classes="px-2"):
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Boundary",
+                                            small=True,
+                                            block=True,
+                                            color=(
+                                                "edit_target === 'boundary' ? 'primary' : ''",
+                                            ),
+                                            outlined=("edit_target !== 'boundary'",),
+                                            click="edit_target = 'boundary'",
+                                        )
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Volume",
+                                            small=True,
+                                            block=True,
+                                            color=(
+                                                "edit_target === 'volume' ? 'primary' : ''",
+                                            ),
+                                            outlined=("edit_target !== 'volume'",),
+                                            click="edit_target = 'volume'",
+                                        )
+                        # vuetify.VDivider(classes="my-2")
                         vuetify.VSubheader("Selection")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
@@ -164,6 +177,7 @@ def build_ui(server, renderWindow):
                                     hide_details=True,
                                     dense=True,
                                     classes="pl-2",
+                                    disabled=("edit_target === 'volume'",),
                                 )
                         with vuetify.VListItem(dense=True):
                             with vuetify.VRow(
@@ -181,17 +195,23 @@ def build_ui(server, renderWindow):
                                         step=1,
                                         hide_details=True,
                                         dense=True,
-                                        disabled=("!group_select",),
+                                        disabled=(
+                                            "!group_select || edit_target === 'volume'",
+                                        ),
                                     )
                                 with vuetify.VCol(cols="auto"):
                                     vuetify.VChip(
                                         "{{ angle_threshold }}°",
                                         x_small=True,
-                                        disabled=("!group_select",),
+                                        disabled=(
+                                            "!group_select || edit_target === 'volume'",
+                                        ),
                                     )
 
-                        vuetify.VDivider(classes="my-2")
-                        vuetify.VSubheader("Assign Boundary ID")
+                        # vuetify.VDivider(classes="my-2")
+                        vuetify.VSubheader(
+                            "{{ edit_target === 'volume' ? 'Assign Material ID' : 'Assign Boundary ID' }}"
+                        )
 
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():

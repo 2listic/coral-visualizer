@@ -29,6 +29,7 @@ from boundary_edit import (
     create_selection_actor,
     create_cell_picker,
     handle_pick,
+    handle_vol_pick,
     assign_id_to_selection,
     update_selection_actor,
     save_as_vtu,
@@ -59,9 +60,9 @@ renderer, renderWindow, renderWindowInteractor = create_vtk_rendering_context()
 
 # Module-level pipeline references (updated whenever a file is loaded)
 _viz = None  # VisualizationResult | None
-_active_coloring_bar = None  # scalar bar tracking the current "Color by" selection
+_active_coloring_bar = None  # bottom-left scalar bar: "Color by" in view mode; MaterialID in volume edit target
 _active_lut = None  # LUT currently used for the "Color by" coloring
-_bnd_coloring_bar = None  # scalar bar for boundary IDs (only when MaterialID selected)
+_bnd_coloring_bar = None  # upper-left scalar bar: boundary IDs in view mode (MaterialID selected) or boundary edit target
 
 # Boundary editing state
 _edit = BoundaryEditState()
@@ -94,12 +95,11 @@ state.error_message = ""
 state.available_arrays = _initial_arrays
 state.selected_array = _initial_array
 state.representation = DEFAULT_REPRESENTATION
-state.show_boundary = True
-state.show_scalar_bars = True
 state.has_boundary = False
 
 # Edit mode state
 state.edit_mode = False
+state.edit_target = "boundary"  # "boundary" | "volume"
 state.selection_count = 0
 state.assign_id_value = "0"
 state.save_filename = "output"
@@ -133,60 +133,64 @@ def _array_label(array_value):
     return array_value
 
 
-def _update_bnd_coloring_bar(lut):
-    """Replace the boundary coloring bar with one built from *lut* (or remove it)."""
-    global _bnd_coloring_bar
+def _remove_active_coloring_bar():
+    """Remove the bottom-left active coloring bar from the renderer."""
+    global _active_coloring_bar
+    if _active_coloring_bar is not None:
+        renderer.RemoveActor(_active_coloring_bar)
+        _active_coloring_bar = None
 
+
+def _set_active_coloring_bar(lut, label):
+    """Replace the bottom-left active coloring bar with one built from *lut*."""
+    global _active_coloring_bar
+    _remove_active_coloring_bar()
+    _active_coloring_bar = build_scalar_bar(
+        lut,
+        label,
+        position=(0.05, 0.05),
+        width=0.08,
+        height=0.35,
+    )
+    renderer.AddActor(_active_coloring_bar)
+
+
+def _remove_bnd_coloring_bar():
+    """Remove the upper-left boundary coloring bar from the renderer."""
+    global _bnd_coloring_bar
     if _bnd_coloring_bar is not None:
         renderer.RemoveActor(_bnd_coloring_bar)
         _bnd_coloring_bar = None
-    if lut is not None:
-        _bnd_coloring_bar = build_scalar_bar(
-            lut,
-            "Boundary ID",
-            position=(0.05, 0.45),
-            width=0.08,
-            height=0.35,
-        )
-        _bnd_coloring_bar.SetVisibility(1 if state.show_scalar_bars else 0)
-        renderer.AddActor(_bnd_coloring_bar)
+
+
+def _set_bnd_coloring_bar(lut):
+    """Replace the upper-left boundary coloring bar with one built from *lut*."""
+    global _bnd_coloring_bar
+    _remove_bnd_coloring_bar()
+    _bnd_coloring_bar = build_scalar_bar(
+        lut,
+        "Boundary ID",
+        position=(0.05, 0.45),
+        width=0.08,
+        height=0.35,
+    )
+    renderer.AddActor(_bnd_coloring_bar)
 
 
 def _update_scalar_bars(active_lut, array_value):
     """Manage all scalar bars: the active coloring bar and the boundary ID bar."""
-    global _active_coloring_bar
-
-    # --- Active coloring bar (tracks "Color by" selection) ---
-    if _active_coloring_bar is not None:
-        renderer.RemoveActor(_active_coloring_bar)
-        _active_coloring_bar = None
     if active_lut is not None:
-        _active_coloring_bar = build_scalar_bar(
-            active_lut,
-            _array_label(array_value),
-            position=(0.05, 0.05),
-            width=0.08,
-            height=0.35,
-        )
-        renderer.AddActor(_active_coloring_bar)
+        _set_active_coloring_bar(active_lut, _array_label(array_value))
+    else:
+        _remove_active_coloring_bar()
 
-    # --- Boundary coloring bar (only when MaterialID selected + boundary exists) ---
+    # Boundary coloring bar only when MaterialID selected + boundary exists in view mode
     is_material_id = array_value == f"{CELL_PREFIX}{MATERIAL_ID_ARRAY}"
     bnd_lut = _viz.bnd_luts.get(MATERIAL_ID_ARRAY) if is_material_id and _viz else None
-    _update_bnd_coloring_bar(bnd_lut)
-
-    _apply_scalar_bar_visibility(state.show_scalar_bars)
-
-
-def _apply_boundary_visibility(show):
-    if _viz and _viz.bnd_actor:
-        _viz.bnd_actor.SetVisibility(1 if show else 0)
-
-
-def _apply_scalar_bar_visibility(show):
-    for bar in (_active_coloring_bar, _bnd_coloring_bar):
-        if bar is not None:
-            bar.SetVisibility(1 if show else 0)
+    if bnd_lut is not None:
+        _set_bnd_coloring_bar(bnd_lut)
+    else:
+        _remove_bnd_coloring_bar()
 
 
 def _setup_edit_infrastructure():
@@ -224,29 +228,61 @@ def _setup_edit_infrastructure():
     renderer.AddActor(_edit.merged_bnd_actor)
     renderer.AddActor(_edit.selection_actor)
 
+    # Volume cell editing infrastructure
+    _edit.vol_dataset = _viz.vol_dataset
+    _edit.vol_picker = create_cell_picker(_viz.vol_actor)
+    _edit.vol_selection_actor, _edit.vol_selection_mapper = create_selection_actor()
+    renderer.AddActor(_edit.vol_selection_actor)
 
-def _apply_edit_coloring(array_name=None):
-    """Apply categorical coloring to the merged boundary actor and update scalar bar."""
-    if _edit.merged_bnd_dataset is None or _edit.merged_bnd_mapper is None:
-        return
-    if array_name is None:
-        array_name = MATERIAL_ID_ARRAY
 
-    arr = _edit.merged_bnd_dataset.GetCellData().GetArray(array_name)
-    if arr is None:
-        return
+def _apply_edit_coloring(edit_target):
+    """Apply coloring and actor visibility for the given edit target.
 
-    unique_ids = sorted(
-        set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
-    )
-    lut, _ = build_categorical_lut(unique_ids)
-    _edit.merged_bnd_mapper.ScalarVisibilityOn()
-    _edit.merged_bnd_mapper.SetScalarModeToUseCellFieldData()
-    _edit.merged_bnd_mapper.SelectColorArray(array_name)
-    _edit.merged_bnd_mapper.SetLookupTable(lut)
-    _edit.merged_bnd_mapper.UseLookupTableScalarRangeOn()
-
-    _update_bnd_coloring_bar(lut)
+    "boundary": shows the boundary overlay with categorical MaterialID coloring,
+      sets the volume actor to solid gray.
+    "volume": hides the boundary overlay, applies categorical MaterialID coloring
+      to the volume actor.
+    """
+    if edit_target == "boundary":
+        if _edit.merged_bnd_actor:
+            _edit.merged_bnd_actor.SetVisibility(1)
+        if _edit.merged_bnd_dataset is not None and _edit.merged_bnd_mapper is not None:
+            arr = _edit.merged_bnd_dataset.GetCellData().GetArray(MATERIAL_ID_ARRAY)
+            if arr is not None:
+                unique_ids = sorted(
+                    set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
+                )
+                lut, _ = build_categorical_lut(unique_ids)
+                _edit.merged_bnd_mapper.ScalarVisibilityOn()
+                _edit.merged_bnd_mapper.SetScalarModeToUseCellFieldData()
+                _edit.merged_bnd_mapper.SelectColorArray(MATERIAL_ID_ARRAY)
+                _edit.merged_bnd_mapper.SetLookupTable(lut)
+                _edit.merged_bnd_mapper.UseLookupTableScalarRangeOn()
+                _set_bnd_coloring_bar(lut)
+        if _viz:
+            _viz.vol_mapper.ScalarVisibilityOff()
+            _viz.vol_actor.GetProperty().SetColor(0.7, 0.7, 0.7)
+        _remove_active_coloring_bar()
+    else:  # "volume"
+        if _edit.merged_bnd_actor:
+            _edit.merged_bnd_actor.SetVisibility(0)
+        _remove_bnd_coloring_bar()
+        if _edit.vol_dataset is None or _viz is None:
+            return
+        arr = _edit.vol_dataset.GetCellData().GetArray(MATERIAL_ID_ARRAY)
+        if arr is None:
+            return
+        unique_ids = sorted(
+            set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
+        )
+        lut, _ = build_categorical_lut(unique_ids)
+        _viz.vol_mapper.ScalarVisibilityOn()
+        _viz.vol_mapper.SetScalarModeToUseCellFieldData()
+        _viz.vol_mapper.SelectColorArray(MATERIAL_ID_ARRAY)
+        _viz.vol_mapper.SetLookupTable(lut)
+        _viz.vol_mapper.UseLookupTableScalarRangeOn()
+        _viz.vol_dataset.Modified()
+        _set_active_coloring_bar(lut, "Material ID")
 
 
 # ---------------------------------------------------------------------------
@@ -255,26 +291,34 @@ def _apply_edit_coloring(array_name=None):
 
 
 def _on_left_button_press(obj, event):
-    """Interactor observer: pick boundary cells or forward to camera rotation."""
+    """Interactor observer: pick boundary/volume cells or forward to camera rotation."""
     if not state.edit_mode:
         return
     if not state.pick_mode:
         obj.GetInteractorStyle().OnLeftButtonDown()
         return
     x, y = obj.GetEventPosition()
-    cell_id = handle_pick(
-        x,
-        y,
-        renderer,
-        _edit,
-        group_select=state.group_select,
-        angle_threshold=state.angle_threshold,
-    )
-    if cell_id is not None:
-        state.selection_count = len(_edit.selection_set)
-        state.flush()
-        renderWindow.Render()
-        ctrl.view_update()
+    if state.edit_target == "volume":
+        cell_id = handle_vol_pick(x, y, renderer, _edit)
+        if cell_id is not None:
+            state.selection_count = len(_edit.vol_selection_set)
+            state.flush()
+            renderWindow.Render()
+            ctrl.view_update()
+    else:
+        cell_id = handle_pick(
+            x,
+            y,
+            renderer,
+            _edit,
+            group_select=state.group_select,
+            angle_threshold=state.angle_threshold,
+        )
+        if cell_id is not None:
+            state.selection_count = len(_edit.selection_set)
+            state.flush()
+            renderWindow.Render()
+            ctrl.view_update()
 
 
 def _on_left_button_release(obj, event):
@@ -381,7 +425,6 @@ def on_file_change(selected_file, **kwargs):
                 )
             apply_representation(_viz.vol_actor, _viz.bnd_actor, state.representation)
             _update_scalar_bars(_active_lut, default_array)
-            _apply_boundary_visibility(state.show_boundary)
 
             # Set up boundary editing infrastructure
             _setup_edit_infrastructure()
@@ -439,24 +482,6 @@ def on_representation_change(representation, **kwargs):
         ctrl.view_update()
 
 
-@state.change("show_boundary")
-def on_show_boundary_change(show_boundary, **kwargs):
-    """Show or hide the boundary cells actor and its scalar bar."""
-    _apply_boundary_visibility(show_boundary)
-    if _viz is not None:
-        renderWindow.Render()
-        ctrl.view_update()
-
-
-@state.change("show_scalar_bars")
-def on_show_scalar_bars_change(show_scalar_bars, **kwargs):
-    """Show or hide all scalar bar legends."""
-    _apply_scalar_bar_visibility(show_scalar_bars)
-    if _viz is not None:
-        renderWindow.Render()
-        ctrl.view_update()
-
-
 @state.change("edit_mode")
 def on_edit_mode_change(edit_mode, **kwargs):
     """Toggle between view mode and boundary edit mode."""
@@ -467,12 +492,12 @@ def on_edit_mode_change(edit_mode, **kwargs):
         return
 
     if edit_mode:
-        # Enter edit mode
+        # Enter edit mode — always start in boundary target
+        state.edit_target = "boundary"
         state.pick_mode = True
-        _edit.merged_bnd_actor.SetVisibility(1)
         if _viz and _viz.bnd_actor:
             _viz.bnd_actor.SetVisibility(0)
-        _apply_edit_coloring(MATERIAL_ID_ARRAY)
+        _apply_edit_coloring("boundary")
         _install_pick_observer()
     else:
         # Exit edit mode
@@ -480,11 +505,52 @@ def on_edit_mode_change(edit_mode, **kwargs):
         _edit.merged_bnd_actor.SetVisibility(0)
         _edit.selection_actor.SetVisibility(0)
         _edit.selection_set.clear()
+        if _edit.vol_selection_actor:
+            _edit.vol_selection_actor.SetVisibility(0)
+        _edit.vol_selection_set.clear()
         state.selection_count = 0
         if _viz and _viz.bnd_actor:
-            _viz.bnd_actor.SetVisibility(1 if state.show_boundary else 0)
-        # Restore boundary scalar bar from the saved view-mode LUT
+            _viz.bnd_actor.SetVisibility(1)
+        # Restore boundary scalar bar and volume coloring from the saved view-mode LUT
         _update_scalar_bars(_active_lut, state.selected_array)
+        if _viz:
+            apply_coloring(
+                _viz.vol_actor,
+                _viz.vol_mapper,
+                _viz.vol_dataset,
+                state.selected_array,
+                _viz.vol_luts,
+            )
+
+    renderWindow.Render()
+    ctrl.view_update()
+
+
+@state.change("edit_target")
+def on_edit_target_change(edit_target, **kwargs):
+    """Switch between boundary and volume edit targets, clearing the selection."""
+    if not state.edit_mode:
+        return
+
+    # Clear both selections
+    _edit.selection_set.clear()
+    _edit.vol_selection_set.clear()
+    update_selection_actor(
+        _edit.selection_set,
+        _edit.merged_bnd_dataset,
+        _edit.selection_actor,
+        _edit.selection_mapper,
+    )
+    if _edit.vol_dataset is not None:
+        update_selection_actor(
+            _edit.vol_selection_set,
+            _edit.vol_dataset,
+            _edit.vol_selection_actor,
+            _edit.vol_selection_mapper,
+        )
+    state.selection_count = 0
+
+    _apply_edit_coloring(edit_target)
 
     renderWindow.Render()
     ctrl.view_update()
@@ -497,14 +563,24 @@ def on_edit_mode_change(edit_mode, **kwargs):
 
 @ctrl.add("clear_selection")
 def clear_selection():
-    """Clear all selected boundary cells."""
-    _edit.selection_set.clear()
-    update_selection_actor(
-        _edit.selection_set,
-        _edit.merged_bnd_dataset,
-        _edit.selection_actor,
-        _edit.selection_mapper,
-    )
+    """Clear all selected cells (boundary or volume depending on edit_target)."""
+    if state.edit_target == "volume":
+        _edit.vol_selection_set.clear()
+        if _edit.vol_dataset is not None:
+            update_selection_actor(
+                _edit.vol_selection_set,
+                _edit.vol_dataset,
+                _edit.vol_selection_actor,
+                _edit.vol_selection_mapper,
+            )
+    else:
+        _edit.selection_set.clear()
+        update_selection_actor(
+            _edit.selection_set,
+            _edit.merged_bnd_dataset,
+            _edit.selection_actor,
+            _edit.selection_mapper,
+        )
     state.selection_count = 0
     renderWindow.Render()
     ctrl.view_update()
@@ -512,48 +588,80 @@ def clear_selection():
 
 @ctrl.add("select_all")
 def select_all():
-    """Select all boundary cells."""
-    if _edit.merged_bnd_dataset is not None:
-        n = _edit.merged_bnd_dataset.GetNumberOfCells()
-        _edit.selection_set = set(range(n))
-        update_selection_actor(
-            _edit.selection_set,
-            _edit.merged_bnd_dataset,
-            _edit.selection_actor,
-            _edit.selection_mapper,
-        )
-        state.selection_count = n
-        renderWindow.Render()
-        ctrl.view_update()
+    """Select all cells (boundary or volume depending on edit_target)."""
+    if state.edit_target == "volume":
+        if _edit.vol_dataset is not None:
+            n = _edit.vol_dataset.GetNumberOfCells()
+            _edit.vol_selection_set = set(range(n))
+            update_selection_actor(
+                _edit.vol_selection_set,
+                _edit.vol_dataset,
+                _edit.vol_selection_actor,
+                _edit.vol_selection_mapper,
+            )
+            state.selection_count = n
+            renderWindow.Render()
+            ctrl.view_update()
+    else:
+        if _edit.merged_bnd_dataset is not None:
+            n = _edit.merged_bnd_dataset.GetNumberOfCells()
+            _edit.selection_set = set(range(n))
+            update_selection_actor(
+                _edit.selection_set,
+                _edit.merged_bnd_dataset,
+                _edit.selection_actor,
+                _edit.selection_mapper,
+            )
+            state.selection_count = n
+            renderWindow.Render()
+            ctrl.view_update()
 
 
 @ctrl.add("assign_id")
 def assign_id():
-    """Assign the chosen ID value to all selected boundary cells."""
-    if not _edit.selection_set or _edit.merged_bnd_dataset is None:
-        return
-
+    """Assign the chosen ID value to all selected cells (boundary or volume)."""
     try:
         value = int(state.assign_id_value)
     except (ValueError, TypeError):
         state.error_message = "Invalid ID value — must be an integer"
         return
 
-    assign_id_to_selection(_edit, MATERIAL_ID_ARRAY, value)
+    if state.edit_target == "volume":
+        if not _edit.vol_selection_set or _edit.vol_dataset is None:
+            return
 
-    # Rebuild coloring for the merged boundary actor
-    _apply_edit_coloring(MATERIAL_ID_ARRAY)
+        arr = _edit.vol_dataset.GetCellData().GetArray(MATERIAL_ID_ARRAY)
+        if arr is None:
+            return
+        for cell_idx in _edit.vol_selection_set:
+            arr.SetValue(cell_idx, value)
+        _edit.vol_dataset.Modified()
 
-    # Clear selection after assignment
-    _edit.selection_set.clear()
-    update_selection_actor(
-        _edit.selection_set,
-        _edit.merged_bnd_dataset,
-        _edit.selection_actor,
-        _edit.selection_mapper,
-    )
+        _apply_edit_coloring("volume")
+
+        _edit.vol_selection_set.clear()
+        update_selection_actor(
+            _edit.vol_selection_set,
+            _edit.vol_dataset,
+            _edit.vol_selection_actor,
+            _edit.vol_selection_mapper,
+        )
+    else:
+        if not _edit.selection_set or _edit.merged_bnd_dataset is None:
+            return
+
+        assign_id_to_selection(_edit, MATERIAL_ID_ARRAY, value)
+        _apply_edit_coloring("boundary")
+
+        _edit.selection_set.clear()
+        update_selection_actor(
+            _edit.selection_set,
+            _edit.merged_bnd_dataset,
+            _edit.selection_actor,
+            _edit.selection_mapper,
+        )
+
     state.selection_count = 0
-
     renderWindow.Render()
     ctrl.view_update()
 

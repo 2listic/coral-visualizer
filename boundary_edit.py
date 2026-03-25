@@ -31,6 +31,7 @@ class BoundaryEditState:
 
     def __init__(self):
         self.full_dataset = None
+        self.vol_dataset = None
         self.vol_cell_indices = []
         self.file_bnd_cell_indices = []
         self.merged_bnd_dataset = None
@@ -42,11 +43,16 @@ class BoundaryEditState:
         self.picker = None
         self.adjacency = None
         self.cell_normals = None
+        self.vol_selection_set = set()
+        self.vol_selection_actor = None
+        self.vol_selection_mapper = None
+        self.vol_picker = None
         self._observer_tag = None
         self._release_observer_tag = None
 
     def clear(self):
         self.full_dataset = None
+        self.vol_dataset = None
         self.vol_cell_indices = []
         self.file_bnd_cell_indices = []
         self.merged_bnd_dataset = None
@@ -58,6 +64,10 @@ class BoundaryEditState:
         self.picker = None
         self.adjacency = None
         self.cell_normals = None
+        self.vol_selection_set = set()
+        self.vol_selection_actor = None
+        self.vol_selection_mapper = None
+        self.vol_picker = None
         self._observer_tag = None
         self._release_observer_tag = None
 
@@ -367,7 +377,7 @@ def create_boundary_actor(bnd_dataset):
     actor = vtkActor()
     actor.SetMapper(mapper)
     actor.GetProperty().SetLineWidth(3.0)
-    actor.GetProperty().SetColor(0.2, 0.6, 1.0)
+    # actor.GetProperty().SetColor(0.2, 0.6, 1.0)
     actor.SetVisibility(0)
 
     return actor, mapper
@@ -467,6 +477,36 @@ def handle_pick(x, y, renderer, edit_state, group_select=False, angle_threshold=
     return cell_id
 
 
+def handle_vol_pick(x, y, renderer, edit_state):
+    """
+    Pick a volume cell at screen coordinates *(x, y)* and toggle it in
+    *vol_selection_set*.
+
+    Returns the cell ID that was picked (local index in *vol_dataset*), or
+    ``None`` if nothing was hit.
+    """
+    result = edit_state.vol_picker.Pick(x, y, 0, renderer)
+    if result == 0:
+        return None
+
+    cell_id = edit_state.vol_picker.GetCellId()
+    if cell_id < 0:
+        return None
+
+    if cell_id in edit_state.vol_selection_set:
+        edit_state.vol_selection_set.discard(cell_id)
+    else:
+        edit_state.vol_selection_set.add(cell_id)
+
+    update_selection_actor(
+        edit_state.vol_selection_set,
+        edit_state.vol_dataset,
+        edit_state.vol_selection_actor,
+        edit_state.vol_selection_mapper,
+    )
+    return cell_id
+
+
 # ---------------------------------------------------------------------------
 # ID assignment
 # ---------------------------------------------------------------------------
@@ -509,17 +549,19 @@ def save_as_vtu(edit_state, output_path):
     man_arr = vtkIntArray()
     man_arr.SetName(MANIFOLD_ID_ARRAY)
 
-    # Volume cells
-    orig_mat = full_ds.GetCellData().GetArray(MATERIAL_ID_ARRAY)
+    # Volume cells — read MaterialID from vol_dataset (may have user edits),
+    # ManifoldID from full_dataset (never edited).
     orig_man = full_ds.GetCellData().GetArray(MANIFOLD_ID_ARRAY)
+    vol_ds = edit_state.vol_dataset
+    vol_mat = vol_ds.GetCellData().GetArray(MATERIAL_ID_ARRAY) if vol_ds else None
 
-    for ci in edit_state.vol_cell_indices:
+    for local_idx, ci in enumerate(edit_state.vol_cell_indices):
         cell = full_ds.GetCell(ci)
         id_list = vtkIdList()
         for p in range(cell.GetNumberOfPoints()):
             id_list.InsertNextId(cell.GetPointId(p))
         output.InsertNextCell(cell.GetCellType(), id_list)
-        mat_arr.InsertNextValue(int(orig_mat.GetValue(ci)) if orig_mat else 0)
+        mat_arr.InsertNextValue(int(vol_mat.GetValue(local_idx)) if vol_mat else 0)
         man_arr.InsertNextValue(
             int(orig_man.GetValue(ci)) if orig_man else MANIFOLD_ID_DEFAULT
         )
