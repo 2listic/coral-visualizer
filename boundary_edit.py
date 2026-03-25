@@ -37,10 +37,10 @@ class BoundaryEditState:
         self.merged_bnd_dataset = None
         self.merged_bnd_actor = None
         self.merged_bnd_mapper = None
-        self.selection_set = set()
-        self.selection_actor = None
-        self.selection_mapper = None
-        self.picker = None
+        self.bnd_selection_set = set()
+        self.bnd_selection_actor = None
+        self.bnd_selection_mapper = None
+        self.bnd_picker = None
         self.adjacency = None
         self.cell_normals = None
         self.vol_selection_set = set()
@@ -58,10 +58,10 @@ class BoundaryEditState:
         self.merged_bnd_dataset = None
         self.merged_bnd_actor = None
         self.merged_bnd_mapper = None
-        self.selection_set = set()
-        self.selection_actor = None
-        self.selection_mapper = None
-        self.picker = None
+        self.bnd_selection_set = set()
+        self.bnd_selection_actor = None
+        self.bnd_selection_mapper = None
+        self.bnd_picker = None
         self.adjacency = None
         self.cell_normals = None
         self.vol_selection_set = set()
@@ -436,7 +436,9 @@ def create_cell_picker(bnd_actor):
     return picker
 
 
-def handle_pick(x, y, renderer, edit_state, group_select=False, angle_threshold=15.0):
+def handle_bnd_pick(
+    x, y, renderer, edit_state, group_select=False, angle_threshold=15.0
+):
     """
     Pick at screen coordinates *(x, y)* and toggle the cell in *selection_set*.
 
@@ -446,11 +448,11 @@ def handle_pick(x, y, renderer, edit_state, group_select=False, angle_threshold=
 
     Returns the cell ID that was picked, or ``None`` if nothing was hit.
     """
-    result = edit_state.picker.Pick(x, y, 0, renderer)
+    result = edit_state.bnd_picker.Pick(x, y, 0, renderer)
     if result == 0:
         return None
 
-    cell_id = edit_state.picker.GetCellId()
+    cell_id = edit_state.bnd_picker.GetCellId()
     if cell_id < 0:
         return None
 
@@ -458,21 +460,21 @@ def handle_pick(x, y, renderer, edit_state, group_select=False, angle_threshold=
         group = flood_select(
             cell_id, edit_state.adjacency, edit_state.cell_normals, angle_threshold
         )
-        if cell_id in edit_state.selection_set:
-            edit_state.selection_set -= group
+        if cell_id in edit_state.bnd_selection_set:
+            edit_state.bnd_selection_set -= group
         else:
-            edit_state.selection_set |= group
+            edit_state.bnd_selection_set |= group
     else:
-        if cell_id in edit_state.selection_set:
-            edit_state.selection_set.discard(cell_id)
+        if cell_id in edit_state.bnd_selection_set:
+            edit_state.bnd_selection_set.discard(cell_id)
         else:
-            edit_state.selection_set.add(cell_id)
+            edit_state.bnd_selection_set.add(cell_id)
 
     update_selection_actor(
-        edit_state.selection_set,
+        edit_state.bnd_selection_set,
         edit_state.merged_bnd_dataset,
-        edit_state.selection_actor,
-        edit_state.selection_mapper,
+        edit_state.bnd_selection_actor,
+        edit_state.bnd_selection_mapper,
     )
     return cell_id
 
@@ -518,7 +520,7 @@ def assign_id_to_selection(edit_state, array_name, value):
     if arr is None:
         return
 
-    for cell_idx in edit_state.selection_set:
+    for cell_idx in edit_state.bnd_selection_set:
         arr.SetValue(cell_idx, value)
 
     # Bump MTime so the mapper knows the data changed (SetValue bypasses the pipeline).

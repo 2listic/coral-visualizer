@@ -30,7 +30,7 @@ from boundary_edit import (
     create_boundary_actor,
     create_selection_actor,
     create_cell_picker,
-    handle_pick,
+    handle_bnd_pick,
     handle_vol_pick,
     assign_id_to_selection,
     update_selection_actor,
@@ -222,13 +222,13 @@ def _setup_edit_infrastructure():
     _edit.merged_bnd_actor, _edit.merged_bnd_mapper = create_boundary_actor(
         _edit.merged_bnd_dataset
     )
-    _edit.selection_actor, _edit.selection_mapper = create_selection_actor()
-    _edit.picker = create_cell_picker(_edit.merged_bnd_actor)
+    _edit.bnd_selection_actor, _edit.bnd_selection_mapper = create_selection_actor()
+    _edit.bnd_picker = create_cell_picker(_edit.merged_bnd_actor)
     _edit.adjacency = build_adjacency_graph(_edit.merged_bnd_dataset)
     _edit.cell_normals = compute_cell_normals(_edit.merged_bnd_dataset)
 
     renderer.AddActor(_edit.merged_bnd_actor)
-    renderer.AddActor(_edit.selection_actor)
+    renderer.AddActor(_edit.bnd_selection_actor)
 
     # Volume cell editing infrastructure
     _edit.vol_dataset = _viz.vol_dataset
@@ -308,7 +308,7 @@ def _on_left_button_press(obj, event):
             renderWindow.Render()
             ctrl.view_update()
     else:
-        cell_id = handle_pick(
+        cell_id = handle_bnd_pick(
             x,
             y,
             renderer,
@@ -317,7 +317,7 @@ def _on_left_button_press(obj, event):
             angle_threshold=state.angle_threshold,
         )
         if cell_id is not None:
-            state.selection_count = len(_edit.selection_set)
+            state.selection_count = len(_edit.bnd_selection_set)
             state.flush()
             renderWindow.Render()
             ctrl.view_update()
@@ -505,8 +505,8 @@ def on_edit_mode_change(edit_mode, **kwargs):
         # Exit edit mode
         _remove_pick_observer()
         _edit.merged_bnd_actor.SetVisibility(0)
-        _edit.selection_actor.SetVisibility(0)
-        _edit.selection_set.clear()
+        _edit.bnd_selection_actor.SetVisibility(0)
+        _edit.bnd_selection_set.clear()
         if _edit.vol_selection_actor:
             _edit.vol_selection_actor.SetVisibility(0)
         _edit.vol_selection_set.clear()
@@ -535,13 +535,13 @@ def on_edit_target_change(edit_target, **kwargs):
         return
 
     # Clear both selections
-    _edit.selection_set.clear()
+    _edit.bnd_selection_set.clear()
     _edit.vol_selection_set.clear()
     update_selection_actor(
-        _edit.selection_set,
+        _edit.bnd_selection_set,
         _edit.merged_bnd_dataset,
-        _edit.selection_actor,
-        _edit.selection_mapper,
+        _edit.bnd_selection_actor,
+        _edit.bnd_selection_mapper,
     )
     if _edit.vol_dataset is not None:
         update_selection_actor(
@@ -576,12 +576,12 @@ def clear_selection():
                 _edit.vol_selection_mapper,
             )
     else:
-        _edit.selection_set.clear()
+        _edit.bnd_selection_set.clear()
         update_selection_actor(
-            _edit.selection_set,
+            _edit.bnd_selection_set,
             _edit.merged_bnd_dataset,
-            _edit.selection_actor,
-            _edit.selection_mapper,
+            _edit.bnd_selection_actor,
+            _edit.bnd_selection_mapper,
         )
     state.selection_count = 0
     renderWindow.Render()
@@ -607,12 +607,12 @@ def select_all():
     else:  # boundary
         if _edit.merged_bnd_dataset is not None:
             n = _edit.merged_bnd_dataset.GetNumberOfCells()
-            _edit.selection_set = set(range(n))
+            _edit.bnd_selection_set = set(range(n))
             update_selection_actor(
-                _edit.selection_set,
+                _edit.bnd_selection_set,
                 _edit.merged_bnd_dataset,
-                _edit.selection_actor,
-                _edit.selection_mapper,
+                _edit.bnd_selection_actor,
+                _edit.bnd_selection_mapper,
             )
             state.selection_count = n
             renderWindow.Render()
@@ -649,18 +649,18 @@ def assign_id():
             _edit.vol_selection_mapper,
         )
     else:
-        if not _edit.selection_set or _edit.merged_bnd_dataset is None:
+        if not _edit.bnd_selection_set or _edit.merged_bnd_dataset is None:
             return
 
         assign_id_to_selection(_edit, MATERIAL_ID_ARRAY, value)
         _apply_edit_coloring(BOUNDARY)
 
-        _edit.selection_set.clear()
+        _edit.bnd_selection_set.clear()
         update_selection_actor(
-            _edit.selection_set,
+            _edit.bnd_selection_set,
             _edit.merged_bnd_dataset,
-            _edit.selection_actor,
-            _edit.selection_mapper,
+            _edit.bnd_selection_actor,
+            _edit.bnd_selection_mapper,
         )
 
     state.selection_count = 0
