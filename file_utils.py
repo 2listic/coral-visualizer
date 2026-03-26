@@ -59,13 +59,13 @@ def detect_and_create_reader(filename):
     ext = os.path.splitext(filename)[1].lower()
 
     if ext == ".vtu":
-        print(f"Detected VTK XML UnstructuredGrid format (.vtu)")
+        print("Detected VTK XML UnstructuredGrid format (.vtu)")
         return vtkXMLUnstructuredGridReader()
     elif ext == ".pvtu":
-        print(f"Detected VTK XML Parallel UnstructuredGrid format (.pvtu)")
+        print("Detected VTK XML Parallel UnstructuredGrid format (.pvtu)")
         return vtkXMLPUnstructuredGridReader()
     elif ext == ".vtk":
-        print(f"Detected VTK legacy format (.vtk), reading header...")
+        print("Detected VTK legacy format (.vtk), reading header...")
         with open(filename, "rb") as f:
             # Read first ~500 bytes which should contain the header
             header = f.read(500).decode("latin-1", errors="ignore")
@@ -86,7 +86,7 @@ def detect_and_create_reader(filename):
         if reader is None:
             # Default fallback for legacy format
             print(
-                f"Warning: Could not detect dataset type, trying UnstructuredGridReader"
+                "Warning: Could not detect dataset type, trying UnstructuredGridReader"
             )
             reader = vtkUnstructuredGridReader()
 
