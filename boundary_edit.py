@@ -8,7 +8,7 @@ ManifoldID values are preserved (read and written back) but not edited here.
 """
 
 from vtkmodules.vtkCommonCore import vtkIdList, vtkIntArray
-from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid, vtkCellTypes
+from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
 from vtkmodules.vtkFiltersCore import vtkExtractCells
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
 from vtkmodules.vtkRenderingCore import vtkActor, vtkDataSetMapper

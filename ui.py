@@ -6,7 +6,6 @@ from constants import REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POI
 
 def build_ui(server, renderWindow):
     """Build the Trame UI layout."""
-    state = server.state
     ctrl = server.controller
 
     with SinglePageLayout(server) as layout:
