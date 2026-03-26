@@ -4,7 +4,6 @@ from vtkmodules.vtkCommonColor import vtkNamedColors, vtkColorSeries
 from vtkmodules.vtkCommonCore import vtkIdList, vtkLookupTable
 from vtkmodules.vtkFiltersCore import vtkExtractCells
 from vtkmodules.vtkFiltersModeling import vtkOutlineFilter
-from vtkmodules.vtkRenderingAnnotation import vtkScalarBarActor
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkPolyDataMapper,
@@ -169,30 +168,6 @@ def apply_categorical_coloring(mapper, dataset, array_name):
     mapper.SetLookupTable(lut)
     mapper.UseLookupTableScalarRangeOn()
     return lut, index_map
-
-
-def build_scalar_bar(
-    lut, title, position=(0.05, 0.05), width=0.08, height=0.35, max_labels=20
-):
-    """Create a positioned vtkScalarBarActor for the given LUT.
-
-    max_labels caps the number of tick/category labels shown. For categorical
-    LUTs with many IDs this prevents the bar from becoming unreadably dense.
-    """
-    bar = vtkScalarBarActor()
-    bar.SetLookupTable(lut)
-    bar.SetTitle(title)
-    bar.SetOrientationToVertical()
-    bar.SetTextPositionToPrecedeScalarBar()
-    bar.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
-    bar.GetPositionCoordinate().SetValue(position[0], position[1])
-    bar.SetWidth(width)
-    bar.SetHeight(height)
-    bar.SetNumberOfLabels(min(lut.GetNumberOfTableValues(), max_labels))
-    bar.UnconstrainedFontSizeOn()
-    bar.GetTitleTextProperty().SetFontSize(25)
-    bar.GetLabelTextProperty().SetFontSize(10)
-    return bar
 
 
 def _build_categorical_luts(dataset):

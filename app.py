@@ -26,16 +26,10 @@ from scalar_bars import ScalarBarManager
 from interactor import PickInteractorManager
 from mesh_edit import (
     BoundaryEditState,
-    extract_all_boundary_subcells,
-    build_merged_boundary_dataset,
-    build_adjacency_graph,
-    compute_cell_normals,
-    create_boundary_actor,
-    create_selection_actor,
-    create_cell_picker,
     assign_id_to_selection,
     update_selection_actor,
     save_as_vtu,
+    setup_edit_state,
 )
 from ui import build_ui
 
@@ -157,48 +151,6 @@ def _update_scalar_bars(active_lut, array_value):
         _scalar_bars.remove_bar(SCALAR_BAR_BOUNDARY)
 
 
-def _setup_edit_infrastructure():
-    """Extract boundary cells and create edit actors after a file is loaded."""
-    _edit.clear()
-    if _viz is None:
-        return
-
-    _edit.full_dataset = _viz.full_dataset
-
-    vol_indices, bnd_indices, extracted_subcells = extract_all_boundary_subcells(
-        _viz.full_dataset
-    )
-    _edit.vol_cell_indices = vol_indices
-    _edit.file_bnd_cell_indices = bnd_indices
-
-    if not extracted_subcells:
-        print("  No exterior boundary sub-cells found for editing.")
-        return
-
-    print(f"  Extracted {len(extracted_subcells)} exterior boundary sub-cells")
-    print(f"  ({len(bnd_indices)} were in the file)")
-
-    _edit.merged_bnd_dataset = build_merged_boundary_dataset(
-        _viz.full_dataset, bnd_indices, extracted_subcells
-    )
-    _edit.merged_bnd_actor, _edit.merged_bnd_mapper = create_boundary_actor(
-        _edit.merged_bnd_dataset
-    )
-    _edit.bnd_selection_actor, _edit.bnd_selection_mapper = create_selection_actor()
-    _edit.bnd_picker = create_cell_picker(_edit.merged_bnd_actor)
-    _edit.adjacency = build_adjacency_graph(_edit.merged_bnd_dataset)
-    _edit.cell_normals = compute_cell_normals(_edit.merged_bnd_dataset)
-
-    renderer.AddActor(_edit.merged_bnd_actor)
-    renderer.AddActor(_edit.bnd_selection_actor)
-
-    # Volume cell editing infrastructure
-    _edit.vol_dataset = _viz.vol_dataset
-    _edit.vol_picker = create_cell_picker(_viz.vol_actor)
-    _edit.vol_selection_actor, _edit.vol_selection_mapper = create_selection_actor()
-    renderer.AddActor(_edit.vol_selection_actor)
-
-
 def _apply_edit_coloring(edit_target):
     """Apply coloring and actor visibility for the given edit target.
 
@@ -284,7 +236,7 @@ def on_file_change(selected_file, **kwargs):
             _update_scalar_bars(_active_lut, default_array)
 
             # Set up boundary editing infrastructure
-            _setup_edit_infrastructure()
+            setup_edit_state(_edit, _viz, renderer)
 
             state.available_arrays = arrays
             state.selected_array = default_array

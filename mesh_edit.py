@@ -578,3 +578,58 @@ def save_as_vtu(edit_state, output_path):
     writer.SetFileName(output_path)
     writer.SetInputData(output)
     writer.Write()
+
+
+# ---------------------------------------------------------------------------
+# Edit state initialization
+# ---------------------------------------------------------------------------
+
+
+def setup_edit_state(edit_state, viz_result, renderer):
+    """Extract boundary cells and create edit actors after a file is loaded.
+
+    Populates *edit_state* in-place. *viz_result* is a VisualizationResult
+    (may be None). *renderer* is the VTK renderer that owns the actors.
+    """
+    edit_state.clear()
+    if viz_result is None:
+        return
+
+    edit_state.full_dataset = viz_result.full_dataset
+
+    vol_indices, bnd_indices, extracted_subcells = extract_all_boundary_subcells(
+        viz_result.full_dataset
+    )
+    edit_state.vol_cell_indices = vol_indices
+    edit_state.file_bnd_cell_indices = bnd_indices
+
+    if not extracted_subcells:
+        print("  No exterior boundary sub-cells found for editing.")
+        return
+
+    print(f"  Extracted {len(extracted_subcells)} exterior boundary sub-cells")
+    print(f"  ({len(bnd_indices)} were in the file)")
+
+    edit_state.merged_bnd_dataset = build_merged_boundary_dataset(
+        viz_result.full_dataset, bnd_indices, extracted_subcells
+    )
+    edit_state.merged_bnd_actor, edit_state.merged_bnd_mapper = create_boundary_actor(
+        edit_state.merged_bnd_dataset
+    )
+    edit_state.bnd_selection_actor, edit_state.bnd_selection_mapper = (
+        create_selection_actor()
+    )
+    edit_state.bnd_picker = create_cell_picker(edit_state.merged_bnd_actor)
+    edit_state.adjacency = build_adjacency_graph(edit_state.merged_bnd_dataset)
+    edit_state.cell_normals = compute_cell_normals(edit_state.merged_bnd_dataset)
+
+    renderer.AddActor(edit_state.merged_bnd_actor)
+    renderer.AddActor(edit_state.bnd_selection_actor)
+
+    # Volume cell editing infrastructure
+    edit_state.vol_dataset = viz_result.vol_dataset
+    edit_state.vol_picker = create_cell_picker(viz_result.vol_actor)
+    edit_state.vol_selection_actor, edit_state.vol_selection_mapper = (
+        create_selection_actor()
+    )
+    renderer.AddActor(edit_state.vol_selection_actor)
