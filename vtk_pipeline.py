@@ -32,7 +32,6 @@ from constants import (
 )
 from file_utils import detect_and_create_reader
 
-
 VisualizationResult = namedtuple(
     "VisualizationResult",
     [
