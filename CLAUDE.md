@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Setup:**
 ```bash
-python3 -m venv .venv
+uv venv
 source .venv/bin/activate
-pip install -r setup/requirements.txt
+uv pip install -r setup/requirements.txt -r setup/requirements-dev.txt
 ```
 
 **Run the app:**
@@ -19,10 +19,20 @@ python3 app.py
 python3 app.py --file data/grid-1.vtk --port 1234
 ```
 
-**Format code:**
+**Format and lint:**
 ```bash
-black app.py  # or any other file
+black .             # auto-format
+ruff check .        # lint
+ruff check --fix .  # lint + auto-fix
 ```
+
+**Pre-commit hooks** (run once after setup):
+```bash
+pre-commit install       # installs git hooks
+pre-commit run --all-files  # run manually against all files
+```
+
+`black` and `ruff --fix` run automatically on every `git commit` via `.pre-commit-config.yaml`.
 
 **Docker:**
 ```bash
@@ -55,6 +65,7 @@ The app is a [Trame](https://trame.readthedocs.io/) web application that serves 
 - `file_utils.py` — format detection and `data/` folder scanning
 - `ui.py` — Trame/Vuetify layout (toolbar, VTK viewport, edit mode drawer, error overlay)
 - `constants.py` — string sentinels/prefixes, representation mode names, known array names, deal.II default ID values
+- `inspect_vtu.py` — standalone CLI to decode and print all cell types and data arrays from a `.vtu` file (useful for debugging binary/compressed files): `python3 inspect_vtu.py data/output.vtu [-o out.txt]`
 
 **VTK pipeline (`vtk_pipeline.py`):**
 
