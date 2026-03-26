@@ -40,7 +40,15 @@ docker build -t coral-visualizer-standalone .
 docker run -it --rm -p 8008:80 coral-visualizer-standalone
 ```
 
-There are no automated tests in this project.
+**Run tests:**
+```bash
+pytest          # run all smoke tests
+pytest -v       # verbose output
+```
+
+## Git conventions
+
+- Do **not** add `Co-Authored-By: Claude` trailers to commit messages.
 
 ## Architecture
 
