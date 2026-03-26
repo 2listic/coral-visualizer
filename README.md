@@ -79,6 +79,6 @@ pytest -v       # verbose output
 
 ```bash
 source .venv/bin/activate
-python3 inspect_vtu.py data/output.vtu            # print to console
-python3 inspect_vtu.py data/output.vtu -o out.txt # write to file
+python3 tools/inspect_vtu.py data/output.vtu            # print to console
+python3 tools/inspect_vtu.py data/output.vtu -o out.txt # write to file
 ```

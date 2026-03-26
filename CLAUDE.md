@@ -80,7 +80,7 @@ The app is a [Trame](https://trame.readthedocs.io/) web application that serves 
 - `file_utils.py` — format detection and `data/` folder scanning
 - `ui.py` — Trame/Vuetify layout (toolbar, VTK viewport, edit mode drawer, error overlay)
 - `constants.py` — string sentinels/prefixes, representation mode names, known array names, deal.II default ID values
-- `inspect_vtu.py` — standalone CLI to decode and print all cell types and data arrays from a `.vtu` file (useful for debugging binary/compressed files): `python3 inspect_vtu.py data/output.vtu [-o out.txt]`
+- `tools/inspect_vtu.py` — standalone CLI to decode and print all cell types and data arrays from a `.vtu` file (useful for debugging binary/compressed files): `python3 tools/inspect_vtu.py data/output.vtu [-o out.txt]`
 
 **VTK pipeline (`vtk_pipeline.py`):**
 
