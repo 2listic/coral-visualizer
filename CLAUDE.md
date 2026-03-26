@@ -26,8 +26,8 @@ black app.py  # or any other file
 
 **Docker:**
 ```bash
-docker build -t trame-simple-visualizer .
-docker run -it --rm -p 8008:80 trame-simple-visualizer
+docker build -t coral-visualizer-standalone .
+docker run -it --rm -p 8008:80 coral-visualizer-standalone
 ```
 
 There are no automated tests in this project.
