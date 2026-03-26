@@ -32,7 +32,6 @@ from constants import (
 )
 from file_utils import detect_and_create_reader
 
-
 VisualizationResult = namedtuple(
     "VisualizationResult",
     [
@@ -78,6 +77,12 @@ def get_available_arrays(dataset):
     return arrays
 
 
+def get_max_cell_dimension(dataset):
+    """Return the maximum cell dimension present in *dataset*."""
+    n = dataset.GetNumberOfCells()
+    return max(dataset.GetCell(i).GetCellDimension() for i in range(n))
+
+
 def split_by_dimension(dataset):
     """
     Split a mixed unstructured grid into volume and boundary sub-datasets
@@ -91,7 +96,7 @@ def split_by_dimension(dataset):
     if n == 0:
         return dataset, None
 
-    max_dim = max(dataset.GetCell(i).GetCellDimension() for i in range(n))
+    max_dim = get_max_cell_dimension(dataset)
 
     vol_ids = vtkIdList()
     bnd_ids = vtkIdList()
@@ -143,6 +148,26 @@ def build_categorical_lut(unique_ids):
         lut.SetAnnotation(float(val), str(val))
         index_map[val] = idx
 
+    return lut, index_map
+
+
+def apply_categorical_coloring(mapper, dataset, array_name):
+    """Build a categorical LUT from *array_name*'s unique IDs and wire *mapper*.
+
+    Returns (lut, index_map), or (None, None) if the array is absent.
+    """
+    arr = dataset.GetCellData().GetArray(array_name)
+    if arr is None:
+        return None, None
+    unique_ids = sorted(
+        set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
+    )
+    lut, index_map = build_categorical_lut(unique_ids)
+    mapper.ScalarVisibilityOn()
+    mapper.SetScalarModeToUseCellFieldData()
+    mapper.SelectColorArray(array_name)
+    mapper.SetLookupTable(lut)
+    mapper.UseLookupTableScalarRangeOn()
     return lut, index_map
 
 

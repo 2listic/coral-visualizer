@@ -1,6 +1,3 @@
-# TODO: rename this file (e.g. mesh_edit.py) to reflect that it handles both
-#       boundary and volume cell editing, not just boundary cells.
-
 """
 Mesh cell editing: extraction, selection, ID assignment, and save.
 
@@ -15,7 +12,7 @@ written back) but not edited here.
 """
 
 from vtkmodules.vtkCommonCore import vtkIdList, vtkIntArray
-from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid, vtkCellTypes
+from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
 from vtkmodules.vtkFiltersCore import vtkExtractCells
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
 from vtkmodules.vtkRenderingCore import vtkActor, vtkDataSetMapper
@@ -26,7 +23,7 @@ from constants import (
     BOUNDARY_ID_DEFAULT,
     MANIFOLD_ID_DEFAULT,
 )
-
+from vtk_pipeline import get_max_cell_dimension
 
 # ---------------------------------------------------------------------------
 # State container
@@ -58,25 +55,7 @@ class BoundaryEditState:
         self._release_observer_tag = None
 
     def clear(self):
-        self.full_dataset = None
-        self.vol_dataset = None
-        self.vol_cell_indices = []
-        self.file_bnd_cell_indices = []
-        self.merged_bnd_dataset = None
-        self.merged_bnd_actor = None
-        self.merged_bnd_mapper = None
-        self.bnd_selection_set = set()
-        self.bnd_selection_actor = None
-        self.bnd_selection_mapper = None
-        self.bnd_picker = None
-        self.adjacency = None
-        self.cell_normals = None
-        self.vol_selection_set = set()
-        self.vol_selection_actor = None
-        self.vol_selection_mapper = None
-        self.vol_picker = None
-        self._observer_tag = None
-        self._release_observer_tag = None
+        self.__init__()
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +86,7 @@ def extract_all_boundary_subcells(full_dataset):
     if n == 0:
         return [], [], []
 
-    max_dim = max(full_dataset.GetCell(i).GetCellDimension() for i in range(n))
+    max_dim = get_max_cell_dimension(full_dataset)
 
     vol_indices = []
     bnd_indices = []
