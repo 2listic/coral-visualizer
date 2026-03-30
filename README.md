@@ -66,12 +66,19 @@ ruff check .        # lint
 ruff check --fix .  # lint + auto-fix
 ```
 
+### Tests
+
+```bash
+pytest          # run all smoke tests
+pytest -v       # verbose output
+```
+
 ## Inspecting VTU files
 
 `inspect_vtu.py` decodes and prints all cell types and data arrays from a `.vtu` file (binary/compressed and not human-readable).
 
 ```bash
 source .venv/bin/activate
-python3 inspect_vtu.py data/output.vtu            # print to console
-python3 inspect_vtu.py data/output.vtu -o out.txt # write to file
+python3 tools/inspect_vtu.py data/output.vtu            # print to console
+python3 tools/inspect_vtu.py data/output.vtu -o out.txt # write to file
 ```
