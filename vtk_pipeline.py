@@ -32,7 +32,6 @@ from constants import (
 )
 from file_utils import detect_and_create_reader
 
-
 VisualizationResult = namedtuple(
     "VisualizationResult",
     [
@@ -220,7 +219,7 @@ def build_visualization(filename, renderer):
     reader.Update()
 
     full_ds = reader.GetOutput()
-    print(f"\nDataset Info:")
+    print("\nDataset Info:")
     print(f"  Type: {full_ds.GetClassName()}")
     print(f"  Number of points: {full_ds.GetNumberOfPoints()}")
     print(f"  Number of cells: {full_ds.GetNumberOfCells()}")
