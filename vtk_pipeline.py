@@ -147,7 +147,7 @@ def build_categorical_lut(unique_ids):
 
 
 def build_scalar_bar(
-    lut, title, position=(0.82, 0.05), width=0.08, height=0.35, max_labels=20
+    lut, title, position=(0.05, 0.05), width=0.08, height=0.35, max_labels=20
 ):
     """Create a positioned vtkScalarBarActor for the given LUT.
 

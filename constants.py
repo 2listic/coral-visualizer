@@ -9,6 +9,10 @@ ARRAY_SOLID = "__solid__"
 POINT_PREFIX = "point:"
 CELL_PREFIX = "cell:"
 
+# Cell dimension categories
+VOLUME = "volume"
+BOUNDARY = "boundary"
+
 # Known array names
 MATERIAL_ID_ARRAY = "MaterialID"
 MANIFOLD_ID_ARRAY = "ManifoldID"

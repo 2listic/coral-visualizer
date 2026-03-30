@@ -42,16 +42,21 @@ The app is a [Trame](https://trame.readthedocs.io/) web application that serves 
    - `available_files` / `selected_file` — file picker
    - `available_arrays` / `selected_array` — color-by picker; array values use the format `"__solid__"`, `"point:ArrayName"`, or `"cell:ArrayName"`
    - `representation` — one of `"Surface"`, `"Surface with Edges"`, `"Wireframe"`, `"Points"`
-   - `show_boundary` / `has_boundary` — boundary cells visibility toggle and availability flag
-   - `show_scalar_bars` — toggle all scalar bar legend visibility
-   - `edit_mode` — boundary cell editing mode (selection, ID assignment, save)
+   - `has_boundary` — controls visibility of the Edit Mode button; true when boundary cells are available
+   - `edit_mode` — toggles the edit mode side panel and picking interactor
+   - `edit_target` — `"boundary"` or `"volume"` (which cell type the edit actions target)
+   - `pick_mode` — `True` = left-click picks cells; `False` = left-click rotates camera
+   - `group_select` / `angle_threshold` — flood-fill group selection toggle and angle cutoff (degrees)
+   - `selection_count` — number of currently selected cells (display only)
+   - `assign_id_value` — integer value to assign to selected cells
+   - `save_filename` / `save_status` / `save_status_type` — .vtu save filename and status feedback
    - `error_message` — shown as an overlay alert
 3. Each `@state.change(...)` callback in `app.py` calls the appropriate `vtk_pipeline` function and then `ctrl.view_update()` to push the new render to the browser.
 
 **Module responsibilities:**
 - `app.py` — entry point, argument parsing, Trame server init, state management, `@state.change` callbacks, scalar bar lifecycle, edit mode interactor observer
 - `vtk_pipeline.py` — VTK rendering logic (actor/mapper creation, coloring, representation, LUT building)
-- `boundary_edit.py` — boundary cell extraction, interactive selection, BoundaryID assignment, save as .vtu. ManifoldID values are preserved but not edited.
+- `boundary_edit.py` — mesh cell editing: boundary extraction, interactive cell selection (boundary and volume), BoundaryID/MaterialID assignment, save as .vtu. ManifoldID values are preserved but not edited. (TODO: pending rename to `mesh_edit.py`)
 - `file_utils.py` — format detection and `data/` folder scanning
 - `ui.py` — Trame/Vuetify layout (toolbar, VTK viewport, edit mode drawer, error overlay)
 - `constants.py` — string sentinels/prefixes, representation mode names, known array names, deal.II default ID values
@@ -70,13 +75,19 @@ The app is a [Trame](https://trame.readthedocs.io/) web application that serves 
 
 **Boundary editing (`boundary_edit.py`):**
 
+`BoundaryEditState` — dataclass holding all mutable edit state: full/vol/bnd datasets, actors, mappers, pickers, selection sets, adjacency graph, cell normals, and observer tags.
+
 `extract_all_boundary_subcells(full_dataset)` — finds exterior boundary sub-cells by iterating volume cell edges (2D) or faces (3D) and selecting those shared by exactly one volume cell. Also classifies cells in the file as volume vs boundary by dimension (same logic as `split_by_dimension` but returns index lists instead of extracted datasets).
 
 `build_merged_boundary_dataset(full_dataset, file_bnd_indices, extracted_subcells)` — builds a `vtkUnstructuredGrid` containing all boundary cells (exterior sub-cells + interior file boundary markers), with `MaterialID` and `ManifoldID` arrays. Exterior sub-cells that match file boundary cells inherit their IDs; others get defaults.
 
+`build_adjacency_graph(bnd_dataset)` / `compute_cell_normals(bnd_dataset)` — precomputed adjacency and normal data used by `flood_select` for group selection.
+
+`flood_select(start_cell, adjacency, normals, angle_threshold_deg)` — BFS flood-fill that selects connected cells whose normals are within `angle_threshold_deg` of the seed cell's normal (uses `abs(dot)` to handle winding inconsistencies).
+
 `save_as_vtu(edit_state, output_path)` — reconstructs the full mesh (volume cells + edited boundary cells) and writes `.vtu`.
 
-In edit mode, left-click picks boundary cells via `vtkCellPicker`. The default interactor style's `LeftButtonPressEvent` observers are removed to prevent camera rotation on left-click; middle/right-click camera controls remain.
+In edit mode, left-click picks boundary or volume cells via `vtkCellPicker`. The default interactor style's `LeftButtonPressEvent` observers are removed to prevent camera rotation on left-click; middle/right-click camera controls remain. `pick_mode=False` re-enables left-click camera rotation by forwarding to the interactor style.
 
 **Important VTK patterns:**
 - When modifying VTK array values directly (e.g. `arr.SetValue()`), call `dataset.Modified()` afterward to bump the MTime so downstream mappers re-render.
