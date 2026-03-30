@@ -4,7 +4,6 @@ from vtkmodules.vtkCommonColor import vtkNamedColors, vtkColorSeries
 from vtkmodules.vtkCommonCore import vtkIdList, vtkLookupTable
 from vtkmodules.vtkFiltersCore import vtkExtractCells
 from vtkmodules.vtkFiltersModeling import vtkOutlineFilter
-from vtkmodules.vtkRenderingAnnotation import vtkScalarBarActor
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkPolyDataMapper,
@@ -77,6 +76,12 @@ def get_available_arrays(dataset):
     return arrays
 
 
+def get_max_cell_dimension(dataset):
+    """Return the maximum cell dimension present in *dataset*."""
+    n = dataset.GetNumberOfCells()
+    return max(dataset.GetCell(i).GetCellDimension() for i in range(n))
+
+
 def split_by_dimension(dataset):
     """
     Split a mixed unstructured grid into volume and boundary sub-datasets
@@ -90,7 +95,7 @@ def split_by_dimension(dataset):
     if n == 0:
         return dataset, None
 
-    max_dim = max(dataset.GetCell(i).GetCellDimension() for i in range(n))
+    max_dim = get_max_cell_dimension(dataset)
 
     vol_ids = vtkIdList()
     bnd_ids = vtkIdList()
@@ -145,28 +150,24 @@ def build_categorical_lut(unique_ids):
     return lut, index_map
 
 
-def build_scalar_bar(
-    lut, title, position=(0.05, 0.05), width=0.08, height=0.35, max_labels=20
-):
-    """Create a positioned vtkScalarBarActor for the given LUT.
+def apply_categorical_coloring(mapper, dataset, array_name):
+    """Build a categorical LUT from *array_name*'s unique IDs and wire *mapper*.
 
-    max_labels caps the number of tick/category labels shown. For categorical
-    LUTs with many IDs this prevents the bar from becoming unreadably dense.
+    Returns (lut, index_map), or (None, None) if the array is absent.
     """
-    bar = vtkScalarBarActor()
-    bar.SetLookupTable(lut)
-    bar.SetTitle(title)
-    bar.SetOrientationToVertical()
-    bar.SetTextPositionToPrecedeScalarBar()
-    bar.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
-    bar.GetPositionCoordinate().SetValue(position[0], position[1])
-    bar.SetWidth(width)
-    bar.SetHeight(height)
-    bar.SetNumberOfLabels(min(lut.GetNumberOfTableValues(), max_labels))
-    bar.UnconstrainedFontSizeOn()
-    bar.GetTitleTextProperty().SetFontSize(25)
-    bar.GetLabelTextProperty().SetFontSize(10)
-    return bar
+    arr = dataset.GetCellData().GetArray(array_name)
+    if arr is None:
+        return None, None
+    unique_ids = sorted(
+        set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
+    )
+    lut, index_map = build_categorical_lut(unique_ids)
+    mapper.ScalarVisibilityOn()
+    mapper.SetScalarModeToUseCellFieldData()
+    mapper.SelectColorArray(array_name)
+    mapper.SetLookupTable(lut)
+    mapper.UseLookupTableScalarRangeOn()
+    return lut, index_map
 
 
 def _build_categorical_luts(dataset):

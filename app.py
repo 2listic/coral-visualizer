@@ -9,32 +9,27 @@ from constants import (
     MANIFOLD_ID_ARRAY,
     MATERIAL_ID_ARRAY,
     REPR_SURFACE_EDGES,
+    SCALAR_BAR_ACTIVE_ARRAY,
+    SCALAR_BAR_BOUNDARY,
     VOLUME,
 )
 from file_utils import get_vtk_files_from_data_folder, CURRENT_DIRECTORY
 from vtk_pipeline import (
     build_visualization,
-    build_scalar_bar,
-    build_categorical_lut,
+    apply_categorical_coloring,
     get_available_arrays,
     apply_coloring,
     apply_representation,
     create_vtk_rendering_context,
 )
-from boundary_edit import (
+from scalar_bars import ScalarBarManager
+from interactor import PickInteractorManager
+from mesh_edit import (
     BoundaryEditState,
-    extract_all_boundary_subcells,
-    build_merged_boundary_dataset,
-    build_adjacency_graph,
-    compute_cell_normals,
-    create_boundary_actor,
-    create_selection_actor,
-    create_cell_picker,
-    handle_bnd_pick,
-    handle_vol_pick,
     assign_id_to_selection,
     update_selection_actor,
     save_as_vtu,
+    setup_edit_state,
 )
 from ui import build_ui
 
@@ -61,9 +56,9 @@ renderer, renderWindow, renderWindowInteractor = create_vtk_rendering_context()
 
 # Module-level pipeline references (updated whenever a file is loaded)
 _viz = None  # VisualizationResult | None
-_active_coloring_bar = None  # bottom-left scalar bar: "Color by" in view mode; MaterialID in volume edit target
 _active_lut = None  # LUT currently used for the "Color by" coloring
-_bnd_coloring_bar = None  # upper-left scalar bar: boundary IDs in view mode (MaterialID selected) or boundary edit target
+
+_scalar_bars = ScalarBarManager(renderer)
 
 # Boundary editing state
 _edit = BoundaryEditState()
@@ -117,6 +112,10 @@ state.angle_threshold = 15
 
 build_ui(server, renderWindow)
 
+_pick_interactor = PickInteractorManager(
+    renderWindowInteractor, renderer, renderWindow, state, ctrl, _edit
+)
+
 
 # -----------------------------------------------------------------------------
 # Private helpers
@@ -134,106 +133,22 @@ def _array_label(array_value):
     return array_value
 
 
-def _remove_active_coloring_bar():
-    """Remove the bottom-left active coloring bar from the renderer."""
-    global _active_coloring_bar
-    if _active_coloring_bar is not None:
-        renderer.RemoveActor(_active_coloring_bar)
-        _active_coloring_bar = None
-
-
-def _set_active_coloring_bar(lut, label):
-    """Replace the bottom-left active coloring bar with one built from *lut*."""
-    global _active_coloring_bar
-    _remove_active_coloring_bar()
-    _active_coloring_bar = build_scalar_bar(
-        lut,
-        label,
-        position=(0.05, 0.05),
-        width=0.08,
-        height=0.35,
-    )
-    renderer.AddActor(_active_coloring_bar)
-
-
-def _remove_bnd_coloring_bar():
-    """Remove the upper-left boundary coloring bar from the renderer."""
-    global _bnd_coloring_bar
-    if _bnd_coloring_bar is not None:
-        renderer.RemoveActor(_bnd_coloring_bar)
-        _bnd_coloring_bar = None
-
-
-def _set_bnd_coloring_bar(lut):
-    """Replace the upper-left boundary coloring bar with one built from *lut*."""
-    global _bnd_coloring_bar
-    _remove_bnd_coloring_bar()
-    _bnd_coloring_bar = build_scalar_bar(
-        lut,
-        "Boundary ID",
-        position=(0.05, 0.45),
-        width=0.08,
-        height=0.35,
-    )
-    renderer.AddActor(_bnd_coloring_bar)
-
-
 def _update_scalar_bars(active_lut, array_value):
     """Manage all scalar bars: the active coloring bar and the boundary ID bar."""
     if active_lut is not None:
-        _set_active_coloring_bar(active_lut, _array_label(array_value))
+        _scalar_bars.set_bar(
+            SCALAR_BAR_ACTIVE_ARRAY, active_lut, _array_label(array_value)
+        )
     else:
-        _remove_active_coloring_bar()
+        _scalar_bars.remove_bar(SCALAR_BAR_ACTIVE_ARRAY)
 
     # Boundary coloring bar only when MaterialID selected + boundary exists in view mode
     is_material_id = array_value == f"{CELL_PREFIX}{MATERIAL_ID_ARRAY}"
     bnd_lut = _viz.bnd_luts.get(MATERIAL_ID_ARRAY) if is_material_id and _viz else None
     if bnd_lut is not None:
-        _set_bnd_coloring_bar(bnd_lut)
+        _scalar_bars.set_bar(SCALAR_BAR_BOUNDARY, bnd_lut, "Boundary ID")
     else:
-        _remove_bnd_coloring_bar()
-
-
-def _setup_edit_infrastructure():
-    """Extract boundary cells and create edit actors after a file is loaded."""
-    _edit.clear()
-    if _viz is None:
-        return
-
-    _edit.full_dataset = _viz.full_dataset
-
-    vol_indices, bnd_indices, extracted_subcells = extract_all_boundary_subcells(
-        _viz.full_dataset
-    )
-    _edit.vol_cell_indices = vol_indices
-    _edit.file_bnd_cell_indices = bnd_indices
-
-    if not extracted_subcells:
-        print("  No exterior boundary sub-cells found for editing.")
-        return
-
-    print(f"  Extracted {len(extracted_subcells)} exterior boundary sub-cells")
-    print(f"  ({len(bnd_indices)} were in the file)")
-
-    _edit.merged_bnd_dataset = build_merged_boundary_dataset(
-        _viz.full_dataset, bnd_indices, extracted_subcells
-    )
-    _edit.merged_bnd_actor, _edit.merged_bnd_mapper = create_boundary_actor(
-        _edit.merged_bnd_dataset
-    )
-    _edit.bnd_selection_actor, _edit.bnd_selection_mapper = create_selection_actor()
-    _edit.bnd_picker = create_cell_picker(_edit.merged_bnd_actor)
-    _edit.adjacency = build_adjacency_graph(_edit.merged_bnd_dataset)
-    _edit.cell_normals = compute_cell_normals(_edit.merged_bnd_dataset)
-
-    renderer.AddActor(_edit.merged_bnd_actor)
-    renderer.AddActor(_edit.bnd_selection_actor)
-
-    # Volume cell editing infrastructure
-    _edit.vol_dataset = _viz.vol_dataset
-    _edit.vol_picker = create_cell_picker(_viz.vol_actor)
-    _edit.vol_selection_actor, _edit.vol_selection_mapper = create_selection_actor()
-    renderer.AddActor(_edit.vol_selection_actor)
+        _scalar_bars.remove_bar(SCALAR_BAR_BOUNDARY)
 
 
 def _apply_edit_coloring(edit_target):
@@ -248,135 +163,28 @@ def _apply_edit_coloring(edit_target):
         if _edit.merged_bnd_actor:
             _edit.merged_bnd_actor.SetVisibility(1)
         if _edit.merged_bnd_dataset is not None and _edit.merged_bnd_mapper is not None:
-            arr = _edit.merged_bnd_dataset.GetCellData().GetArray(MATERIAL_ID_ARRAY)
-            if arr is not None:
-                unique_ids = sorted(
-                    set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
-                )
-                lut, _ = build_categorical_lut(unique_ids)
-                _edit.merged_bnd_mapper.ScalarVisibilityOn()
-                _edit.merged_bnd_mapper.SetScalarModeToUseCellFieldData()
-                _edit.merged_bnd_mapper.SelectColorArray(MATERIAL_ID_ARRAY)
-                _edit.merged_bnd_mapper.SetLookupTable(lut)
-                _edit.merged_bnd_mapper.UseLookupTableScalarRangeOn()
-                _set_bnd_coloring_bar(lut)
+            lut, _ = apply_categorical_coloring(
+                _edit.merged_bnd_mapper, _edit.merged_bnd_dataset, MATERIAL_ID_ARRAY
+            )
+            if lut is not None:
+                _scalar_bars.set_bar(SCALAR_BAR_BOUNDARY, lut, "Boundary ID")
         if _viz:
             _viz.vol_mapper.ScalarVisibilityOff()
             _viz.vol_actor.GetProperty().SetColor(0.7, 0.7, 0.7)
-        _remove_active_coloring_bar()
+        _scalar_bars.remove_bar(SCALAR_BAR_ACTIVE_ARRAY)
     else:  # VOLUME
         if _edit.merged_bnd_actor:
             _edit.merged_bnd_actor.SetVisibility(0)
-        _remove_bnd_coloring_bar()
+        _scalar_bars.remove_bar(SCALAR_BAR_BOUNDARY)
         if _edit.vol_dataset is None or _viz is None:
             return
-        arr = _edit.vol_dataset.GetCellData().GetArray(MATERIAL_ID_ARRAY)
-        if arr is None:
+        lut, _ = apply_categorical_coloring(
+            _viz.vol_mapper, _edit.vol_dataset, MATERIAL_ID_ARRAY
+        )
+        if lut is None:
             return
-        unique_ids = sorted(
-            set(int(arr.GetValue(j)) for j in range(arr.GetNumberOfTuples()))
-        )
-        lut, _ = build_categorical_lut(unique_ids)
-        _viz.vol_mapper.ScalarVisibilityOn()
-        _viz.vol_mapper.SetScalarModeToUseCellFieldData()
-        _viz.vol_mapper.SelectColorArray(MATERIAL_ID_ARRAY)
-        _viz.vol_mapper.SetLookupTable(lut)
-        _viz.vol_mapper.UseLookupTableScalarRangeOn()
         _viz.vol_dataset.Modified()
-        _set_active_coloring_bar(lut, "Material ID")
-
-
-# ---------------------------------------------------------------------------
-# Interactor observer for picking in edit mode
-# ---------------------------------------------------------------------------
-
-
-def _on_left_button_press(obj, event):
-    """Interactor observer: pick boundary/volume cells or forward to camera rotation."""
-    if not state.edit_mode:
-        return
-    if not state.pick_mode:
-        obj.GetInteractorStyle().OnLeftButtonDown()
-        return
-    x, y = obj.GetEventPosition()
-    if state.edit_target == VOLUME:
-        cell_id = handle_vol_pick(x, y, renderer, _edit)
-        if cell_id is not None:
-            state.selection_count = len(_edit.vol_selection_set)
-            state.flush()
-            renderWindow.Render()
-            ctrl.view_update()
-    else:
-        cell_id = handle_bnd_pick(
-            x,
-            y,
-            renderer,
-            _edit,
-            group_select=state.group_select,
-            angle_threshold=state.angle_threshold,
-        )
-        if cell_id is not None:
-            state.selection_count = len(_edit.bnd_selection_set)
-            state.flush()
-            renderWindow.Render()
-            ctrl.view_update()
-
-
-def _on_left_button_release(obj, event):
-    """Forward left-button release to camera style when in rotation mode."""
-    if not state.edit_mode or state.pick_mode:
-        return
-    obj.GetInteractorStyle().OnLeftButtonUp()
-
-
-_default_interactor_style = None  # saved on first edit-mode entry
-
-
-def _install_pick_observer():
-    """Add LeftButtonPressEvent observer and swap to a pick-friendly style."""
-    global _default_interactor_style
-
-    if _edit._observer_tag is not None:
-        return
-
-    # Save the original interactor style so we can restore it later
-    _default_interactor_style = renderWindowInteractor.GetInteractorStyle()
-
-    # Replace with a plain trackball camera style for middle/right-click
-    # camera control (pan, zoom).
-    from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
-
-    style = vtkInteractorStyleTrackballCamera()
-    renderWindowInteractor.SetInteractorStyle(style)
-
-    # Remove the style's left-button observers so it won't start camera
-    # rotation.  We handle left-click entirely in our own observers.
-    renderWindowInteractor.RemoveObservers("LeftButtonPressEvent")
-    renderWindowInteractor.RemoveObservers("LeftButtonReleaseEvent")
-
-    _edit._observer_tag = renderWindowInteractor.AddObserver(
-        "LeftButtonPressEvent", _on_left_button_press
-    )
-    _edit._release_observer_tag = renderWindowInteractor.AddObserver(
-        "LeftButtonReleaseEvent", _on_left_button_release
-    )
-
-
-def _remove_pick_observer():
-    """Remove picking observer and restore default interactor style."""
-    global _default_interactor_style
-
-    if _edit._observer_tag is not None:
-        renderWindowInteractor.RemoveObserver(_edit._observer_tag)
-        _edit._observer_tag = None
-    if _edit._release_observer_tag is not None:
-        renderWindowInteractor.RemoveObserver(_edit._release_observer_tag)
-        _edit._release_observer_tag = None
-
-    # Restore the original switch-based interactor style
-    if _default_interactor_style is not None:
-        renderWindowInteractor.SetInteractorStyle(_default_interactor_style)
-        _default_interactor_style = None
+        _scalar_bars.set_bar(SCALAR_BAR_ACTIVE_ARRAY, lut, "Material ID")
 
 
 # -----------------------------------------------------------------------------
@@ -428,7 +236,7 @@ def on_file_change(selected_file, **kwargs):
             _update_scalar_bars(_active_lut, default_array)
 
             # Set up boundary editing infrastructure
-            _setup_edit_infrastructure()
+            setup_edit_state(_edit, _viz, renderer)
 
             state.available_arrays = arrays
             state.selected_array = default_array
@@ -499,10 +307,10 @@ def on_edit_mode_change(edit_mode, **kwargs):
         if _viz and _viz.bnd_actor:
             _viz.bnd_actor.SetVisibility(0)
         _apply_edit_coloring(BOUNDARY)
-        _install_pick_observer()
+        _pick_interactor.install()
     else:
         # Exit edit mode
-        _remove_pick_observer()
+        _pick_interactor.remove()
         _edit.merged_bnd_actor.SetVisibility(0)
         _edit.bnd_selection_actor.SetVisibility(0)
         _edit.bnd_selection_set.clear()

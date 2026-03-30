@@ -64,9 +64,11 @@ The app is a [Trame](https://trame.readthedocs.io/) web application that serves 
 3. Each `@state.change(...)` callback in `app.py` calls the appropriate `vtk_pipeline` function and then `ctrl.view_update()` to push the new render to the browser.
 
 **Module responsibilities:**
-- `app.py` — entry point, argument parsing, Trame server init, state management, `@state.change` callbacks, scalar bar lifecycle, edit mode interactor observer
+- `app.py` — entry point, argument parsing, Trame server init, state management, `@state.change` callbacks
 - `vtk_pipeline.py` — VTK rendering logic (actor/mapper creation, coloring, representation, LUT building)
-- `boundary_edit.py` — mesh cell editing: boundary extraction, interactive cell selection (boundary and volume), BoundaryID/MaterialID assignment, save as .vtu. ManifoldID values are preserved but not edited. (TODO: pending rename to `mesh_edit.py`)
+- `mesh_edit.py` — mesh cell editing: boundary extraction, interactive cell selection (boundary and volume), BoundaryID/MaterialID assignment, save as .vtu. ManifoldID values are preserved but not edited.
+- `scalar_bars.py` — `ScalarBarManager`: owns the two scalar bar actors (active coloring + boundary ID) and their renderer lifecycle
+- `interactor.py` — `PickInteractorManager`: owns the `LeftButton` observer lifecycle for cell-picking in edit mode
 - `file_utils.py` — format detection and `data/` folder scanning
 - `ui.py` — Trame/Vuetify layout (toolbar, VTK viewport, edit mode drawer, error overlay)
 - `constants.py` — string sentinels/prefixes, representation mode names, known array names, deal.II default ID values
@@ -82,9 +84,13 @@ The app is a [Trame](https://trame.readthedocs.io/) web application that serves 
 
 `apply_representation(vol_actor, bnd_actor, representation)` — sets surface/wireframe/points mode; boundary cells always render as surface/lines except in Points mode.
 
+`get_max_cell_dimension(dataset)` — returns the maximum cell dimension present in a dataset. Shared helper used by `split_by_dimension` and `mesh_edit.py`.
+
 `build_categorical_lut(unique_ids)` — builds an indexed `vtkLookupTable` with `BREWER_QUALITATIVE_SET1` palette for categorical integer data (handles negative IDs via indexed lookup). Returns `(lut, index_map)`.
 
-**Boundary editing (`boundary_edit.py`):**
+`apply_categorical_coloring(mapper, dataset, array_name)` — builds a categorical LUT from the unique IDs in `array_name` and wires `mapper`. Returns `(lut, index_map)`, or `(None, None)` if the array is absent.
+
+**Boundary editing (`mesh_edit.py`):**
 
 `BoundaryEditState` — dataclass holding all mutable edit state: full/vol/bnd datasets, actors, mappers, pickers, selection sets, adjacency graph, cell normals, and observer tags.
 
