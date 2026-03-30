@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+  - repo: local
+    hooks:
+      - id: pytest-smoke
+        name: smoke tests
+        entry: pytest
+        language: unsupported  # no isolated venv — uses the active venv's pytest and dependencies directly ("system" is a deprecated alias since pre-commit 4.4.0)
+        pass_filenames: false
+        always_run: true
