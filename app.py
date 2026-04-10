@@ -13,7 +13,7 @@ from constants import (
     SCALAR_BAR_BOUNDARY,
     VOLUME,
 )
-from file_utils import get_vtk_files_from_data_folder, CURRENT_DIRECTORY
+from file_utils import get_vtk_files_from_data_folder
 from vtk_pipeline import (
     build_visualization,
     apply_categorical_coloring,
@@ -44,8 +44,14 @@ parser.add_argument(
     default=None,
     help="Path to VTK file to open on start (i.e.: data/grid-1.vtk)",
 )
+parser.add_argument(
+    "--data-directory",
+    default="./data",
+    help="Directory containing input/output VTK files (default: ./data)",
+)
 # Parse known args and let trame handle the rest (--port, --host, --debug, etc.)
 args, unknown = parser.parse_known_args()
+data_directory = os.path.abspath(args.data_directory)
 
 
 # -----------------------------------------------------------------------------
@@ -65,7 +71,7 @@ _edit = BoundaryEditState()
 
 DEFAULT_REPRESENTATION = REPR_SURFACE_EDGES
 
-available_files = get_vtk_files_from_data_folder()
+available_files = get_vtk_files_from_data_folder(data_directory)
 initial_file = (
     args.file
     if args.file and os.path.exists(args.file)
@@ -489,15 +495,16 @@ def save_vtu():
             filename = "output"
         if not filename.endswith(".vtu"):
             filename += ".vtu"
-        output_path = os.path.join(CURRENT_DIRECTORY, "data", filename)
+        os.makedirs(data_directory, exist_ok=True)
+        output_path = os.path.join(data_directory, filename)
 
         save_as_vtu(_edit, output_path)
 
-        state.save_status = f"Saved to data/{filename}"
+        state.save_status = f"Saved to {os.path.relpath(output_path)}"
         state.save_status_type = "success"
 
         # Refresh file list so the new file appears in the dropdown
-        state.available_files = get_vtk_files_from_data_folder()
+        state.available_files = get_vtk_files_from_data_folder(data_directory)
         print(f"  Saved to {output_path}")
     except Exception as e:
         state.save_status = f"Error: {str(e)}"
