@@ -7,6 +7,7 @@ if os.environ.get("PV_VENV") or "--venv" in os.sys.argv:
 
 from trame.app.file_upload import ClientFile
 from trame.app import get_server
+from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkStringOutputWindow
 
 from constants import (
     ARRAY_SOLID,
@@ -19,6 +20,7 @@ from constants import (
     SCALAR_BAR_BOUNDARY,
     VOLUME,
 )
+from edit_session import EditSession
 from file_utils import get_vtk_files_from_data_folder
 from pv_backend import ParaViewBackend, is_paraview_available
 from vtk_pipeline import (
@@ -67,6 +69,11 @@ parser.add_argument(
     action="store_true",
     help="Enable development mode conveniences, including Trame hot reload.",
 )
+parser.add_argument(
+    "--hide-experimental-filters",
+    action="store_true",
+    help="Hide experimentally discovered ParaView filters from the Filter menu.",
+)
 # Parse known args and let trame handle the rest (--port, --host, --debug, etc.)
 args, unknown = parser.parse_known_args()
 data_directory = os.path.abspath(args.data_directory)
@@ -108,9 +115,17 @@ render_target = None
 _viz = None  # VisualizationResult | None
 _active_lut = None  # LUT currently used for the "Color by" coloring
 _pv_backend = None
+_edit_session = EditSession()
+_pv_output_window = None
+_pv_output_offset = 0
 
 if BACKEND == "paraview":
-    _pv_backend = ParaViewBackend(data_directory=data_directory)
+    _pv_output_window = vtkStringOutputWindow()
+    vtkOutputWindow.SetInstance(_pv_output_window)
+    _pv_backend = ParaViewBackend(
+        data_directory=data_directory,
+        show_experimental_filters=not args.hide_experimental_filters,
+    )
     render_target = _pv_backend.initialize_view()
     _scalar_bars = None
 else:
@@ -161,6 +176,8 @@ state.pipeline_items = []
 state.active_pipeline_item = None
 state.active_source_label = ""
 state.active_source_type = ""
+state.active_source_kind = "Reader Type"
+state.active_parent_label = ""
 state.source_path = ""
 state.point_arrays = []
 state.cell_arrays = []
@@ -177,6 +194,12 @@ state.active_visibility = True
 state.upload_status = ""
 state.upload_status_type = "info"
 state.remote_browser_dialog = False
+_filter_catalog = _pv_backend.get_available_filters() if _pv_backend else {"supported": [], "experimental": []}
+state.filter_supported_options = _filter_catalog["supported"]
+state.filter_experimental_options = _filter_catalog["experimental"]
+state.show_experimental_filters = bool(state.filter_experimental_options)
+state.filter_menu = False
+state.filter_search = ""
 state.interaction_quality_options = [
     {"text": "Fast", "value": "fast"},
     {"text": "Balanced", "value": "balanced"},
@@ -187,6 +210,18 @@ state.interactive_quality = INTERACTION_QUALITY_PRESETS["high"]["interactive_qua
 state.interactive_ratio = INTERACTION_QUALITY_PRESETS["high"]["interactive_ratio"]
 state.still_quality = 98
 state.still_ratio = 1
+state.can_edit_active = False
+state.edit_session_active = False
+state.edit_session_label = ""
+state.edit_status = ""
+state.edit_status_type = "info"
+state.save_target_label = "Active pipeline result"
+state.pv_runtime_message = ""
+state.pv_runtime_type = "error"
+state.show_calculator_help = False
+state.calculator_attribute_type = ""
+state.calculator_input_variables = []
+state.calculator_coordinate_variables = []
 
 # Edit mode state
 state.edit_mode = False
@@ -304,6 +339,17 @@ def _refresh_available_files():
     state.available_files = get_vtk_files_from_data_folder(data_directory)
 
 
+def _resolve_output_path(filename, fallback_name):
+    """Resolve a save target strictly inside ``data_directory``."""
+    raw_name = (filename or "").strip() or fallback_name
+    candidate = Path(raw_name)
+    relative_candidate = Path(*candidate.parts[1:]) if candidate.is_absolute() else candidate
+    normalized = Path(os.path.normpath(str(relative_candidate)))
+    if str(normalized).startswith(".."):
+        raise ValueError("Output path must stay inside --data-directory")
+    return os.path.join(data_directory, str(normalized))
+
+
 def _persist_uploaded_file(client_file):
     """Persist an uploaded client-side dataset into the data directory."""
     uploads_dir = Path(data_directory) / "uploads"
@@ -322,6 +368,71 @@ def _persist_uploaded_file(client_file):
     return str(candidate)
 
 
+def _refresh_paraview_runtime_message(clear=False):
+    """Drain recent ParaView/VTK runtime output into a user-facing alert."""
+    global _pv_output_offset
+
+    if BACKEND != "paraview" or _pv_output_window is None:
+        return
+
+    output = _pv_output_window.GetOutput() or ""
+    if clear:
+        state.pv_runtime_message = ""
+        state.pv_runtime_type = "error"
+        _pv_output_offset = len(output)
+        return
+
+    if len(output) <= _pv_output_offset:
+        return
+
+    new_output = output[_pv_output_offset:]
+    _pv_output_offset = len(output)
+    lines = [
+        line.strip()
+        for line in new_output.splitlines()
+        if line.strip() and "Saving settings file" not in line
+    ]
+    if not lines:
+        return
+
+    state.pv_runtime_message = "\n".join(lines[-4:])
+    state.pv_runtime_type = (
+        "error"
+        if any(("ERROR:" in line or "Err:" in line) for line in lines)
+        else "warning"
+    )
+
+
+def _save_paraview_output():
+    """Save the active ParaView output or edit-session dataset and return its path."""
+    if _pv_backend.source is None and not _edit_session.active:
+        raise RuntimeError("No active pipeline item to save")
+
+    if _edit_session.active:
+        fallback_name = _edit_session.default_output_filename()
+        output_path = _resolve_output_path(state.save_filename, fallback_name)
+        if not os.path.splitext(output_path)[1]:
+            output_path += ".vtu"
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        _edit_session.save(output_path)
+        saved_kind = "edited dataset"
+    else:
+        fallback_name = _pv_backend.default_output_filename()
+        output_path = _resolve_output_path(state.save_filename, fallback_name)
+        if not os.path.splitext(output_path)[1]:
+            output_path += _pv_backend._default_output_extension()
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        _pv_backend.save_active_data(output_path)
+        saved_kind = "pipeline result"
+
+    _refresh_available_files()
+    relative_output = os.path.relpath(output_path, data_directory)
+    state.save_filename = relative_output
+    state.save_status = f"Saved {saved_kind} to {relative_output}"
+    state.save_status_type = "success"
+    return output_path
+
+
 def _update_paraview_ui_state():
     """Synchronize Trame state with the active ParaView source metadata."""
     if BACKEND != "paraview" or _pv_backend is None:
@@ -332,12 +443,18 @@ def _update_paraview_ui_state():
     state.active_pipeline_item = ui_state["active_pipeline_item"]
     state.active_source_label = ui_state["active_source_label"]
     state.active_source_type = ui_state["active_source_type"]
+    state.active_source_kind = ui_state["active_source_kind"]
+    state.active_parent_label = ui_state["active_parent_label"]
     state.source_path = ui_state["source_path"]
     state.point_arrays = ui_state["point_arrays"]
     state.cell_arrays = ui_state["cell_arrays"]
     state.data_stats = ui_state["data_stats"]
     state.source_properties = ui_state["source_properties"]
     state.display_properties = ui_state["display_properties"]
+    state.show_calculator_help = ui_state["show_calculator_help"]
+    state.calculator_attribute_type = ui_state["calculator_attribute_type"]
+    state.calculator_input_variables = ui_state["calculator_input_variables"]
+    state.calculator_coordinate_variables = ui_state["calculator_coordinate_variables"]
     state.source_default_property_count = len(
         [item for item in state.source_properties if item["visibility"] == "default"]
     )
@@ -356,6 +473,20 @@ def _update_paraview_ui_state():
     state.selected_array = ui_state["selected_array"]
     state.representation = ui_state["representation"]
     state.pv_properties_dirty = False
+    if not state.save_filename or state.save_filename == "output":
+        state.save_filename = _edit_session.default_output_filename() if _edit_session.active else _pv_backend.default_output_filename()
+    state.save_target_label = (
+        f"Edited dataset: {_edit_session.source_label}"
+        if _edit_session.active
+        else f"Active pipeline result: {state.active_source_label}"
+        if state.active_source_label
+        else "Active pipeline result"
+    )
+    try:
+        _pv_backend.export_active_dataset_for_editing()
+        state.can_edit_active = True
+    except Exception:
+        state.can_edit_active = False
 
 
 # -----------------------------------------------------------------------------
@@ -377,9 +508,11 @@ def on_file_change(selected_file, **kwargs):
                 state.edit_mode = False
 
             if BACKEND == "paraview":
+                _refresh_paraview_runtime_message(clear=True)
                 arrays, default_array = _pv_backend.load_file(selected_file)
                 _pv_backend.apply_representation(state.representation)
                 _pv_backend.apply_coloring(default_array)
+                _refresh_paraview_runtime_message()
                 _update_paraview_ui_state()
                 state.has_boundary = False
                 state.error_message = ""
@@ -795,9 +928,11 @@ def pv_apply_properties():
     if BACKEND != "paraview":
         return
 
+    _refresh_paraview_runtime_message(clear=True)
     _pv_backend.apply_property_changes(
         state.source_properties, state.display_properties
     )
+    _refresh_paraview_runtime_message()
     _update_paraview_ui_state()
     _render_and_push()
 
@@ -822,6 +957,21 @@ def pv_toggle_visibility():
     _render_and_push()
 
 
+@ctrl.add("pv_toggle_visibility_for")
+def pv_toggle_visibility_for(node_id):
+    """Toggle visibility for a specific ParaView pipeline node."""
+    if BACKEND != "paraview" or not node_id:
+        return
+
+    node = _pv_backend._find_node(node_id)
+    if node is None or node.get("display") is None:
+        return
+
+    _pv_backend.set_visibility(node_id, not bool(node["display"].Visibility))
+    _update_paraview_ui_state()
+    _render_and_push()
+
+
 @ctrl.add("pv_delete_active")
 def pv_delete_active():
     """Delete the active ParaView node from the pipeline."""
@@ -832,6 +982,112 @@ def pv_delete_active():
     _update_paraview_ui_state()
     state.save_status = ""
     _render_and_push()
+
+
+@ctrl.add("pv_add_filter")
+def pv_add_filter(filter_key):
+    """Add a supported filter to the active ParaView node."""
+    if BACKEND != "paraview" or not state.active_pipeline_item:
+        return
+    if not filter_key:
+        return
+
+    try:
+        _refresh_paraview_runtime_message(clear=True)
+        _pv_backend.add_filter(filter_key)
+        _refresh_paraview_runtime_message()
+        state.filter_menu = False
+        _update_paraview_ui_state()
+        _render_and_push()
+    except Exception as exc:
+        state.error_message = f"Error adding filter: {exc}"
+
+
+@ctrl.add("pv_save_active_data")
+def pv_save_active_data():
+    """Save the active ParaView output or edit-session result to a new file."""
+    if BACKEND != "paraview":
+        return
+
+    try:
+        _save_paraview_output()
+    except Exception as exc:
+        state.save_status = f"Error: {exc}"
+        state.save_status_type = "error"
+
+
+@ctrl.add("pv_begin_edit_session")
+def pv_begin_edit_session():
+    """Initialize an edit session from the active ParaView pipeline node."""
+    if BACKEND != "paraview":
+        return
+
+    try:
+        exported = _pv_backend.export_active_dataset_for_editing()
+        _edit_session.begin(
+            exported["node_id"],
+            exported["label"],
+            exported["filename"],
+            exported["dataset"],
+        )
+        state.edit_session_active = True
+        state.edit_session_label = exported["label"]
+        state.save_filename = _edit_session.default_output_filename()
+        state.save_target_label = f"Edited dataset: {exported['label']}"
+        state.save_status = ""
+        state.edit_status = (
+            f"Edit session initialized for {exported['label']}. "
+            "Interactive editing tools are the next integration step."
+        )
+        state.edit_status_type = "info"
+    except Exception as exc:
+        state.edit_session_active = False
+        state.edit_session_label = ""
+        state.edit_status = f"Edit mode unavailable: {exc}"
+        state.edit_status_type = "error"
+
+
+@ctrl.add("pv_discard_edit_session")
+def pv_discard_edit_session():
+    """Discard the current edit session."""
+    _edit_session.clear()
+    state.edit_session_active = False
+    state.edit_session_label = ""
+    if BACKEND == "paraview" and _pv_backend is not None:
+        state.save_filename = _pv_backend.default_output_filename()
+        state.save_target_label = (
+            f"Active pipeline result: {state.active_source_label}"
+            if state.active_source_label
+            else "Active pipeline result"
+        )
+    state.edit_status = "Edit session discarded"
+    state.edit_status_type = "info"
+
+
+@ctrl.add("pv_commit_edit_session")
+def pv_commit_edit_session():
+    """Save the current edit session and append it as a new pipeline source."""
+    if BACKEND != "paraview" or not _edit_session.active:
+        return
+
+    try:
+        output_path = _save_paraview_output()
+        _edit_session.clear()
+        state.edit_session_active = False
+        state.edit_session_label = ""
+        state.edit_status = "Edit session saved and added to the pipeline"
+        state.edit_status_type = "success"
+
+        arrays, default_array = _pv_backend.load_file(output_path)
+        _pv_backend.apply_representation(state.representation)
+        _pv_backend.apply_coloring(default_array)
+        _update_paraview_ui_state()
+        state.available_arrays = arrays
+        state.selected_array = default_array
+        _render_and_push()
+    except Exception as exc:
+        state.edit_status = f"Could not add edited result to pipeline: {exc}"
+        state.edit_status_type = "error"
 
 
 @ctrl.add("upload_dataset")
