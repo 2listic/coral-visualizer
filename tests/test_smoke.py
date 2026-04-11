@@ -1,9 +1,10 @@
 from conftest import DATA_DIR
 
 from mesh_edit import BoundaryEditState, setup_edit_state
+from pv_backend import ParaViewBackend, is_paraview_available
 from vtk_pipeline import apply_coloring, build_visualization
 
-SIMPLE_VTK = str(DATA_DIR / "hyper_cube-1ref.vtk")
+SIMPLE_VTK = str(DATA_DIR / "hyper_cube-2ref.vtk")
 
 
 def test_imports():
@@ -36,3 +37,16 @@ def test_setup_edit_state(tmp_renderer):
     edit = BoundaryEditState()
     setup_edit_state(edit, result, tmp_renderer)
     assert edit.merged_bnd_dataset is not None
+
+
+def test_paraview_availability_probe():
+    """ParaView backend availability check should always return a boolean."""
+    assert isinstance(is_paraview_available(), bool)
+
+
+def test_paraview_representation_mapping():
+    """UI representation labels should map to ParaView labels."""
+    assert (
+        ParaViewBackend._normalize_representation("Surface with Edges")
+        == "Surface With Edges"
+    )

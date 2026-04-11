@@ -21,6 +21,38 @@ or using the custom `file` argument plus any Trame argument (i.e. `port`)
 Use `--data-directory` to scan a custom folder instead of the default `./data` (also used as the save destination for exported `.vtu` files):  
 `python app.py --data-directory /path/to/meshes`
 
+### ParaView backend
+
+The app now supports `--backend vtk|paraview|auto`.
+
+The default `auto` mode keeps using the legacy VTK backend unless ParaView and
+the Trame ParaView widget are available in the current Python environment.
+
+The recommended way to run the ParaView backend is a dedicated conda
+environment from `conda-forge`.
+
+Create it non-interactively with:
+
+```bash
+./tools/setup_pv_env.sh
+```
+
+Then run:
+
+```bash
+conda run -n coral-paraview python app.py --backend paraview
+```
+
+You can override the defaults if needed:
+
+```bash
+ENV_NAME=my-pv-env PYTHON_VERSION=3.10 ./tools/setup_pv_env.sh
+```
+
+The M1 scope includes file loading, remote rendering, `Color by`,
+`Representation`, and `Reset Camera`. Mesh editing still only works on the VTK
+backend.
+
 ## Usage with Docker
 
 Original example at the official [Trame repo](https://github.com/Kitware/trame/tree/master/examples/deploy/docker/SingleFile).
@@ -43,7 +75,7 @@ Or if you need some prefix
 docker run -it --rm -p 8008:80 -e TRAME_URL_PREFIX=/my-app/sub/path coral-visualizer-standalone
 ```
 
-## Development 
+## Development
 
 ### Pre-commit hooks
 

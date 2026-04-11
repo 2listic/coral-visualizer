@@ -1,5 +1,11 @@
 import argparse
 import os
+from pathlib import Path
+
+if os.environ.get("PV_VENV") or "--venv" in os.sys.argv:
+    import paraview.web.venv  # noqa: F401
+
+from trame.app.file_upload import ClientFile
 from trame.app import get_server
 
 from constants import (
@@ -14,6 +20,7 @@ from constants import (
     VOLUME,
 )
 from file_utils import get_vtk_files_from_data_folder
+from pv_backend import ParaViewBackend, is_paraview_available
 from vtk_pipeline import (
     build_visualization,
     apply_categorical_coloring,
@@ -49,27 +56,77 @@ parser.add_argument(
     default="./data",
     help="Directory containing input/output VTK files (default: ./data)",
 )
+parser.add_argument(
+    "--backend",
+    choices=["auto", "vtk", "paraview"],
+    default="auto",
+    help="Rendering backend to use (default: auto)",
+)
+parser.add_argument(
+    "--dev",
+    action="store_true",
+    help="Enable development mode conveniences, including Trame hot reload.",
+)
 # Parse known args and let trame handle the rest (--port, --host, --debug, etc.)
 args, unknown = parser.parse_known_args()
 data_directory = os.path.abspath(args.data_directory)
 
+if args.dev and "--hot-reload" not in os.sys.argv:
+    os.sys.argv.append("--hot-reload")
+    os.environ["TRAME_HOT_RELOAD"] = "1"
+
+PARAVIEW_AVAILABLE = is_paraview_available()
+if args.backend == "auto":
+    BACKEND = "paraview" if PARAVIEW_AVAILABLE else "vtk"
+elif args.backend == "paraview" and not PARAVIEW_AVAILABLE:
+    BACKEND = "vtk"
+else:
+    BACKEND = args.backend
+
+BACKEND_MESSAGE = ""
+if args.backend == "paraview" and BACKEND != "paraview":
+    BACKEND_MESSAGE = (
+        "ParaView backend requested but not available in this Python environment. "
+        "Falling back to the VTK backend."
+    )
+elif args.backend == "auto" and BACKEND == "vtk" and not PARAVIEW_AVAILABLE:
+    BACKEND_MESSAGE = (
+        "ParaView backend not detected. Running with the legacy VTK backend."
+    )
+
 
 # -----------------------------------------------------------------------------
-# VTK Setup
+# Rendering setup
 # -----------------------------------------------------------------------------
 
-renderer, renderWindow, renderWindowInteractor = create_vtk_rendering_context()
+renderer = None
+renderWindow = None
+renderWindowInteractor = None
+render_target = None
 
 # Module-level pipeline references (updated whenever a file is loaded)
 _viz = None  # VisualizationResult | None
 _active_lut = None  # LUT currently used for the "Color by" coloring
+_pv_backend = None
 
-_scalar_bars = ScalarBarManager(renderer)
+if BACKEND == "paraview":
+    _pv_backend = ParaViewBackend(data_directory=data_directory)
+    render_target = _pv_backend.initialize_view()
+    _scalar_bars = None
+else:
+    renderer, renderWindow, renderWindowInteractor = create_vtk_rendering_context()
+    render_target = renderWindow
+    _scalar_bars = ScalarBarManager(renderer)
 
 # Boundary editing state
 _edit = BoundaryEditState()
 
 DEFAULT_REPRESENTATION = REPR_SURFACE_EDGES
+INTERACTION_QUALITY_PRESETS = {
+    "fast": {"interactive_quality": 60, "interactive_ratio": 0.7},
+    "balanced": {"interactive_quality": 80, "interactive_ratio": 0.85},
+    "high": {"interactive_quality": 95, "interactive_ratio": 1},
+}
 
 available_files = get_vtk_files_from_data_folder(data_directory)
 initial_file = (
@@ -98,6 +155,38 @@ state.available_arrays = _initial_arrays
 state.selected_array = _initial_array
 state.representation = DEFAULT_REPRESENTATION
 state.has_boundary = False
+state.backend = BACKEND
+state.backend_message = BACKEND_MESSAGE
+state.pipeline_items = []
+state.active_pipeline_item = None
+state.active_source_label = ""
+state.active_source_type = ""
+state.source_path = ""
+state.point_arrays = []
+state.cell_arrays = []
+state.data_stats = []
+state.source_properties = []
+state.display_properties = []
+state.source_default_property_count = 0
+state.source_advanced_property_count = 0
+state.display_default_property_count = 0
+state.display_advanced_property_count = 0
+state.inspector_tab = 0
+state.pv_properties_dirty = False
+state.active_visibility = True
+state.upload_status = ""
+state.upload_status_type = "info"
+state.remote_browser_dialog = False
+state.interaction_quality_options = [
+    {"text": "Fast", "value": "fast"},
+    {"text": "Balanced", "value": "balanced"},
+    {"text": "High", "value": "high"},
+]
+state.interaction_quality = "high"
+state.interactive_quality = INTERACTION_QUALITY_PRESETS["high"]["interactive_quality"]
+state.interactive_ratio = INTERACTION_QUALITY_PRESETS["high"]["interactive_ratio"]
+state.still_quality = 98
+state.still_ratio = 1
 
 # Edit mode state
 state.edit_mode = False
@@ -116,11 +205,13 @@ state.angle_threshold = 15
 # Build UI
 # -----------------------------------------------------------------------------
 
-build_ui(server, renderWindow)
+build_ui(server, render_target, BACKEND)
 
-_pick_interactor = PickInteractorManager(
-    renderWindowInteractor, renderer, renderWindow, state, ctrl, _edit
-)
+_pick_interactor = None
+if BACKEND == "vtk":
+    _pick_interactor = PickInteractorManager(
+        renderWindowInteractor, renderer, renderWindow, state, ctrl, _edit
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -141,6 +232,9 @@ def _array_label(array_value):
 
 def _update_scalar_bars(active_lut, array_value):
     """Manage all scalar bars: the active coloring bar and the boundary ID bar."""
+    if BACKEND != "vtk":
+        return
+
     if active_lut is not None:
         _scalar_bars.set_bar(
             SCALAR_BAR_ACTIVE_ARRAY, active_lut, _array_label(array_value)
@@ -165,6 +259,9 @@ def _apply_edit_coloring(edit_target):
     VOLUME: hides the boundary overlay, applies categorical MaterialID coloring
       to the volume actor.
     """
+    if BACKEND != "vtk":
+        return
+
     if edit_target == BOUNDARY:
         if _edit.merged_bnd_actor:
             _edit.merged_bnd_actor.SetVisibility(1)
@@ -193,6 +290,74 @@ def _apply_edit_coloring(edit_target):
         _scalar_bars.set_bar(SCALAR_BAR_ACTIVE_ARRAY, lut, "Material ID")
 
 
+def _render_and_push():
+    """Render the active backend and push the updated view to the client."""
+    if BACKEND == "paraview":
+        _pv_backend.render()
+    else:
+        renderWindow.Render()
+    ctrl.view_update()
+
+
+def _refresh_available_files():
+    """Refresh the file list exposed to the UI."""
+    state.available_files = get_vtk_files_from_data_folder(data_directory)
+
+
+def _persist_uploaded_file(client_file):
+    """Persist an uploaded client-side dataset into the data directory."""
+    uploads_dir = Path(data_directory) / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    original_name = Path(client_file.name or "upload.vtu").name
+    stem = Path(original_name).stem
+    suffix = Path(original_name).suffix or ".vtu"
+    candidate = uploads_dir / original_name
+    counter = 1
+    while candidate.exists():
+        candidate = uploads_dir / f"{stem}_{counter}{suffix}"
+        counter += 1
+
+    candidate.write_bytes(client_file.content)
+    return str(candidate)
+
+
+def _update_paraview_ui_state():
+    """Synchronize Trame state with the active ParaView source metadata."""
+    if BACKEND != "paraview" or _pv_backend is None:
+        return
+
+    ui_state = _pv_backend.get_ui_state()
+    state.pipeline_items = ui_state["pipeline_items"]
+    state.active_pipeline_item = ui_state["active_pipeline_item"]
+    state.active_source_label = ui_state["active_source_label"]
+    state.active_source_type = ui_state["active_source_type"]
+    state.source_path = ui_state["source_path"]
+    state.point_arrays = ui_state["point_arrays"]
+    state.cell_arrays = ui_state["cell_arrays"]
+    state.data_stats = ui_state["data_stats"]
+    state.source_properties = ui_state["source_properties"]
+    state.display_properties = ui_state["display_properties"]
+    state.source_default_property_count = len(
+        [item for item in state.source_properties if item["visibility"] == "default"]
+    )
+    state.source_advanced_property_count = len(
+        [item for item in state.source_properties if item["visibility"] == "advanced"]
+    )
+    state.display_default_property_count = len(
+        [item for item in state.display_properties if item["visibility"] == "default"]
+    )
+    state.display_advanced_property_count = len(
+        [item for item in state.display_properties if item["visibility"] == "advanced"]
+    )
+    state.active_visibility = ui_state["active_visibility"]
+    state.available_arrays = ui_state["point_arrays"] + ui_state["cell_arrays"]
+    state.available_arrays.insert(0, {"text": "Solid Color", "value": ARRAY_SOLID})
+    state.selected_array = ui_state["selected_array"]
+    state.representation = ui_state["representation"]
+    state.pv_properties_dirty = False
+
+
 # -----------------------------------------------------------------------------
 # State Callbacks
 # -----------------------------------------------------------------------------
@@ -210,6 +375,19 @@ def on_file_change(selected_file, **kwargs):
             # Exit edit mode if active
             if state.edit_mode:
                 state.edit_mode = False
+
+            if BACKEND == "paraview":
+                arrays, default_array = _pv_backend.load_file(selected_file)
+                _pv_backend.apply_representation(state.representation)
+                _pv_backend.apply_coloring(default_array)
+                _update_paraview_ui_state()
+                state.has_boundary = False
+                state.error_message = ""
+                state.selection_count = 0
+                state.save_status = ""
+
+                _render_and_push()
+                return
 
             _viz = build_visualization(selected_file, renderer)
 
@@ -253,8 +431,7 @@ def on_file_change(selected_file, **kwargs):
             state.selection_count = 0
             state.save_status = ""
 
-            renderWindow.Render()
-            ctrl.view_update()
+            _render_and_push()
         except Exception as e:
             state.error_message = f"Error loading file: {str(e)}"
             print(f"Error: {e}")
@@ -267,6 +444,13 @@ def on_file_change(selected_file, **kwargs):
 def on_array_change(selected_array, **kwargs):
     """Update coloring when the user picks a different array."""
     global _active_lut
+    if BACKEND == "paraview":
+        if selected_array and _pv_backend.source is not None:
+            _pv_backend.apply_coloring(selected_array)
+            _update_paraview_ui_state()
+            ctrl.view_update()
+        return
+
     if _viz is not None:
         _active_lut = apply_coloring(
             _viz.vol_actor,
@@ -284,22 +468,59 @@ def on_array_change(selected_array, **kwargs):
                 _viz.bnd_luts,
             )
         _update_scalar_bars(_active_lut, selected_array)
-        renderWindow.Render()
-        ctrl.view_update()
+        _render_and_push()
 
 
 @state.change("representation")
 def on_representation_change(representation, **kwargs):
     """Update actor representation when the user picks a different mode."""
+    if BACKEND == "paraview":
+        if _pv_backend.display is not None:
+            _pv_backend.apply_representation(representation)
+            _update_paraview_ui_state()
+            ctrl.view_update()
+        return
+
+
+@state.change("active_pipeline_item")
+def on_active_pipeline_item_change(active_pipeline_item, **kwargs):
+    """Switch active ParaView node when the pipeline selection changes."""
+    if BACKEND != "paraview":
+        return
+    if not active_pipeline_item:
+        return
+    if not _pv_backend.set_active_node(active_pipeline_item):
+        return
+
+    _update_paraview_ui_state()
+    _render_and_push()
+
     if _viz is not None:
         apply_representation(_viz.vol_actor, _viz.bnd_actor, representation)
-        renderWindow.Render()
-        ctrl.view_update()
+        _render_and_push()
+
+
+@state.change("interaction_quality")
+def on_interaction_quality_change(interaction_quality, **kwargs):
+    """Update remote-render interaction quality preset."""
+    preset = INTERACTION_QUALITY_PRESETS.get(
+        interaction_quality, INTERACTION_QUALITY_PRESETS["high"]
+    )
+    state.interactive_quality = preset["interactive_quality"]
+    state.interactive_ratio = preset["interactive_ratio"]
 
 
 @state.change("edit_mode")
 def on_edit_mode_change(edit_mode, **kwargs):
     """Toggle between view mode and boundary edit mode."""
+    if BACKEND != "vtk":
+        if edit_mode:
+            state.edit_mode = False
+            state.error_message = (
+                "Edit mode is not available on the ParaView backend yet."
+            )
+        return
+
     if _edit.merged_bnd_actor is None:
         if edit_mode:
             state.edit_mode = False
@@ -337,13 +558,15 @@ def on_edit_mode_change(edit_mode, **kwargs):
                 _viz.vol_luts,
             )
 
-    renderWindow.Render()
-    ctrl.view_update()
+    _render_and_push()
 
 
 @state.change("edit_target")
 def on_edit_target_change(edit_target, **kwargs):
     """Switch between boundary and volume edit targets, clearing the selection."""
+    if BACKEND != "vtk":
+        return
+
     if not state.edit_mode:
         return
 
@@ -367,8 +590,7 @@ def on_edit_target_change(edit_target, **kwargs):
 
     _apply_edit_coloring(edit_target)
 
-    renderWindow.Render()
-    ctrl.view_update()
+    _render_and_push()
 
 
 # -----------------------------------------------------------------------------
@@ -379,6 +601,9 @@ def on_edit_target_change(edit_target, **kwargs):
 @ctrl.add("clear_selection")
 def clear_selection():
     """Clear all selected cells (boundary or volume depending on edit_target)."""
+    if BACKEND != "vtk":
+        return
+
     if state.edit_target == VOLUME:
         _edit.vol_selection_set.clear()
         if _edit.vol_dataset is not None:
@@ -397,13 +622,15 @@ def clear_selection():
             _edit.bnd_selection_mapper,
         )
     state.selection_count = 0
-    renderWindow.Render()
-    ctrl.view_update()
+    _render_and_push()
 
 
 @ctrl.add("select_all")
 def select_all():
     """Select all cells (boundary or volume depending on edit_target)."""
+    if BACKEND != "vtk":
+        return
+
     if state.edit_target == VOLUME:
         if _edit.vol_dataset is not None:
             n = _edit.vol_dataset.GetNumberOfCells()
@@ -415,8 +642,7 @@ def select_all():
                 _edit.vol_selection_mapper,
             )
             state.selection_count = n
-            renderWindow.Render()
-            ctrl.view_update()
+            _render_and_push()
     else:  # boundary
         if _edit.merged_bnd_dataset is not None:
             n = _edit.merged_bnd_dataset.GetNumberOfCells()
@@ -428,13 +654,16 @@ def select_all():
                 _edit.bnd_selection_mapper,
             )
             state.selection_count = n
-            renderWindow.Render()
-            ctrl.view_update()
+            _render_and_push()
 
 
 @ctrl.add("assign_id")
 def assign_id():
     """Assign the chosen ID value to all selected cells (boundary or volume)."""
+    if BACKEND != "vtk":
+        state.error_message = "Editing is only available on the VTK backend."
+        return
+
     try:
         value = int(state.assign_id_value)
     except (ValueError, TypeError):
@@ -477,13 +706,17 @@ def assign_id():
         )
 
     state.selection_count = 0
-    renderWindow.Render()
-    ctrl.view_update()
+    _render_and_push()
 
 
 @ctrl.add("save_vtu")
 def save_vtu():
     """Save the modified mesh as .vtu."""
+    if BACKEND != "vtk":
+        state.save_status = "Save is not available on the ParaView backend yet"
+        state.save_status_type = "error"
+        return
+
     if _edit.full_dataset is None or _edit.merged_bnd_dataset is None:
         state.save_status = "No data to save"
         state.save_status_type = "error"
@@ -513,6 +746,126 @@ def save_vtu():
         import traceback
 
         traceback.print_exc()
+
+
+@ctrl.add("reset_camera")
+def reset_camera():
+    """Reset the active camera for the selected backend."""
+    if BACKEND == "paraview":
+        _pv_backend.reset_camera()
+        ctrl.view_update()
+        return
+
+    if renderer is not None and renderWindow is not None:
+        renderer.ResetCamera()
+        _render_and_push()
+
+
+@ctrl.add("pv_update_property")
+def pv_update_property(scope, name, value):
+    """Update a pending ParaView property edit in Trame state."""
+    if BACKEND != "paraview":
+        return
+
+    target = state.source_properties if scope == "source" else state.display_properties
+    updated = []
+    changed = False
+    for item in target:
+        if item["name"] == name:
+            new_item = dict(item)
+            new_item["pending_value"] = value
+            updated.append(new_item)
+            changed = True
+        else:
+            updated.append(item)
+
+    if not changed:
+        return
+
+    if scope == "source":
+        state.source_properties = updated
+    else:
+        state.display_properties = updated
+    state.pv_properties_dirty = True
+
+
+@ctrl.add("pv_apply_properties")
+def pv_apply_properties():
+    """Apply pending generated ParaView property edits."""
+    if BACKEND != "paraview":
+        return
+
+    _pv_backend.apply_property_changes(
+        state.source_properties, state.display_properties
+    )
+    _update_paraview_ui_state()
+    _render_and_push()
+
+
+@ctrl.add("pv_reset_properties")
+def pv_reset_properties():
+    """Discard pending property edits and refresh the generated inspector."""
+    if BACKEND != "paraview":
+        return
+
+    _update_paraview_ui_state()
+
+
+@ctrl.add("pv_toggle_visibility")
+def pv_toggle_visibility():
+    """Toggle visibility of the active ParaView node."""
+    if BACKEND != "paraview" or not state.active_pipeline_item:
+        return
+
+    _pv_backend.set_visibility(state.active_pipeline_item, not state.active_visibility)
+    _update_paraview_ui_state()
+    _render_and_push()
+
+
+@ctrl.add("pv_delete_active")
+def pv_delete_active():
+    """Delete the active ParaView node from the pipeline."""
+    if BACKEND != "paraview" or not state.active_pipeline_item:
+        return
+
+    _pv_backend.delete_node(state.active_pipeline_item)
+    _update_paraview_ui_state()
+    state.save_status = ""
+    _render_and_push()
+
+
+@ctrl.add("upload_dataset")
+def upload_dataset(files):
+    """Handle a dataset upload from the browser file picker."""
+    uploaded_files = files or []
+    if not uploaded_files:
+        return
+
+    client_file = ClientFile(uploaded_files[0])
+    if client_file.is_empty:
+        state.upload_status = "Uploaded file was empty"
+        state.upload_status_type = "error"
+        return
+
+    try:
+        saved_path = _persist_uploaded_file(client_file)
+        _refresh_available_files()
+        state.selected_file = saved_path
+        state.upload_status = f"Loaded {os.path.basename(saved_path)}"
+        state.upload_status_type = "success"
+    except Exception as exc:
+        state.upload_status = f"Upload failed: {exc}"
+        state.upload_status_type = "error"
+
+
+@ctrl.add("open_remote_file")
+def open_remote_file(path):
+    """Open a file that already exists under the remote data directory."""
+    if not path:
+        return
+
+    state.remote_browser_dialog = False
+    state.selected_file = path
 
 
 # -----------------------------------------------------------------------------

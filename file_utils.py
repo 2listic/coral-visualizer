@@ -44,6 +44,14 @@ def get_vtk_files_from_data_folder(data_folder=None):
         items.append({"header": rel_dir})
         items.extend(groups[rel_dir])
 
+    for item in items:
+        if item.get("value") and item.get("text"):
+            item["path"] = item["text"]
+
+    for rel_dir, grouped_items in groups.items():
+        for item in grouped_items:
+            item["path"] = os.path.join(rel_dir, item["text"])
+
     return items
 
 
