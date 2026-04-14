@@ -71,6 +71,26 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - explicit coordinate symbols (`coordsX`, `coordsY`, `coordsZ`)
 - Added ParaView/VTK runtime alert surfacing in the UI.
   - Runtime parser/filter errors are now captured from VTK output and shown as an in-app alert.
+- Added the first ParaView-side `Edit mode` authoring form in the `Source` panel:
+  - `Geometry mode`
+  - `Field name`
+  - `Calculator`
+  - `Default value`
+  - `Apply Edit`
+- Added a dedicated `Edit` tab in the right inspector for ParaView edit sessions:
+  - `Pick` / `Rotate`
+  - `Grow selection`
+  - `Grow angle`
+  - `Select All`
+  - `Clear Selection`
+  - live selection status/event preview
+- Implemented the first working slice of the new edit architecture:
+  - `Volume` mode on the local `EditSession` dataset
+  - automatic `CellCenters` cell-data generation
+  - scalar field creation/update from calculator expressions on cell data
+  - cell selection state stored on the edit-session dataset
+  - `Apply Edit` now writes on selected cells and uses `Default value` elsewhere
+  - contiguous grow-selection support for `Volume` mode
 - Added generated-editor support for `ArraySelectionProperty`, which is needed by several ParaView filters.
 - Fixed several ParaView/trame integration issues encountered during iteration:
   - wrong array metadata access
@@ -91,6 +111,8 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - The ParaView backend can now initialize an edit session from compatible outputs (`vtkUnstructuredGrid`) and save that working copy as a new file.
 - A saved edit-session result can now be materialized back into the ParaView pipeline as a new source node.
 - Calculator guidance is now exposed in the inspector instead of relying on the user to inspect array names manually in `Information`.
+- Volume edit operations can now create a new scalar cell field on the edit-session dataset before saving or re-adding it to the pipeline.
+- ParaView edit sessions now keep a live cell-selection set for `Volume` mode and can apply scalar authoring only to those selected cells.
 
 ## Known Limitations
 
@@ -113,9 +135,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - There is no true collapsible pipeline tree yet.
 - No pipeline grouping/tree hierarchy yet.
   - Current browser is a flat list of sources.
-- ParaView edit mode is still scaffolding only.
-  - Session creation, saving, and re-import into the pipeline work.
-  - Interactive picking, assignment, and overlay rendering are not integrated yet.
+- ParaView edit mode is still partial.
+  - Session creation, saving, re-import, scalar `Volume` field writing, and basic click/box selection plumbing exist.
+  - Visual highlighting of the current edit-session selection in the render view is not integrated yet.
+  - `Surface` / `Edge` / `Point` authoring and mixed-dimensional append are not integrated yet.
 - ParaView runtime alerts currently surface the latest captured warning/error block.
   - There is not yet a persistent log/history panel.
 - File upload flow has not yet been end-to-end validated by Codex in a live browser session.
@@ -138,6 +161,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Integrate the existing VTK editing tools (`mesh_edit.py`, `interactor.py`) against the new `EditSession`.
 - Add richer helper panels for other filters with non-obvious symbols or inputs (`Streamline`, `Glyph`, `Threshold`).
 - Optionally add click-to-insert variable names for Calculator expressions.
+- Implement `Surface` mode by appending selected 2D cells to the unstructured grid.
+- Implement `Edge` mode by appending selected 1D cells to the unstructured grid.
+- Implement `Point` mode and decide whether its output should be 0D cells, point data, or both.
+- Materialize ParaView-side selection feedback visually in the render view for edit sessions.
 
 ### UX / UI Follow-up
 

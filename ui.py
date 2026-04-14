@@ -4,18 +4,29 @@ from trame.widgets import html, vuetify
 from constants import REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POINTS
 
 
-def _build_view_widget(backend, render_target):
+def _build_view_widget(backend, render_target, ctrl=None):
     """Create the correct Trame widget for the selected rendering backend."""
     if backend == "paraview":
         from trame.widgets import paraview as pv_widgets
 
-        return pv_widgets.VtkRemoteView(
+        return pv_widgets.VtkRemoteLocalView(
             render_target,
+            namespace="mainView",
             ref="view",
+            mode=("mainViewMode", "remote"),
+            disable_auto_switch=True,
             interactive_ratio=("interactive_ratio",),
             still_ratio=("still_ratio",),
             interactive_quality=("interactive_quality",),
             still_quality=("still_quality",),
+            enable_picking=("edit_session_active && pick_mode",),
+            box_selection=("edit_session_active && pick_mode",),
+            picking_modes=("edit_picking_modes",),
+            interactor_events=("edit_interactor_events",),
+            interactor_settings=("edit_interactor_settings",),
+            click=(ctrl.pv_edit_click, "[$event]"),
+            box_selection_change=(ctrl.pv_edit_box_selection, "[$event]"),
+            on_ready=ctrl.view_update,
             style="width: 100%; height: 100%;",
         )
 
@@ -72,7 +83,7 @@ def _build_alerts():
 
 
 def _build_toolbar(ctrl, backend):
-    vuetify.VToolbarTitle("Coral Visualizer")
+    vuetify.VToolbarTitle("Coral VTK Manipulator")
     vuetify.VDivider(vertical=True, classes="mx-4")
     html.Input(
         ref="filePicker",
@@ -96,6 +107,50 @@ def _build_toolbar(ctrl, backend):
         click="remote_browser_dialog = true",
         classes="mr-2",
     )
+    if backend == "paraview":
+        vuetify.VBtn(
+            "Enter Edit Mode",
+            small=True,
+            outlined=True,
+            click=ctrl.pv_begin_edit_session,
+            disabled=("!can_edit_active",),
+            v_if="!edit_session_active",
+            classes="mr-2",
+        )
+        vuetify.VBtn(
+            "{{ edit_session_active ? 'Save Edit Result' : 'Save Result' }}",
+            small=True,
+            color="primary",
+            click=ctrl.pv_save_active_data,
+            disabled=("!active_pipeline_item && !edit_session_active",),
+            classes="mr-2",
+        )
+        vuetify.VTextField(
+            v_model=("save_filename",),
+            label="Output filename",
+            dense=True,
+            outlined=True,
+            hide_details=True,
+            classes="mr-2",
+            style="max-width: 260px;",
+        )
+        vuetify.VBtn(
+            "Save And Add To Pipeline",
+            small=True,
+            outlined=True,
+            color="primary",
+            click=ctrl.pv_commit_edit_session,
+            v_if="edit_session_active",
+            classes="mr-2",
+        )
+        vuetify.VBtn(
+            "Discard",
+            small=True,
+            outlined=True,
+            click=ctrl.pv_discard_edit_session,
+            v_if="edit_session_active",
+            classes="mr-2",
+        )
     if backend == "vtk":
         vuetify.VSelect(
             v_model=("selected_file",),
@@ -199,6 +254,23 @@ def _build_property_action_bar(ctrl):
         classes="px-4 py-2",
         style="background: #fafafa; border-bottom: 1px solid rgba(0,0,0,0.08); flex: 0 0 auto;",
     ):
+        with vuetify.VRow(classes="mb-2"):
+            with vuetify.VCol(cols=6):
+                vuetify.VBtn(
+                    "Reset Camera",
+                    small=True,
+                    block=True,
+                    outlined=True,
+                    click=ctrl.reset_camera,
+                )
+            with vuetify.VCol(cols=6):
+                vuetify.VBtn(
+                    "Reset View",
+                    small=True,
+                    block=True,
+                    outlined=True,
+                    click=ctrl.reset_view,
+                )
         _build_property_action_row(ctrl, classes="mb-0")
         vuetify.VAlert(
             v_if="pv_properties_dirty",
@@ -218,7 +290,7 @@ def _build_inspector_tab_selector():
         style="background: #fafafa; border-bottom: 1px solid rgba(0,0,0,0.08); flex: 0 0 auto;",
     ):
         with vuetify.VRow(no_gutters=True, classes="align-center"):
-            with vuetify.VCol(cols=4):
+            with vuetify.VCol(cols=("edit_session_active ? 3 : 4",)):
                 with vuetify.VSheet(color="transparent"):
                     vuetify.VBtn(
                         "Display",
@@ -233,7 +305,7 @@ def _build_inspector_tab_selector():
                         height="3",
                         color=("inspector_tab === 0 ? 'primary' : 'transparent'",),
                     )
-            with vuetify.VCol(cols=4):
+            with vuetify.VCol(cols=("edit_session_active ? 3 : 4",)):
                 with vuetify.VSheet(color="transparent"):
                     vuetify.VBtn(
                         "Properties",
@@ -248,7 +320,7 @@ def _build_inspector_tab_selector():
                         height="3",
                         color=("inspector_tab === 1 ? 'primary' : 'transparent'",),
                     )
-            with vuetify.VCol(cols=4):
+            with vuetify.VCol(cols=("edit_session_active ? 3 : 4",)):
                 with vuetify.VSheet(color="transparent"):
                     vuetify.VBtn(
                         "Information",
@@ -262,6 +334,21 @@ def _build_inspector_tab_selector():
                     vuetify.VSheet(
                         height="3",
                         color=("inspector_tab === 2 ? 'primary' : 'transparent'",),
+                    )
+            with vuetify.VCol(cols=3, v_if="edit_session_active"):
+                with vuetify.VSheet(color="transparent"):
+                    vuetify.VBtn(
+                        "Edit",
+                        block=True,
+                        text=True,
+                        tile=True,
+                        color=("inspector_tab === 3 ? 'primary' : 'grey darken-1'",),
+                        click="inspector_tab = 3",
+                        style="border-radius: 0; height: 56px; font-size: 0.95rem; letter-spacing: 0; text-transform: none; padding: 0 4px;",
+                    )
+                    vuetify.VSheet(
+                        height="3",
+                        color=("inspector_tab === 3 ? 'primary' : 'transparent'",),
                     )
 
 
@@ -414,51 +501,92 @@ def _build_paraview_pipeline_panel(ctrl):
                     with vuetify.VListItemContent():
                         vuetify.VListItemSubtitle("Edit session")
                         vuetify.VListItemTitle("{{ edit_session_label }}")
-                with vuetify.VListItem():
-                    with vuetify.VListItemContent():
-                        vuetify.VTextField(
-                            v_model=("save_filename",),
-                            label="Output filename",
-                            dense=True,
-                            outlined=True,
-                            hide_details=True,
-                        )
-                with vuetify.VListItem():
-                    with vuetify.VListItemContent():
-                        vuetify.VBtn(
-                            "{{ edit_session_active ? 'Save Edit Result' : 'Save Result' }}",
-                            small=True,
-                            block=True,
-                            color="primary",
-                            click=ctrl.pv_save_active_data,
-                            disabled=("!active_pipeline_item && !edit_session_active",),
-                        )
-                with vuetify.VListItem(v_if="edit_session_active"):
-                    with vuetify.VListItemContent():
-                        vuetify.VBtn(
-                            "Add Edited Result To Pipeline",
-                            small=True,
-                            block=True,
-                            color="primary",
-                            outlined=True,
-                            click=ctrl.pv_commit_edit_session,
-                        )
-                with vuetify.VListItem():
-                    with vuetify.VListItemContent():
-                        vuetify.VBtn(
-                            "{{ edit_session_active ? 'Discard Edit Session' : 'Enter Edit Mode' }}",
-                            small=True,
-                            block=True,
-                            outlined=True,
-                            click=("edit_session_active ? $server.controller.pv_discard_edit_session() : $server.controller.pv_begin_edit_session()",),
-                            disabled=("!edit_session_active && !can_edit_active",),
-                        )
                 with vuetify.VListItem(v_show=("edit_status",)):
                     with vuetify.VListItemContent():
                         vuetify.VAlert(
                             type=("edit_status_type",),
                             dense=True,
                             children=["{{ edit_status }}"],
+                            classes="ma-0",
+                        )
+                with vuetify.VListItem(v_if="edit_session_active"):
+                    with vuetify.VListItemContent():
+                        vuetify.VDivider(classes="my-2")
+                        vuetify.VListItemSubtitle("Edit Mode")
+                        vuetify.VSelect(
+                            v_model=("edit_geometry_mode",),
+                            items=("edit_geometry_mode_options",),
+                            item_text="text",
+                            item_value="value",
+                            label="Geometry mode",
+                            dense=True,
+                            outlined=True,
+                            hide_details=True,
+                            classes="mt-2 mb-2",
+                        )
+                        vuetify.VTextField(
+                            v_model=("edit_field_name",),
+                            label="Field name",
+                            dense=True,
+                            outlined=True,
+                            hide_details=True,
+                            classes="mb-2",
+                        )
+                        vuetify.VTextField(
+                            v_model=("edit_expression",),
+                            label="Calculator",
+                            dense=True,
+                            outlined=True,
+                            hide_details=True,
+                            hint="Leave empty to write the default value everywhere",
+                            persistent_hint=True,
+                            classes="mb-2",
+                        )
+                        vuetify.VTextField(
+                            v_model=("edit_default_value",),
+                            label="Default value",
+                            dense=True,
+                            outlined=True,
+                            hide_details=True,
+                            classes="mb-2",
+                        )
+                        with vuetify.VList(
+                            dense=True,
+                            two_line=True,
+                            style="background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+                            classes="mb-2",
+                        ):
+                            with vuetify.VListItem():
+                                with vuetify.VListItemContent():
+                                    vuetify.VListItemSubtitle("Available cell variables")
+                                    vuetify.VAlert(
+                                        v_if="edit_available_variables.length === 0",
+                                        type="info",
+                                        dense=True,
+                                        text=True,
+                                        children=["No cell-data variables are available on the edit-session dataset."],
+                                    )
+                                    with vuetify.VChipGroup(column=True, v_if="edit_available_variables.length > 0"):
+                                        with vuetify.Template(v_for="item in edit_available_variables"):
+                                            vuetify.VChip("{{ item }}", x_small=True, classes="ma-1")
+                            with vuetify.VListItem():
+                                with vuetify.VListItemContent():
+                                    vuetify.VListItemSubtitle("Vector component syntax")
+                                    vuetify.VListItemTitle("{{ edit_vector_syntax }}")
+                        vuetify.VBtn(
+                            "Apply Edit",
+                            small=True,
+                            block=True,
+                            color="primary",
+                            outlined=True,
+                            click=ctrl.pv_apply_edit_field,
+                            classes="mb-2",
+                        )
+                        vuetify.VAlert(
+                            v_show=("edit_apply_status",),
+                            type=("edit_apply_status_type",),
+                            dense=True,
+                            children=["{{ edit_apply_status }}"],
                             classes="ma-0",
                         )
                 with vuetify.VListItem(v_show=("save_status",)):
@@ -527,12 +655,6 @@ def _build_paraview_inspector_panel(ctrl):
                         outlined=True,
                         hide_details=True,
                         classes="mb-3",
-                    )
-                    vuetify.VBtn(
-                        "Reset Camera",
-                        small=True,
-                        outlined=True,
-                        click=ctrl.reset_camera,
                     )
                     vuetify.VDivider(classes="my-4")
                     vuetify.VSubheader(classes="px-0", children=["Advanced Display Controls"])
@@ -657,6 +779,109 @@ def _build_paraview_inspector_panel(ctrl):
                                 x_small=True,
                                 classes="ma-1",
                             )
+
+                with vuetify.VContainer(fluid=True, classes="pa-4", v_show="edit_session_active && inspector_tab === 3"):
+                    vuetify.VSubheader(classes="px-0", children=["Edit Tools"])
+                    with vuetify.VList(
+                        dense=True,
+                        two_line=True,
+                        style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+                        classes="mb-4",
+                    ):
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                with vuetify.VRow(dense=True, classes="px-2"):
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Pick",
+                                            small=True,
+                                            block=True,
+                                            color=("pick_mode ? 'primary' : ''",),
+                                            outlined=("!pick_mode",),
+                                            click="pick_mode = true",
+                                        )
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Rotate",
+                                            small=True,
+                                            block=True,
+                                            color=("!pick_mode ? 'primary' : ''",),
+                                            outlined=("pick_mode",),
+                                            click="pick_mode = false",
+                                        )
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VSelect(
+                                    v_model=("selection_behavior",),
+                                    items=("selection_behavior_options",),
+                                    label="Selection behavior",
+                                    dense=True,
+                                    outlined=True,
+                                    hide_details=True,
+                                    disabled=("!pick_mode",),
+                                )
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VSwitch(
+                                    v_model=("group_select",),
+                                    label="Grow selection",
+                                    hide_details=True,
+                                    dense=True,
+                                )
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VSlider(
+                                    v_model=("angle_threshold",),
+                                    label="Grow angle",
+                                    min=0,
+                                    max=90,
+                                    step=1,
+                                    hide_details=True,
+                                    dense=True,
+                                    disabled=("!group_select",),
+                                )
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VListItemTitle("{{ selection_count }} selected")
+                                vuetify.VListItemSubtitle("Current edit-session cell selection")
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                with vuetify.VRow(dense=True):
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Select All",
+                                            small=True,
+                                            block=True,
+                                            outlined=True,
+                                            click=ctrl.pv_select_all_edit_cells,
+                                        )
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Clear Selection",
+                                            small=True,
+                                            block=True,
+                                            outlined=True,
+                                            click=ctrl.pv_clear_edit_preview,
+                                        )
+                        with vuetify.VListItem(v_show=("edit_selection_status",)):
+                            with vuetify.VListItemContent():
+                                vuetify.VAlert(
+                                    dense=True,
+                                    type=("edit_selection_status_type",),
+                                    children=["{{ edit_selection_status }}"],
+                                    classes="ma-0",
+                                )
+                        with vuetify.VListItem(v_show=("edit_selection_event",)):
+                            with vuetify.VListItemContent():
+                                vuetify.VTextarea(
+                                    value=("edit_selection_event",),
+                                    label="Last selection event",
+                                    auto_grow=True,
+                                    rows=3,
+                                    readonly=True,
+                                    outlined=True,
+                                    hide_details=True,
+                                )
 
 
 def _build_property_list(ctrl, state_key):
@@ -1083,7 +1308,13 @@ def build_ui(server, render_target, backend):
                 else:
                     _build_vtk_edit_panel(ctrl)
 
-                view = _build_view_widget(backend, render_target)
+                view = _build_view_widget(backend, render_target, ctrl)
                 ctrl.view_update = view.update
+                if backend == "paraview":
+                    ctrl.view_update_geometry = view.update_geometry
+                    ctrl.view_update_image = view.update_image
+                    ctrl.view_reset_camera = view.reset_camera
+                    ctrl.view_set_local_rendering = view.set_local_rendering
+                    ctrl.view_set_remote_rendering = view.set_remote_rendering
 
     return layout

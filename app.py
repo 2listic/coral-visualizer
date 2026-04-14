@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -161,6 +162,108 @@ server = get_server(client_type="vue2")
 state = server.state
 ctrl = server.controller
 
+
+def _debug_view(message, **values):
+    """Emit a compact debug trace for RemoteLocal view lifecycle."""
+    if not (BACKEND == "paraview" and args.dev):
+        return
+    payload = " ".join(f"{key}={values[key]!r}" for key in sorted(values))
+    if payload:
+        print(f"[view-debug] {message} {payload}", flush=True)
+    else:
+        print(f"[view-debug] {message}", flush=True)
+
+
+def _call_view_update(*args, **kwargs):
+    if hasattr(ctrl, "view_update"):
+        _debug_view(
+            "view.update",
+            mode=state.mainViewMode,
+            args=args,
+            kwargs=kwargs,
+            edit_session_active=state.edit_session_active,
+        )
+        return ctrl.view_update(*args, **kwargs)
+    return None
+
+
+def _call_view_update_geometry(*args, **kwargs):
+    if hasattr(ctrl, "view_update_geometry"):
+        _debug_view(
+            "view.update_geometry",
+            mode=state.mainViewMode,
+            args=args,
+            kwargs=kwargs,
+            edit_session_active=state.edit_session_active,
+        )
+        return ctrl.view_update_geometry(*args, **kwargs)
+    return None
+
+
+def _call_view_update_image(*args, **kwargs):
+    if hasattr(ctrl, "view_update_image"):
+        _debug_view(
+            "view.update_image",
+            mode=state.mainViewMode,
+            args=args,
+            kwargs=kwargs,
+            edit_session_active=state.edit_session_active,
+        )
+        return ctrl.view_update_image(*args, **kwargs)
+    return None
+
+
+def _call_view_set_local_rendering(*args, **kwargs):
+    if hasattr(ctrl, "view_set_local_rendering"):
+        _debug_view(
+            "view.set_local_rendering",
+            mode_before=state.mainViewMode,
+            args=args,
+            kwargs=kwargs,
+            edit_session_active=state.edit_session_active,
+        )
+        result = ctrl.view_set_local_rendering(*args, **kwargs)
+        _debug_view("view.set_local_rendering.done", mode_after=state.mainViewMode)
+        return result
+    return None
+
+
+def _call_view_set_remote_rendering(*args, **kwargs):
+    if hasattr(ctrl, "view_set_remote_rendering"):
+        _debug_view(
+            "view.set_remote_rendering",
+            mode_before=state.mainViewMode,
+            args=args,
+            kwargs=kwargs,
+            edit_session_active=state.edit_session_active,
+        )
+        result = ctrl.view_set_remote_rendering(*args, **kwargs)
+        _debug_view("view.set_remote_rendering.done", mode_after=state.mainViewMode)
+        return result
+    return None
+
+
+def _refresh_local_view(reset_camera=False):
+    """Force the RemoteLocal view to rebuild its local scene."""
+    if BACKEND != "paraview":
+        return
+
+    was_local = state.mainViewMode == "local"
+    _debug_view(
+        "view.refresh_local.start",
+        mode_before=state.mainViewMode,
+        reset_camera=reset_camera,
+        was_local=was_local,
+    )
+    if was_local:
+        _call_view_set_remote_rendering(True)
+        _call_view_update(reset_camera=reset_camera)
+    _call_view_update_geometry(reset_camera=reset_camera)
+    _call_view_set_local_rendering(True)
+    _call_view_update_geometry(reset_camera=reset_camera)
+    _call_view_update(reset_camera=reset_camera)
+    _debug_view("view.refresh_local.end", mode_after=state.mainViewMode)
+
 # Initialize state.
 state.available_files = available_files
 # selected_file will trigger on_file_change and render the initial file.
@@ -210,12 +313,33 @@ state.interactive_quality = INTERACTION_QUALITY_PRESETS["high"]["interactive_qua
 state.interactive_ratio = INTERACTION_QUALITY_PRESETS["high"]["interactive_ratio"]
 state.still_quality = 98
 state.still_ratio = 1
+state.mainViewMode = "remote"
 state.can_edit_active = False
 state.edit_session_active = False
 state.edit_session_label = ""
 state.edit_status = ""
 state.edit_status_type = "info"
 state.save_target_label = "Active pipeline result"
+state.edit_geometry_mode = "volume"
+state.edit_geometry_mode_options = [
+    {"text": "Volume", "value": "volume"},
+    {"text": "Surface", "value": "surface"},
+    {"text": "Edge", "value": "edge"},
+    {"text": "Point", "value": "point"},
+]
+state.edit_field_name = ""
+state.edit_expression = ""
+state.edit_default_value = "0"
+state.edit_available_variables = []
+state.edit_vector_syntax = "Use arrayName[0], arrayName[1], arrayName[2]"
+state.edit_apply_status = ""
+state.edit_apply_status_type = "info"
+state.edit_selection_status = ""
+state.edit_selection_status_type = "info"
+state.edit_selection_event = ""
+state.edit_picking_modes = []
+state.edit_interactor_events = []
+state.edit_interactor_settings = []
 state.pv_runtime_message = ""
 state.pv_runtime_type = "error"
 state.show_calculator_help = False
@@ -232,6 +356,11 @@ state.save_filename = "output"
 state.save_status = ""
 state.save_status_type = "success"
 state.pick_mode = True
+state.selection_behavior = "touch"
+state.selection_behavior_options = [
+    {"text": "Touch", "value": "touch"},
+    {"text": "Contained", "value": "inside"},
+]
 state.group_select = False
 state.angle_threshold = 15
 
@@ -331,7 +460,7 @@ def _render_and_push():
         _pv_backend.render()
     else:
         renderWindow.Render()
-    ctrl.view_update()
+    _call_view_update()
 
 
 def _refresh_available_files():
@@ -433,6 +562,125 @@ def _save_paraview_output():
     return output_path
 
 
+def _sync_edit_session_state():
+    """Synchronize Trame state from the current edit session."""
+    state.edit_session_active = _edit_session.active
+    state.edit_session_label = _edit_session.source_label or ""
+    state.edit_geometry_mode = _edit_session.geometry_mode
+    state.edit_field_name = _edit_session.field_name
+    state.edit_expression = _edit_session.expression
+    state.edit_default_value = _edit_session.default_value
+    state.edit_available_variables = _edit_session.available_cell_variables()
+    state.selection_count = _edit_session.selected_count()
+    state.edit_picking_modes = ["click"] if _edit_session.active and state.pick_mode else []
+    state.edit_interactor_events = []
+    if _edit_session.active and state.pick_mode:
+        state.edit_interactor_settings = [
+            {"button": 1, "action": "Select"},
+            {"button": 2, "action": "Pan"},
+            {"button": 3, "action": "Zoom", "scrollEnabled": True},
+            {"button": 1, "action": "Pan", "alt": True},
+            {"button": 1, "action": "Zoom", "control": True},
+            {"button": 1, "action": "Roll", "alt": True, "shift": True},
+        ]
+    else:
+        state.edit_interactor_settings = [
+            {"button": 1, "action": "Rotate"},
+            {"button": 2, "action": "Pan"},
+            {"button": 3, "action": "Zoom", "scrollEnabled": True},
+            {"button": 1, "action": "Pan", "alt": True},
+            {"button": 1, "action": "Zoom", "control": True},
+            {"button": 1, "action": "Roll", "alt": True, "shift": True},
+        ]
+
+
+def _normalize_edit_selection_ids(event):
+    """Extract picked cell IDs from vtk.js picking payloads."""
+    if event is None:
+        return []
+
+    if isinstance(event, dict):
+        if isinstance(event.get("compositeID"), int):
+            return [event["compositeID"]]
+        if isinstance(event.get("selection"), list):
+            result = []
+            for item in event["selection"]:
+                if isinstance(item, dict) and isinstance(item.get("compositeID"), int):
+                    result.append(item["compositeID"])
+            return result
+        return []
+
+    if isinstance(event, list):
+        result = []
+        for item in event:
+            if isinstance(item, dict) and isinstance(item.get("compositeID"), int):
+                result.append(item["compositeID"])
+        return result
+
+    return []
+
+
+def _extract_pointer_position(event):
+    """Extract display-space x/y coordinates from an interactor event payload."""
+    if not isinstance(event, dict):
+        return None
+
+    position = event.get("position")
+    if isinstance(position, dict):
+        x = position.get("x")
+        y = position.get("y")
+        if x is not None and y is not None:
+            return x, y
+
+    x = event.get("x")
+    y = event.get("y")
+    if x is not None and y is not None:
+        return x, y
+
+    return None
+
+
+def _sync_paraview_edit_selection_overlay():
+    """Update the transient selection highlight for the active ParaView edit session."""
+    if BACKEND != "paraview" or _pv_backend is None:
+        return
+
+    if not _edit_session.active:
+        _pv_backend.clear_active_selection()
+        _pv_backend.clear_edit_selection_overlay()
+        return
+
+    overlay_dataset = _edit_session.build_selected_volume_dataset()
+    if overlay_dataset is None:
+        _pv_backend.clear_active_selection()
+        _pv_backend.clear_edit_selection_overlay()
+        return
+
+    _pv_backend.update_edit_selection_overlay(overlay_dataset)
+
+
+def _summarize_edit_event(event):
+    """Return a compact, UI-friendly summary of a picking/selection event."""
+    if event is None:
+        return "No event payload"
+
+    if isinstance(event, dict):
+        summary = {}
+        for key in ("mode", "remoteId", "representationId", "view", "x", "y", "z", "compositeID"):
+            if key in event:
+                summary[key] = event[key]
+        normalized_ids = _normalize_edit_selection_ids(event)
+        if normalized_ids:
+            summary["selection_count"] = len(normalized_ids)
+            summary["sample_ids"] = normalized_ids[:8]
+        return json.dumps(summary or event, indent=2, default=str)
+
+    if isinstance(event, (list, tuple)):
+        return json.dumps(event, indent=2, default=str)
+
+    return str(event)
+
+
 def _update_paraview_ui_state():
     """Synchronize Trame state with the active ParaView source metadata."""
     if BACKEND != "paraview" or _pv_backend is None:
@@ -487,6 +735,7 @@ def _update_paraview_ui_state():
         state.can_edit_active = True
     except Exception:
         state.can_edit_active = False
+    _sync_edit_session_state()
 
 
 # -----------------------------------------------------------------------------
@@ -581,7 +830,7 @@ def on_array_change(selected_array, **kwargs):
         if selected_array and _pv_backend.source is not None:
             _pv_backend.apply_coloring(selected_array)
             _update_paraview_ui_state()
-            ctrl.view_update()
+            _call_view_update()
         return
 
     if _viz is not None:
@@ -611,7 +860,7 @@ def on_representation_change(representation, **kwargs):
         if _pv_backend.display is not None:
             _pv_backend.apply_representation(representation)
             _update_paraview_ui_state()
-            ctrl.view_update()
+            _call_view_update()
         return
 
 
@@ -641,6 +890,14 @@ def on_interaction_quality_change(interaction_quality, **kwargs):
     )
     state.interactive_quality = preset["interactive_quality"]
     state.interactive_ratio = preset["interactive_ratio"]
+
+
+@state.change("pick_mode")
+def on_pick_mode_change(pick_mode, **kwargs):
+    """Enable or disable edit-view picking modes for the ParaView path."""
+    if BACKEND != "paraview":
+        return
+    _sync_edit_session_state()
 
 
 @state.change("edit_mode")
@@ -886,11 +1143,41 @@ def reset_camera():
     """Reset the active camera for the selected backend."""
     if BACKEND == "paraview":
         _pv_backend.reset_camera()
-        ctrl.view_update()
+        _call_view_update()
         return
 
     if renderer is not None and renderWindow is not None:
         renderer.ResetCamera()
+        _render_and_push()
+
+
+@ctrl.add("reset_view")
+def reset_view():
+    """Restore a canonical XYZ view and reset the camera framing."""
+    if BACKEND == "paraview":
+        _pv_backend.reset_view()
+        _call_view_update(reset_camera=True)
+        return
+
+    if renderer is not None and renderWindow is not None:
+        camera = renderer.GetActiveCamera()
+        bounds = renderer.ComputeVisiblePropBounds()
+        if bounds and bounds[0] <= bounds[1]:
+            xmin, xmax, ymin, ymax, zmin, zmax = bounds
+            center = (
+                0.5 * (xmin + xmax),
+                0.5 * (ymin + ymax),
+                0.5 * (zmin + zmax),
+            )
+            span_x = max(abs(xmax - xmin), 1e-6)
+            span_y = max(abs(ymax - ymin), 1e-6)
+            span_z = max(abs(zmax - zmin), 1e-6)
+            distance = max(span_x, span_y, span_z) * 2.5
+            camera.SetFocalPoint(*center)
+            camera.SetPosition(center[0], center[1], center[2] + distance)
+            camera.SetViewUp(0.0, 1.0, 0.0)
+        renderer.ResetCamera()
+        renderer.ResetCameraClippingRange()
         _render_and_push()
 
 
@@ -1023,6 +1310,7 @@ def pv_begin_edit_session():
         return
 
     try:
+        _debug_view("pv_begin_edit_session.start", mode=state.mainViewMode)
         exported = _pv_backend.export_active_dataset_for_editing()
         _edit_session.begin(
             exported["node_id"],
@@ -1030,14 +1318,23 @@ def pv_begin_edit_session():
             exported["filename"],
             exported["dataset"],
         )
+        _call_view_update_geometry(reset_camera=True)
         state.edit_session_active = True
-        state.edit_session_label = exported["label"]
         state.save_filename = _edit_session.default_output_filename()
         state.save_target_label = f"Edited dataset: {exported['label']}"
         state.save_status = ""
+        state.edit_apply_status = ""
+        state.edit_selection_status = ""
+        state.edit_selection_event = ""
+        state.selection_count = 0
+        state.inspector_tab = 3
+        _sync_edit_session_state()
+        _sync_paraview_edit_selection_overlay()
+        _refresh_local_view(reset_camera=True)
+        _debug_view("pv_begin_edit_session.end", mode=state.mainViewMode)
         state.edit_status = (
             f"Edit session initialized for {exported['label']}. "
-            "Interactive editing tools are the next integration step."
+            "Volume-mode picking and field authoring are available."
         )
         state.edit_status_type = "info"
     except Exception as exc:
@@ -1050,9 +1347,10 @@ def pv_begin_edit_session():
 @ctrl.add("pv_discard_edit_session")
 def pv_discard_edit_session():
     """Discard the current edit session."""
+    _debug_view("pv_discard_edit_session.start", mode=state.mainViewMode)
     _edit_session.clear()
-    state.edit_session_active = False
-    state.edit_session_label = ""
+    _sync_edit_session_state()
+    _sync_paraview_edit_selection_overlay()
     if BACKEND == "paraview" and _pv_backend is not None:
         state.save_filename = _pv_backend.default_output_filename()
         state.save_target_label = (
@@ -1060,6 +1358,14 @@ def pv_discard_edit_session():
             if state.active_source_label
             else "Active pipeline result"
         )
+    state.edit_apply_status = ""
+    state.edit_selection_status = ""
+    state.edit_selection_event = ""
+    state.selection_count = 0
+    state.inspector_tab = 0
+    _call_view_set_remote_rendering(True)
+    _call_view_update(reset_camera=True)
+    _debug_view("pv_discard_edit_session.end", mode=state.mainViewMode)
     state.edit_status = "Edit session discarded"
     state.edit_status_type = "info"
 
@@ -1071,10 +1377,13 @@ def pv_commit_edit_session():
         return
 
     try:
+        _debug_view("pv_commit_edit_session.start", mode=state.mainViewMode)
         output_path = _save_paraview_output()
         _edit_session.clear()
-        state.edit_session_active = False
-        state.edit_session_label = ""
+        _sync_edit_session_state()
+        _sync_paraview_edit_selection_overlay()
+        state.inspector_tab = 0
+        _call_view_set_remote_rendering(True)
         state.edit_status = "Edit session saved and added to the pipeline"
         state.edit_status_type = "success"
 
@@ -1085,9 +1394,146 @@ def pv_commit_edit_session():
         state.available_arrays = arrays
         state.selected_array = default_array
         _render_and_push()
+        _debug_view("pv_commit_edit_session.end", mode=state.mainViewMode)
     except Exception as exc:
         state.edit_status = f"Could not add edited result to pipeline: {exc}"
         state.edit_status_type = "error"
+
+
+@ctrl.add("pv_apply_edit_field")
+def pv_apply_edit_field():
+    """Apply the current edit-session field operation."""
+    if BACKEND != "paraview" or not _edit_session.active:
+        return
+
+    mode = (state.edit_geometry_mode or "volume").strip().lower()
+    _edit_session.geometry_mode = mode
+    _edit_session.field_name = (state.edit_field_name or "").strip()
+    _edit_session.expression = (state.edit_expression or "").strip()
+    _edit_session.default_value = (state.edit_default_value or "0").strip()
+
+    if mode != "volume":
+        state.edit_apply_status = (
+            f"{mode.capitalize()} mode is visible in the UI but not implemented yet. "
+            "Volume mode is the first working slice."
+        )
+        state.edit_apply_status_type = "info"
+        _sync_edit_session_state()
+        return
+
+    try:
+        field_name = _edit_session.apply_volume_field(
+            state.edit_field_name,
+            state.edit_expression,
+            state.edit_default_value,
+        )
+        _sync_edit_session_state()
+        target_scope = (
+            f"{_edit_session.selected_count()} selected cells"
+            if _edit_session.selected_count()
+            else "all cells"
+        )
+        state.edit_apply_status = (
+            f"Updated cell field '{field_name}' on {target_scope} of the edit-session dataset."
+        )
+        state.edit_apply_status_type = "success"
+    except Exception as exc:
+        _sync_edit_session_state()
+        state.edit_apply_status = f"Edit apply failed: {exc}"
+        state.edit_apply_status_type = "error"
+
+
+@ctrl.add("pv_edit_click")
+def pv_edit_click(event):
+    """Capture native local-view click selection events."""
+    if BACKEND != "paraview" or not _edit_session.active or not state.pick_mode:
+        return
+
+    state.edit_selection_event = _summarize_edit_event(event)
+    picked_ids = _normalize_edit_selection_ids(event)
+    if not picked_ids:
+        state.edit_selection_status = "No editable cell was resolved from the click event."
+        state.edit_selection_status_type = "warning"
+        return
+
+    count = _edit_session.toggle_cell_selection(int(picked_ids[0]), grow=bool(state.group_select))
+    _sync_edit_session_state()
+    _sync_paraview_edit_selection_overlay()
+    state.selection_count = count
+    state.edit_selection_status = (
+        f"Selected {count} cell(s) in Volume mode."
+        if count
+        else "Selection cleared."
+    )
+    state.edit_selection_status_type = "success" if count else "info"
+    _render_and_push()
+
+
+@ctrl.add("pv_edit_box_selection")
+def pv_edit_box_selection(event):
+    """Capture native local-view box-selection events."""
+    if BACKEND != "paraview" or not _edit_session.active or not state.pick_mode:
+        return
+
+    state.edit_selection_event = _summarize_edit_event(event)
+    selection = event.get("selection") if isinstance(event, dict) else None
+    if not isinstance(selection, (list, tuple)) or len(selection) != 4:
+        state.edit_selection_status = "Box selection did not include a usable rectangle."
+        state.edit_selection_status_type = "warning"
+        return
+
+    x0, x1, y0, y1 = selection
+    picked_ids = _pv_backend.pick_visible_cell_ids_in_rect(
+        x0,
+        y0,
+        x1,
+        y1,
+        behavior=(state.selection_behavior or "touch"),
+    )
+    if not picked_ids:
+        state.edit_selection_status = "Box selection did not resolve any editable cells."
+        state.edit_selection_status_type = "info"
+        return
+
+    count = _edit_session.replace_selection(
+        picked_ids, grow=bool(state.group_select)
+    )
+    _sync_edit_session_state()
+    _sync_paraview_edit_selection_overlay()
+    state.selection_count = count
+    state.edit_selection_status = f"Box selection resolved {count} cell(s)."
+    state.edit_selection_status_type = "success"
+    _render_and_push()
+
+
+@ctrl.add("pv_clear_edit_preview")
+def pv_clear_edit_preview():
+    """Clear the temporary selection preview state for ParaView edit mode."""
+    if BACKEND != "paraview":
+        return
+
+    _edit_session.clear_selection()
+    _sync_edit_session_state()
+    _sync_paraview_edit_selection_overlay()
+    state.edit_selection_event = ""
+    state.edit_selection_status = "Selection cleared."
+    state.edit_selection_status_type = "info"
+    _render_and_push()
+
+
+@ctrl.add("pv_select_all_edit_cells")
+def pv_select_all_edit_cells():
+    """Select every editable cell in the current edit-session dataset."""
+    if BACKEND != "paraview" or not _edit_session.active:
+        return
+
+    count = _edit_session.select_all_cells()
+    _sync_edit_session_state()
+    _sync_paraview_edit_selection_overlay()
+    state.selection_count = count
+    state.edit_selection_status = f"Selected all {count} cell(s) in the edit-session dataset."
+    state.edit_selection_status_type = "success"
+    _render_and_push()
 
 
 @ctrl.add("upload_dataset")

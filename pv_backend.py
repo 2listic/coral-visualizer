@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from math import isfinite
 
 from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
 from edit_session import EditSession
@@ -152,8 +153,10 @@ class ParaViewBackend:
             )
 
         from paraview import simple
+        from paraview import servermanager
 
         self.simple = simple
+        self.servermanager = servermanager
         self.view = None
         self.pipeline_nodes = []
         self.active_node_id = None
@@ -163,6 +166,8 @@ class ParaViewBackend:
         self._experimental_filter_specs = (
             self._discover_experimental_filters() if show_experimental_filters else []
         )
+        self._edit_selection_overlay = None
+        self._edit_selection_display = None
 
     @property
     def source(self):
@@ -452,10 +457,280 @@ class ParaViewBackend:
         self.view.ResetCamera()
         self.render()
 
+    def reset_view(self):
+        """Restore a canonical XYZ view and fit the active dataset."""
+        if self.view is None:
+            return
+
+        source = self.source
+        if source is None:
+            return
+
+        data_information = source.GetDataInformation()
+        bounds = data_information.GetBounds() if data_information is not None else None
+        if not bounds:
+            self.reset_camera()
+            return
+
+        xmin, xmax, ymin, ymax, zmin, zmax = bounds
+        center = (
+            0.5 * (xmin + xmax),
+            0.5 * (ymin + ymax),
+            0.5 * (zmin + zmax),
+        )
+        span_x = max(abs(xmax - xmin), 1e-6)
+        span_y = max(abs(ymax - ymin), 1e-6)
+        span_z = max(abs(zmax - zmin), 1e-6)
+        distance = max(span_x, span_y, span_z) * 2.5
+
+        self.view.CameraFocalPoint = center
+        self.view.CameraPosition = (center[0], center[1], center[2] + distance)
+        self.view.CameraViewUp = (0.0, 1.0, 0.0)
+        self.view.CenterOfRotation = center
+        self.view.ResetCamera()
+        self.render()
+
     def render(self):
         """Trigger a ParaView render."""
         if self.view is not None:
             self.simple.Render(self.view)
+
+    def clear_edit_selection_overlay(self):
+        """Remove the transient edit-selection overlay from the view."""
+        if self._edit_selection_display is not None:
+            try:
+                self.simple.Hide(self._edit_selection_overlay, self.view)
+            except Exception:
+                pass
+            self._edit_selection_display = None
+
+        if self._edit_selection_overlay is not None:
+            try:
+                self.simple.Delete(self._edit_selection_overlay)
+            except Exception:
+                pass
+            self._edit_selection_overlay = None
+
+    def clear_active_selection(self):
+        """Clear any ParaView-side selection state on the active source."""
+        source = self.source
+        if source is None:
+            return
+        try:
+            self.simple.ClearSelection(source)
+        except Exception:
+            pass
+
+    def update_edit_selection_overlay(self, dataset):
+        """Show the selected edit-session cells as a transient ParaView overlay."""
+        if self.view is None or dataset is None or dataset.GetNumberOfCells() == 0:
+            self.clear_edit_selection_overlay()
+            return
+
+        if self._edit_selection_overlay is None:
+            overlay = self.simple.TrivialProducer(registrationName="__edit_selection__")
+            overlay.GetClientSideObject().SetOutput(dataset)
+            overlay.UpdatePipeline()
+            display = self.simple.Show(overlay, self.view)
+            self.simple.ColorBy(display, None)
+            display.SetRepresentationType("Surface With Edges")
+            display.DiffuseColor = [1.0, 0.92, 0.25]
+            display.AmbientColor = [1.0, 0.92, 0.25]
+            display.EdgeColor = [1.0, 0.45, 0.1]
+            display.Opacity = 1.0
+            if hasattr(display, "LineWidth"):
+                display.LineWidth = 3.0
+            self._edit_selection_overlay = overlay
+            self._edit_selection_display = display
+            return
+
+        self._edit_selection_overlay.GetClientSideObject().SetOutput(dataset)
+        self._edit_selection_overlay.UpdatePipeline()
+        if self._edit_selection_display is not None:
+            self._edit_selection_display.Visibility = 1
+            self.simple.ColorBy(self._edit_selection_display, None)
+
+    def pick_visible_cell_ids(self, x, y, radius=4):
+        """Return selected visible cell ids around a display-space click."""
+        source = self.source
+        if self.view is None or source is None:
+            return []
+
+        try:
+            x = int(round(float(x)))
+            y = int(round(float(y)))
+        except (TypeError, ValueError):
+            return []
+
+        candidates = self._candidate_pick_positions(x, y)
+        self.simple.SetActiveView(self.view)
+        self.simple.SetActiveSource(source)
+
+        for px, py in candidates:
+            self.simple.ClearSelection(source)
+            rect = [px - radius, py - radius, px + radius, py + radius]
+            self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
+            picked = self._fetch_selected_original_cell_ids(source)
+            if picked:
+                return picked
+
+        self.simple.ClearSelection(source)
+        return []
+
+    def pick_visible_cell_ids_in_rect(self, x0, y0, x1, y1, behavior="touch"):
+        """Return selected visible cell ids inside a display-space rectangle."""
+        source = self.source
+        if self.view is None or source is None:
+            return []
+
+        try:
+            x0 = int(round(float(x0)))
+            y0 = int(round(float(y0)))
+            x1 = int(round(float(x1)))
+            y1 = int(round(float(y1)))
+        except (TypeError, ValueError):
+            return []
+
+        rect = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+        self.simple.SetActiveView(self.view)
+        self.simple.SetActiveSource(source)
+        self.simple.ClearSelection(source)
+        self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
+        picked = self._fetch_selected_original_cell_ids(source)
+        self.simple.ClearSelection(source)
+        if not picked or behavior != "inside":
+            return picked
+        return self._filter_cell_ids_inside_rect(source, picked, rect)
+
+    def _filter_cell_ids_inside_rect(self, source, cell_ids, rect):
+        """Return only cells whose projected vertices are fully inside the display rect."""
+        try:
+            dataset = self.servermanager.Fetch(source)
+        except Exception:
+            return cell_ids
+
+        if dataset is None or self.view is None:
+            return cell_ids
+
+        client_view = self.view.GetClientSideObject()
+        renderer = client_view.GetRenderer() if client_view is not None else None
+        if renderer is None:
+            return cell_ids
+
+        xmin, ymin, xmax, ymax = rect
+        selected = []
+        for cell_id in cell_ids:
+            if cell_id < 0 or cell_id >= dataset.GetNumberOfCells():
+                continue
+            cell = dataset.GetCell(int(cell_id))
+            if cell is None:
+                continue
+
+            inside = True
+            for point_idx in range(cell.GetNumberOfPoints()):
+                point = dataset.GetPoint(cell.GetPointId(point_idx))
+                renderer.SetWorldPoint(point[0], point[1], point[2], 1.0)
+                renderer.WorldToDisplay()
+                dx, dy, dz = renderer.GetDisplayPoint()
+                if not (isfinite(dx) and isfinite(dy) and isfinite(dz)):
+                    inside = False
+                    break
+                if dx < xmin or dx > xmax or dy < ymin or dy > ymax:
+                    inside = False
+                    break
+
+            if inside:
+                selected.append(int(cell_id))
+
+        return selected
+
+    def get_pick_debug_info(self, x, y, radius=4):
+        """Return debug information for the current click-to-pick attempt."""
+        width, height = self.view.ViewSize if self.view is not None else (0, 0)
+        try:
+            px = int(round(float(x)))
+            py = int(round(float(y)))
+        except (TypeError, ValueError):
+            return {
+                "raw_pointer": {"x": x, "y": y},
+                "view_size": {"width": int(width or 0), "height": int(height or 0)},
+                "pick_radius": int(radius),
+                "candidate_positions": [],
+            }
+
+        candidates = self._candidate_pick_positions(px, py)
+        return {
+            "raw_pointer": {"x": px, "y": py},
+            "view_size": {"width": int(width or 0), "height": int(height or 0)},
+            "pick_radius": int(radius),
+            "candidate_positions": [
+                {"x": cx, "y": cy, "rect": [cx - radius, cy - radius, cx + radius, cy + radius]}
+                for cx, cy in candidates
+            ],
+        }
+
+    def _candidate_pick_positions(self, x, y):
+        """Return plausible pixel coordinates for the current event convention."""
+        width, height = self.view.ViewSize if self.view is not None else (0, 0)
+        width = int(width or 0)
+        height = int(height or 0)
+
+        candidates = []
+
+        def add(px, py):
+            try:
+                px = int(round(float(px)))
+                py = int(round(float(py)))
+            except (TypeError, ValueError):
+                return
+            key = (px, py)
+            if key not in candidates:
+                candidates.append(key)
+
+        add(x, y)
+        if height > 0:
+            add(x, height - y)
+
+        if width > 0 and height > 0 and 0 <= x <= 1 and 0 <= y <= 1:
+            add(x * width, y * height)
+            add(x * width, (1 - y) * height)
+
+        return candidates
+
+    def _fetch_selected_original_cell_ids(self, source):
+        """Extract selected original cell ids from the source selection."""
+        try:
+            extract = self.simple.ExtractSelection(Input=source)
+            extract.UpdatePipeline()
+            dataset = self.servermanager.Fetch(extract)
+        except Exception:
+            return []
+
+        if dataset is None:
+            return []
+
+        cell_data = dataset.GetCellData()
+        candidate_names = [
+            "vtkOriginalCellIds",
+            "originalCellIds",
+            "OriginalCellIds",
+        ]
+
+        selected_ids = []
+        for name in candidate_names:
+            array = cell_data.GetArray(name)
+            if array is not None:
+                selected_ids = [
+                    int(array.GetTuple1(i)) for i in range(array.GetNumberOfTuples())
+                ]
+                break
+
+        try:
+            self.simple.Delete(extract)
+        except Exception:
+            pass
+
+        return selected_ids
 
     def get_ui_state(self):
         """Return lightweight UI metadata for the current ParaView selection."""
