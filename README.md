@@ -18,6 +18,9 @@ python3 app.py
 or using the custom `file` argument plus any Trame argument (i.e. `port`)  
 `python app.py --file data/grid-1.vtk --port 1234`
 
+Use `--data-directory` to scan a custom folder instead of the default `./data` (also used as the save destination for exported `.vtu` files):  
+`python app.py --data-directory /path/to/meshes`
+
 ## Usage with Docker
 
 Original example at the official [Trame repo](https://github.com/Kitware/trame/tree/master/examples/deploy/docker/SingleFile).

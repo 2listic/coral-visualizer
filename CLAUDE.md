@@ -17,6 +17,7 @@ source .venv/bin/activate
 python3 app.py
 # With options:
 python3 app.py --file data/grid-1.vtk --port 1234
+python3 app.py --data-directory /path/to/meshes
 ```
 
 **Format and lint:**

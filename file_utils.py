@@ -3,9 +3,12 @@ import os
 CURRENT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
 
 
-def get_vtk_files_from_data_folder():
+def get_vtk_files_from_data_folder(data_folder=None):
     """Scan the data folder and return list of VTK files (legacy and XML formats)."""
-    data_folder = os.path.join(CURRENT_DIRECTORY, "data")
+    if data_folder is None:
+        data_folder = os.path.join(CURRENT_DIRECTORY, "data")
+    else:
+        data_folder = os.path.abspath(data_folder)
     print(f"data_folder: {data_folder}")
 
     if not os.path.exists(data_folder):
