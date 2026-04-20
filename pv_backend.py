@@ -521,10 +521,32 @@ class ParaViewBackend:
         except Exception:
             pass
 
+    def set_interactor_rotation(self, enabled):
+        """Enable or disable left-button rotation on the ParaView server-side view."""
+        if self.view is None:
+            return
+
+        # Default ParaView interactions: Left=Rotate, Middle=Pan, Right=Zoom, ...
+        # Interactions is a list of strings.
+        try:
+            current = list(self.view.Interactions)
+            if enabled:
+                current[0] = "Rotate"
+            else:
+                # Set to "Pan" or something that doesn't conflict with selection
+                current[0] = "Pan"
+            self.view.Interactions = current
+        except Exception:
+            pass
+
     def update_edit_selection_overlay(self, dataset):
         """Show the selected edit-session cells as a transient ParaView overlay."""
-        if self.view is None or dataset is None or dataset.GetNumberOfCells() == 0:
+        if self.view is None:
+            return
+
+        if dataset is None or dataset.GetNumberOfCells() == 0:
             self.clear_edit_selection_overlay()
+            self.render()
             return
 
         if self._edit_selection_overlay is None:
@@ -534,23 +556,31 @@ class ParaViewBackend:
             display = self.simple.Show(overlay, self.view)
             self.simple.ColorBy(display, None)
             display.SetRepresentationType("Surface With Edges")
-            display.DiffuseColor = [1.0, 0.92, 0.25]
+            display.DiffuseColor = [1.0, 0.92, 0.25]  # Bright Gold
             display.AmbientColor = [1.0, 0.92, 0.25]
-            display.EdgeColor = [1.0, 0.45, 0.1]
+            display.EdgeColor = [0.0, 0.0, 0.0]       # Black edges for contrast
             display.Opacity = 1.0
             if hasattr(display, "LineWidth"):
-                display.LineWidth = 3.0
+                display.LineWidth = 4.0
+            if hasattr(display, "PointSize"):
+                display.PointSize = 10.0
+            
+            # Ensure it's always on top if possible (Polygon Offset)
+            if hasattr(display, "RelativeCoincidentTopologyPolygonOffsetParameters"):
+                display.RelativeCoincidentTopologyPolygonOffsetParameters = [-2.0, -2.0]
+            
             self._edit_selection_overlay = overlay
             self._edit_selection_display = display
-            return
+        else:
+            self._edit_selection_overlay.GetClientSideObject().SetOutput(dataset)
+            self._edit_selection_overlay.UpdatePipeline()
+            if self._edit_selection_display is not None:
+                self._edit_selection_display.Visibility = 1
+                self.simple.ColorBy(self._edit_selection_display, None)
 
-        self._edit_selection_overlay.GetClientSideObject().SetOutput(dataset)
-        self._edit_selection_overlay.UpdatePipeline()
-        if self._edit_selection_display is not None:
-            self._edit_selection_display.Visibility = 1
-            self.simple.ColorBy(self._edit_selection_display, None)
+        self.render()
 
-    def pick_visible_cell_ids(self, x, y, radius=4):
+    def pick_visible_cell_ids(self, x, y, radius=1):
         """Return selected visible cell ids around a display-space click."""
         source = self.source
         if self.view is None or source is None:
@@ -566,16 +596,19 @@ class ParaViewBackend:
         self.simple.SetActiveView(self.view)
         self.simple.SetActiveSource(source)
 
+        picked_result = []
         for px, py in candidates:
             self.simple.ClearSelection(source)
             rect = [px - radius, py - radius, px + radius, py + radius]
             self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
-            picked = self._fetch_selected_original_cell_ids(source)
-            if picked:
-                return picked
+            picked_result = self._fetch_selected_original_cell_ids(source)
+            if picked_result:
+                break
 
+        # Always clear and RENDER to hide the native ParaView purple selection
         self.simple.ClearSelection(source)
-        return []
+        self.render()
+        return picked_result
 
     def pick_visible_cell_ids_in_rect(self, x0, y0, x1, y1, behavior="touch"):
         """Return selected visible cell ids inside a display-space rectangle."""
@@ -591,6 +624,7 @@ class ParaViewBackend:
         except (TypeError, ValueError):
             return []
 
+        # No Y-inversion here as coordinates from VtkRemoteLocalView are already PV-compatible
         rect = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
         self.simple.SetActiveView(self.view)
         self.simple.SetActiveSource(source)
@@ -598,6 +632,7 @@ class ParaViewBackend:
         self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
         picked = self._fetch_selected_original_cell_ids(source)
         self.simple.ClearSelection(source)
+        self.render()
         if not picked or behavior != "inside":
             return picked
         return self._filter_cell_ids_inside_rect(source, picked, rect)
@@ -687,11 +722,16 @@ class ParaViewBackend:
             if key not in candidates:
                 candidates.append(key)
 
+        # In modern Trame/ParaView, the event Y is often already inverted (0=bottom).
+        # We try the raw coordinate first.
         add(x, y)
+        
+        # Fallback to inverted if raw fails
         if height > 0:
             add(x, height - y)
 
         if width > 0 and height > 0 and 0 <= x <= 1 and 0 <= y <= 1:
+            # Normalized coordinates fallback
             add(x * width, y * height)
             add(x * width, (1 - y) * height)
 

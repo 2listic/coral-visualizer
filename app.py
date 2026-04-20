@@ -339,7 +339,12 @@ state.edit_selection_status_type = "info"
 state.edit_selection_event = ""
 state.edit_picking_modes = []
 state.edit_interactor_events = []
-state.edit_interactor_settings = []
+# Initialize with valid actions to prevent "this.interactor[l] is not a function"
+state.edit_interactor_settings = [
+    {"button": 1, "action": "Rotate"},
+    {"button": 2, "action": "Pan"},
+    {"button": 3, "action": "Zoom", "scrollEnabled": True},
+]
 state.pv_runtime_message = ""
 state.pv_runtime_type = "error"
 state.show_calculator_help = False
@@ -429,6 +434,7 @@ def _apply_edit_coloring(edit_target):
     if edit_target == BOUNDARY:
         if _edit.merged_bnd_actor:
             _edit.merged_bnd_actor.SetVisibility(1)
+            apply_representation(None, _edit.merged_bnd_actor, state.representation)
         if _edit.merged_bnd_dataset is not None and _edit.merged_bnd_mapper is not None:
             lut, _ = apply_categorical_coloring(
                 _edit.merged_bnd_mapper, _edit.merged_bnd_dataset, MATERIAL_ID_ARRAY
@@ -438,6 +444,7 @@ def _apply_edit_coloring(edit_target):
         if _viz:
             _viz.vol_mapper.ScalarVisibilityOff()
             _viz.vol_actor.GetProperty().SetColor(0.7, 0.7, 0.7)
+            apply_representation(_viz.vol_actor, None, state.representation)
         _scalar_bars.remove_bar(SCALAR_BAR_ACTIVE_ARRAY)
     else:  # VOLUME
         if _edit.merged_bnd_actor:
@@ -445,6 +452,10 @@ def _apply_edit_coloring(edit_target):
         _scalar_bars.remove_bar(SCALAR_BAR_BOUNDARY)
         if _edit.vol_dataset is None or _viz is None:
             return
+        
+        # Ensure volume actor has correct representation and color is reset by apply_coloring later
+        apply_representation(_viz.vol_actor, None, state.representation)
+
         lut, _ = apply_categorical_coloring(
             _viz.vol_mapper, _edit.vol_dataset, MATERIAL_ID_ARRAY
         )
@@ -572,34 +583,36 @@ def _sync_edit_session_state():
     state.edit_default_value = _edit_session.default_value
     state.edit_available_variables = _edit_session.available_cell_variables()
     state.selection_count = _edit_session.selected_count()
-    state.edit_picking_modes = ["click"] if _edit_session.active and state.pick_mode else []
-    state.edit_interactor_events = []
+    
+    # Enable 'mesh' and 'box' for interactive selection in ParaView
+    state.edit_picking_modes = ["click", "mesh", "box"] if _edit_session.active and state.pick_mode else []
+    # trame-vtk expects interactor method suffixes such as "EndAnimation",
+    # not vtk.js event names like "EndAnimationEvent".
+    state.edit_interactor_events = ["EndAnimation"]
+
     if _edit_session.active and state.pick_mode:
+        # Map button 1 to Pan instead of Rotate on the client as well,
+        # and ensure a full set of actions to avoid "interactor[l] is not a function".
         state.edit_interactor_settings = [
-            {"button": 1, "action": "Select"},
+            {"button": 1, "action": "Pan"}, 
             {"button": 2, "action": "Pan"},
             {"button": 3, "action": "Zoom", "scrollEnabled": True},
-            {"button": 1, "action": "Pan", "alt": True},
-            {"button": 1, "action": "Zoom", "control": True},
-            {"button": 1, "action": "Roll", "alt": True, "shift": True},
         ]
     else:
         state.edit_interactor_settings = [
             {"button": 1, "action": "Rotate"},
             {"button": 2, "action": "Pan"},
             {"button": 3, "action": "Zoom", "scrollEnabled": True},
-            {"button": 1, "action": "Pan", "alt": True},
-            {"button": 1, "action": "Zoom", "control": True},
-            {"button": 1, "action": "Roll", "alt": True, "shift": True},
         ]
 
 
 def _normalize_edit_selection_ids(event):
-    """Extract picked cell IDs from vtk.js picking payloads."""
+    """Extract picked cell IDs or screen coordinates from picking payloads."""
     if event is None:
         return []
 
     if isinstance(event, dict):
+        # Local vtk.js picking
         if isinstance(event.get("compositeID"), int):
             return [event["compositeID"]]
         if isinstance(event.get("selection"), list):
@@ -607,7 +620,18 @@ def _normalize_edit_selection_ids(event):
             for item in event["selection"]:
                 if isinstance(item, dict) and isinstance(item.get("compositeID"), int):
                     result.append(item["compositeID"])
-            return result
+            if result:
+                return result
+        
+        # Remote picking (return coordinates from position object)
+        pos = event.get("position")
+        if isinstance(pos, dict) and "x" in pos and "y" in pos:
+            return [("coords", pos["x"], pos["y"])]
+        
+        # Direct x, y at root
+        if "x" in event and "y" in event:
+            return [("coords", event["x"], event["y"])]
+            
         return []
 
     if isinstance(event, list):
@@ -648,15 +672,18 @@ def _sync_paraview_edit_selection_overlay():
     if not _edit_session.active:
         _pv_backend.clear_active_selection()
         _pv_backend.clear_edit_selection_overlay()
+        _call_view_update()
         return
 
     overlay_dataset = _edit_session.build_selected_volume_dataset()
     if overlay_dataset is None:
         _pv_backend.clear_active_selection()
         _pv_backend.clear_edit_selection_overlay()
+        _call_view_update()
         return
 
     _pv_backend.update_edit_selection_overlay(overlay_dataset)
+    _call_view_update()
 
 
 def _summarize_edit_event(event):
@@ -666,14 +693,22 @@ def _summarize_edit_event(event):
 
     if isinstance(event, dict):
         summary = {}
-        for key in ("mode", "remoteId", "representationId", "view", "x", "y", "z", "compositeID"):
+        # Include a few more potential keys for debugging
+        for key in ("mode", "remoteId", "representationId", "view", "x", "y", "z", "compositeID", "position", "pany", "panx"):
             if key in event:
                 summary[key] = event[key]
+        
         normalized_ids = _normalize_edit_selection_ids(event)
         if normalized_ids:
-            summary["selection_count"] = len(normalized_ids)
-            summary["sample_ids"] = normalized_ids[:8]
-        return json.dumps(summary or event, indent=2, default=str)
+            if isinstance(normalized_ids[0], tuple) and normalized_ids[0][0] == "coords":
+                summary["resolved_coords"] = normalized_ids[0][1:]
+            else:
+                summary["selection_count"] = len(normalized_ids)
+                summary["sample_ids"] = normalized_ids[:8]
+        
+        # Add full keys for debugging
+        summary["all_keys"] = list(event.keys())
+        return json.dumps(summary, indent=2, default=str)
 
     if isinstance(event, (list, tuple)):
         return json.dumps(event, indent=2, default=str)
@@ -879,6 +914,12 @@ def on_active_pipeline_item_change(active_pipeline_item, **kwargs):
 
     if _viz is not None:
         apply_representation(_viz.vol_actor, _viz.bnd_actor, representation)
+        if _edit.merged_bnd_actor:
+            apply_representation(None, _edit.merged_bnd_actor, representation)
+        if _edit.vol_selection_actor:
+            apply_representation(None, _edit.vol_selection_actor, representation)
+        if _edit.bnd_selection_actor:
+            apply_representation(None, _edit.bnd_selection_actor, representation)
         _render_and_push()
 
 
@@ -897,6 +938,11 @@ def on_pick_mode_change(pick_mode, **kwargs):
     """Enable or disable edit-view picking modes for the ParaView path."""
     if BACKEND != "paraview":
         return
+    
+    # Sync server-side rotation lock
+    if _pv_backend:
+        _pv_backend.set_interactor_rotation(not pick_mode)
+    
     _sync_edit_session_state()
 
 
@@ -947,6 +993,8 @@ def on_edit_mode_change(edit_mode, **kwargs):
                 state.selected_array,
                 _viz.vol_luts,
             )
+            # Ensure representation (edges, etc.) is restored
+            apply_representation(_viz.vol_actor, _viz.bnd_actor, state.representation)
 
     _render_and_push()
 
@@ -1318,6 +1366,19 @@ def pv_begin_edit_session():
             exported["filename"],
             exported["dataset"],
         )
+        
+        # Ensure the source we are editing is visible and has edges enabled
+        _pv_backend.apply_representation("Surface with Edges")
+        
+        # Disable server-side rotation if we start in pick mode
+        _pv_backend.set_interactor_rotation(not state.pick_mode)
+        
+        # Force remote rendering during edit session for ParaView to avoid synchronization issues
+        # that might cause the grid to disappear in local VTK.js mode.
+        state.mainViewMode = "remote"
+        if hasattr(ctrl, "view_set_remote_rendering"):
+            ctrl.view_set_remote_rendering(True)
+
         _call_view_update_geometry(reset_camera=True)
         state.edit_session_active = True
         state.save_filename = _edit_session.default_output_filename()
@@ -1330,7 +1391,11 @@ def pv_begin_edit_session():
         state.inspector_tab = 3
         _sync_edit_session_state()
         _sync_paraview_edit_selection_overlay()
-        _refresh_local_view(reset_camera=True)
+        
+        # We don't call _refresh_local_view here because we want to stay in remote mode
+        # _refresh_local_view(reset_camera=True)
+        
+        _render_and_push()
         _debug_view("pv_begin_edit_session.end", mode=state.mainViewMode)
         state.edit_status = (
             f"Edit session initialized for {exported['label']}. "
@@ -1442,7 +1507,6 @@ def pv_apply_edit_field():
         state.edit_apply_status = f"Edit apply failed: {exc}"
         state.edit_apply_status_type = "error"
 
-
 @ctrl.add("pv_edit_click")
 def pv_edit_click(event):
     """Capture native local-view click selection events."""
@@ -1450,13 +1514,26 @@ def pv_edit_click(event):
         return
 
     state.edit_selection_event = _summarize_edit_event(event)
-    picked_ids = _normalize_edit_selection_ids(event)
-    if not picked_ids:
+    payload = _normalize_edit_selection_ids(event)
+    if not payload:
         state.edit_selection_status = "No editable cell was resolved from the click event."
         state.edit_selection_status_type = "warning"
         return
 
-    count = _edit_session.toggle_cell_selection(int(picked_ids[0]), grow=bool(state.group_select))
+    # Handle coordinate-based picking for remote mode
+    if isinstance(payload[0], tuple) and payload[0][0] == "coords":
+        _, x, y = payload[0]
+        picked_ids = _pv_backend.pick_visible_cell_ids(x, y)
+        if not picked_ids:
+            state.edit_selection_status = f"No cell found at coordinates ({int(x)}, {int(y)})."
+            state.edit_selection_status_type = "info"
+            return
+        cell_id = picked_ids[0]
+    else:
+        # Handle direct ID-based picking for local mode
+        cell_id = payload[0]
+
+    count = _edit_session.toggle_cell_selection(int(cell_id), grow=bool(state.group_select))
     _sync_edit_session_state()
     _sync_paraview_edit_selection_overlay()
     state.selection_count = count

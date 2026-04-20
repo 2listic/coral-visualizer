@@ -330,22 +330,23 @@ def apply_representation(vol_actor, bnd_actor, representation):
     Boundary cells (lines in 2D, surface quads in 3D) are always rendered as
     surface/lines. Only "Points" mode propagates to the boundary actor.
     """
-    prop = vol_actor.GetProperty()
     colors = vtkNamedColors()
 
-    if representation == REPR_SURFACE:
-        prop.SetRepresentationToSurface()
-        prop.EdgeVisibilityOff()
-    elif representation == REPR_SURFACE_EDGES:
-        prop.SetRepresentationToSurface()
-        prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(colors.GetColor3d("Black"))
-    elif representation == REPR_WIREFRAME:
-        prop.SetRepresentationToWireframe()
-        prop.EdgeVisibilityOff()
-    elif representation == REPR_POINTS:
-        prop.SetRepresentationToPoints()
-        prop.SetPointSize(5)
+    if vol_actor is not None:
+        prop = vol_actor.GetProperty()
+        if representation == REPR_SURFACE:
+            prop.SetRepresentationToSurface()
+            prop.EdgeVisibilityOff()
+        elif representation == REPR_SURFACE_EDGES:
+            prop.SetRepresentationToSurface()
+            prop.EdgeVisibilityOn()
+            prop.SetEdgeColor(colors.GetColor3d("Black"))
+        elif representation == REPR_WIREFRAME:
+            prop.SetRepresentationToWireframe()
+            prop.EdgeVisibilityOff()
+        elif representation == REPR_POINTS:
+            prop.SetRepresentationToPoints()
+            prop.SetPointSize(5)
 
     if bnd_actor is not None:
         bnd_prop = bnd_actor.GetProperty()
@@ -354,7 +355,12 @@ def apply_representation(vol_actor, bnd_actor, representation):
             bnd_prop.SetPointSize(5)
         else:
             bnd_prop.SetRepresentationToSurface()
-            bnd_prop.EdgeVisibilityOff()
+            # If we want to see the grid in boundary mode, we should enable edges here too
+            if representation == REPR_SURFACE_EDGES:
+                bnd_prop.EdgeVisibilityOn()
+                bnd_prop.SetEdgeColor(colors.GetColor3d("Black"))
+            else:
+                bnd_prop.EdgeVisibilityOff()
 
 
 def create_vtk_rendering_context():

@@ -360,6 +360,10 @@ def create_boundary_actor(bnd_dataset):
     mapper.SetInputData(bnd_dataset)
     mapper.ScalarVisibilityOff()
 
+    # Resolve coincident topology (Z-fighting) by pushing the boundary slightly forward
+    mapper.SetResolveCoincidentTopologyToPolygonOffset()
+    mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-1.0, -1.0)
+
     actor = vtkActor()
     actor.SetMapper(mapper)
     actor.GetProperty().SetLineWidth(3.0)
@@ -374,11 +378,18 @@ def create_selection_actor():
     mapper = vtkDataSetMapper()
     mapper.ScalarVisibilityOff()
 
+    # Selection should always be on top of the boundary
+    mapper.SetResolveCoincidentTopologyToPolygonOffset()
+    mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-2.0, -2.0)
+
     actor = vtkActor()
     actor.SetMapper(mapper)
-    actor.GetProperty().SetColor(1.0, 1.0, 0.0)  # yellow
-    actor.GetProperty().SetLineWidth(5.0)
-    actor.GetProperty().SetPointSize(8)
+    prop = actor.GetProperty()
+    prop.SetColor(1.0, 1.0, 0.0)  # yellow
+    prop.SetLineWidth(5.0)
+    prop.SetPointSize(8)
+    prop.EdgeVisibilityOn()
+    prop.SetEdgeColor(0, 0, 0)
     actor.SetVisibility(0)
 
     return actor, mapper
