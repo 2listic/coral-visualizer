@@ -1,5 +1,6 @@
 from conftest import DATA_DIR
 
+from file_utils import detect_and_create_reader
 from mesh_edit import BoundaryEditState, setup_edit_state
 from pv_backend import ParaViewBackend, is_paraview_available
 from vtk_pipeline import apply_coloring, build_visualization
@@ -50,3 +51,13 @@ def test_paraview_representation_mapping():
         ParaViewBackend._normalize_representation("Surface with Edges")
         == "Surface With Edges"
     )
+
+
+def test_legacy_vtk_reader_fallback_without_dataset_header(tmp_path):
+    """Legacy .vtk files without a DATASET header should still get a fallback reader."""
+    vtk_file = tmp_path / "broken_header.vtk"
+    vtk_file.write_text("# vtk DataFile Version 3.0\nbroken\nASCII\n")
+
+    reader = detect_and_create_reader(str(vtk_file))
+
+    assert reader is not None

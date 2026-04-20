@@ -6,7 +6,7 @@ source ./.venv/bin/activate
 uv pip install -r setup/requirements.txt -r setup/requirements-dev.txt
 ```
 
-Dependencies are declared unpinned in `setup/requirements.txt` (runtime) and `setup/requirements-dev.txt` (dev tools). No lockfiles are used for now: the official Docker image also installs from `setup/requirements.txt` directly.
+Dependencies are declared unpinned in `setup/requirements.txt` (runtime) and `setup/requirements-dev.txt` (dev tools). No lockfiles are used for now.
 
 ### Usage
 
@@ -49,13 +49,19 @@ You can override the defaults if needed:
 ENV_NAME=my-pv-env PYTHON_VERSION=3.10 ./tools/setup_pv_env.sh
 ```
 
-The M1 scope includes file loading, remote rendering, `Color by`,
-`Representation`, and `Reset Camera`. Mesh editing still only works on the VTK
-backend.
+Mesh editing still only works on the VTK backend.
 
 ## Usage with Docker
 
 Original example at the official [Trame repo](https://github.com/Kitware/trame/tree/master/examples/deploy/docker/SingleFile).
+
+The Docker image uses `micromamba` and a dedicated conda environment from
+`conda-forge` so ParaView is available on Linux/arm64 as well. The container
+starts the app with `--backend paraview --server` by default.
+
+The Docker path does not install ParaView from `setup/requirements.txt`.
+Instead, it provisions a dedicated conda environment from
+`setup/environment-docker.yml`.
 
 #### Build the image
 
@@ -66,14 +72,20 @@ docker build -t coral-visualizer-standalone .
 #### Run the image on port 8008
 
 ```bash
-docker run -it --rm -p 8008:80 coral-visualizer-standalone
+docker run -it --rm -p 8008:8080 coral-visualizer-standalone
 ```
 
 Or if you need some prefix
 
 ```bash
-docker run -it --rm -p 8008:80 -e TRAME_URL_PREFIX=/my-app/sub/path coral-visualizer-standalone
+docker run -it --rm -p 8008:8080 -e TRAME_URL_PREFIX=/my-app/sub/path coral-visualizer-standalone
 ```
+
+The ParaView backend starts correctly in the container and can render
+offscreen, but on hosts without a full EGL/X stack you may still see startup
+warnings such as `bad X server connection` or `Could not initialize a device`.
+In the current setup those warnings are non-fatal: the app still starts and
+ParaView can produce screenshots offscreen.
 
 ## Development
 

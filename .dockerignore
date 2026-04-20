@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+.pvenv
+.pv-conda-bootstrap
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+CODEX_LOG.md
+CLAUDE.md
+data/uploads
+data/output.vtu

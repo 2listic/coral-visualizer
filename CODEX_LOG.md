@@ -98,6 +98,14 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - `Representation` returned as ParaView property object instead of string
   - pipeline selection reset to first node on every sync
   - development launcher used `--dev`, but this trame version requires `--hot-reload`
+- Reworked Docker support so the container now runs the ParaView backend by default.
+  - Replaced the old `kitware/trame:uv` image path with a `micromamba`-based container.
+  - Added a dedicated conda environment spec in `setup/environment-docker.yml`.
+  - Verified that the container can import `paraview`, import `trame.widgets.paraview`, select `BACKEND=paraview`, and render offscreen screenshots.
+  - Documented the remaining non-fatal EGL/X startup warnings in the README.
+- Fixed a legacy `.vtk` reader bug in `file_utils.py`.
+  - Files without a detectable `DATASET` header no longer raise `UnboundLocalError`.
+  - Added a regression test for the fallback reader path.
 
 ## Current Behavior
 
@@ -113,6 +121,8 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Calculator guidance is now exposed in the inspector instead of relying on the user to inspect array names manually in `Information`.
 - Volume edit operations can now create a new scalar cell field on the edit-session dataset before saving or re-adding it to the pipeline.
 - ParaView edit sessions now keep a live cell-selection set for `Volume` mode and can apply scalar authoring only to those selected cells.
+- The Docker image now starts with the ParaView backend by default and listens on port `8080` inside the container.
+- Dockerized ParaView runs with offscreen rendering and can save screenshots, although some hosts still emit non-fatal EGL/X warnings during startup.
 
 ## Known Limitations
 
@@ -147,6 +157,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - There is no dedicated eye-toggle control inside each row yet.
 - Trame hot reload only reloads Python callback functions.
   - Structural UI changes and some ParaView-side state/setup changes may still require a manual restart.
+- Dockerized ParaView still emits graphics-stack warnings on some hosts:
+  - `bad X server connection`
+  - `Could not initialize a device`
+  - `Failed to initialize OpenGL functions`
+  - In the current setup those warnings do not prevent startup or offscreen screenshots, but the graphics path is not fully clean yet.
 
 ## Backlog
 
@@ -180,3 +195,4 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Verify switching between multiple uploaded sources keeps `Color by` and `Representation` in sync.
 - Verify `Apply` / `Reset` for generated source properties on a few representative datasets.
 - Verify each supported filter can be created from the UI and that the key generated properties are editable in practice.
+- Verify browser-side interaction quality and remote rendering responsiveness with the new Docker ParaView image on a couple of hosts.

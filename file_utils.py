@@ -77,6 +77,7 @@ def detect_and_create_reader(filename):
         return vtkXMLPUnstructuredGridReader()
     elif ext == ".vtk":
         print("Detected VTK legacy format (.vtk), reading header...")
+        reader = None
         with open(filename, "rb") as f:
             # Read first ~500 bytes which should contain the header
             header = f.read(500).decode("latin-1", errors="ignore")
