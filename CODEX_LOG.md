@@ -138,6 +138,9 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Added direct unit coverage for `vtk_controllers.py`.
   - The tests cover edit-mode transitions, target switching, selection clearing/filling,
     ID assignment, save guards, and save error handling.
+- Added direct unit coverage for `paraview_runtime.py`.
+  - The tests cover runtime-message parsing, edit-session state sync, picking payload normalization,
+    overlay synchronization, UI-state propagation, and backend-driven load/color/representation flows.
 
 ## Current Behavior
 
