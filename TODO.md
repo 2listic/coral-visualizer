@@ -16,7 +16,7 @@
   - wiring delle dipendenze
   - logica di sincronizzazione edit session
 - Ridurre lo stato globale mutabile (`state`, `_pv_backend`, `_edit_session`, `_viz`) introducendo wrapper o service object più chiari.
-- Ridurre l'accoppiamento fra `app.py`, `ui.py` e `pv_backend.py`.
+- Ridurre l'accoppiamento fra `app.py`, `ui.py` e `paraview_backend.py`.
 - Evitare accessi a metodi interni del backend come `_find_node` fuori dal modulo che li possiede.
 - Rendere più espliciti i confini tra backend `vtk` e backend `paraview`, evitando rami sparsi in tutto il codice.
 - Portare fuori da `app.py` anche gli helper backend-specifici di caricamento/colorazione/reset in una facade o service dedicato.
@@ -34,7 +34,7 @@
 
 ## Pulizia codice
 
-- Ridurre la dimensione dei file monolitici `app.py`, `ui.py` e `pv_backend.py`.
+- Ridurre la dimensione dei file monolitici `app.py`, `ui.py` e `paraview_backend.py`.
 - Rimuovere helper morti o sperimentali rimasti dopo il passaggio a `VtkRemoteLocalView`.
 - Centralizzare costanti e mapping UI per rappresentazioni, modalita di interazione ed eventi viewer.
 - Valutare type hints o piccole dataclass per i runtime/helper introdotti nel refactor.

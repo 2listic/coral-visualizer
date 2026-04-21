@@ -16,7 +16,7 @@ from file_utils import get_vtk_files_from_data_folder
 from file_operations import persist_uploaded_file, refresh_available_files, save_paraview_output
 from handler_registration import register_app_handlers
 from paraview_runtime import ParaViewRuntime
-from pv_backend import ParaViewBackend, is_paraview_available
+from paraview_backend import ParaViewBackend, is_paraview_available
 from state_setup import initialize_state, resolve_initial_file
 from vtk_runtime import VtkRuntime
 from vtk_pipeline import (

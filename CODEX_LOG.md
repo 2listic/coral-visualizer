@@ -7,7 +7,7 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 ## Done
 
 - Added backend selection in `app.py`: `--backend auto|vtk|paraview`.
-- Added ParaView backend adapter in `pv_backend.py`.
+- Added ParaView backend adapter in `paraview_backend.py`.
 - Added conda-based ParaView environment bootstrap script in `tools/setup_pv_env.sh`.
 - Integrated ParaView remote rendering through trame.
 - Preserved the existing VTK backend and mesh editing path.
@@ -116,6 +116,9 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Moved ParaView UI/runtime synchronization to `paraview_runtime.py`.
   - Moved Trame state initialization defaults to `state_setup.py`.
   - Moved controller/state registration wiring to `handler_registration.py`.
+  - Renamed `pv_backend.py` to `paraview_backend.py`.
+  - Extracted ParaView filter catalog/discovery into `paraview_filter_catalog.py`.
+  - Extracted ParaView generated-property inspection/editing into `paraview_property_inspector.py`.
   - Removed unused local-view helper functions that were no longer on the active path.
   - Centralized interaction-quality presets in `constants.py`.
 

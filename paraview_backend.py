@@ -8,127 +8,8 @@ from math import isfinite
 
 from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
 from edit_session import EditSession
-
-
-SUPPORTED_FILTERS = {
-    "calculator": {"label": "Calculator", "factory": "Calculator", "icon": "mdi-calculator-variant-outline"},
-    "cell_centers": {"label": "Cell Centers", "factory": "CellCenters", "icon": "mdi-crosshairs-gps"},
-    "clip": {"label": "Clip", "factory": "Clip", "icon": "mdi-content-cut"},
-    "contour": {"label": "Contour", "factory": "Contour", "icon": "mdi-chart-bell-curve"},
-    "coordinates": {"label": "Coordinates", "factory": "Coordinates", "icon": "mdi-axis-arrow-info"},
-    "glyph": {"label": "Glyph", "factory": "Glyph", "icon": "mdi-vector-point"},
-    "reflect": {"label": "Reflect", "factory": "Reflect", "icon": "mdi-reflect-horizontal"},
-    "slice": {"label": "Slice", "factory": "Slice", "icon": "mdi-content-cut"},
-    "stream_tracer": {
-        "label": "Streamline",
-        "factory": "StreamTracer",
-        "icon": "mdi-chart-bell-curve-cumulative",
-    },
-    "threshold": {"label": "Threshold", "factory": "Threshold", "icon": "mdi-filter-outline"},
-    "transform": {"label": "Transform", "factory": "Transform", "icon": "mdi-axis-arrow"},
-    "tube": {"label": "Tube", "factory": "Tube", "icon": "mdi-cylinder"},
-    "warp_by_scalar": {
-        "label": "Warp by Scalar",
-        "factory": "WarpByScalar",
-        "icon": "mdi-image-filter-center-focus-strong",
-    },
-    "warp_by_vector": {
-        "label": "Warp by Vector",
-        "factory": "WarpByVector",
-        "icon": "mdi-axis-arrow",
-    },
-}
-
-FILTER_DISCOVERY_KEYWORDS = {
-    "append",
-    "calculator",
-    "cell",
-    "clean",
-    "clip",
-    "connectivity",
-    "contour",
-    "convert",
-    "decimate",
-    "extract",
-    "glyph",
-    "ghost",
-    "ids",
-    "interpolate",
-    "mask",
-    "merge",
-    "normal",
-    "point",
-    "probe",
-    "reflect",
-    "slice",
-    "stream",
-    "subdivide",
-    "threshold",
-    "transform",
-    "triangulate",
-    "tube",
-    "warp",
-}
-
-FILTER_DISCOVERY_EXCLUDE = {
-    "CreateExtractor",
-    "CreateXYPointPlotView",
-    "FindExtractor",
-    "GetExtractors",
-    "LoadDistributedPlugin",
-    "SaveExtracts",
-    "SaveExtractsUsingCatalystOptions",
-}
-
-FILTER_DISCOVERY_EXCLUDE_SUBSTRINGS = {
-    "amr",
-    "block ids",
-    "cellgrid",
-    "composite",
-    "extractor",
-    "feature edges region ids",
-    "ghost",
-    "global ids",
-    "global point and cell ids",
-    "hierarchical",
-    "hypertreegrid",
-    "ids",
-    "idselection",
-    "ioss",
-    "molecule",
-    "octree",
-    "pedigree",
-    "process ids",
-    "process ids",
-    "quadrature",
-    "reader",
-    "remove ghost",
-    "select ",
-    "selection",
-    "source",
-    "statistical model",
-    "table",
-}
-
-EXPERIMENTAL_FILTER_ICON_RULES = [
-    ("clip", "mdi-content-cut"),
-    ("slice", "mdi-content-cut"),
-    ("contour", "mdi-chart-bell-curve"),
-    ("threshold", "mdi-filter-outline"),
-    ("calculator", "mdi-calculator-variant-outline"),
-    ("transform", "mdi-axis-arrow"),
-    ("reflect", "mdi-reflect-horizontal"),
-    ("tube", "mdi-cylinder"),
-    ("glyph", "mdi-vector-point"),
-    ("stream", "mdi-chart-bell-curve-cumulative"),
-    ("warp", "mdi-axis-arrow"),
-    ("extract", "mdi-select-drag"),
-    ("clean", "mdi-broom"),
-    ("triangulate", "mdi-triangle-outline"),
-    ("connect", "mdi-graph-outline"),
-    ("merge", "mdi-source-merge"),
-    ("append", "mdi-plus-box-multiple-outline"),
-]
+from paraview_filter_catalog import ParaViewFilterCatalog, SUPPORTED_FILTERS
+from paraview_property_inspector import ParaViewPropertyInspector
 
 
 def is_paraview_available():
@@ -162,10 +43,10 @@ class ParaViewBackend:
         self.active_node_id = None
         self.data_directory = os.path.abspath(data_directory) if data_directory else None
         self._filter_counts = {key: 0 for key in SUPPORTED_FILTERS}
-        self._show_experimental_filters = show_experimental_filters
-        self._experimental_filter_specs = (
-            self._discover_experimental_filters() if show_experimental_filters else []
+        self.filter_catalog = ParaViewFilterCatalog(
+            self.simple, show_experimental_filters=show_experimental_filters
         )
+        self.property_inspector = ParaViewPropertyInspector()
         self._edit_selection_overlay = None
         self._edit_selection_display = None
 
@@ -229,20 +110,7 @@ class ParaViewBackend:
 
     def get_available_filters(self):
         """Return supported and experimental filter lists for the UI."""
-        return {
-            "supported": [
-                {"text": spec["label"], "value": key, "icon": spec["icon"]}
-                for key, spec in SUPPORTED_FILTERS.items()
-            ],
-            "experimental": [
-                {
-                    "text": spec["label"],
-                    "value": spec["value"],
-                    "icon": spec["icon"],
-                }
-                for spec in self._experimental_filter_specs
-            ],
-        }
+        return self.filter_catalog.get_available_filters()
 
     def add_filter(self, filter_key):
         """Create a new filter node from the active pipeline node."""
@@ -252,7 +120,7 @@ class ParaViewBackend:
 
         spec = SUPPORTED_FILTERS.get(filter_key)
         if spec is None:
-            spec = self._experimental_filter_spec(filter_key)
+            spec = self.filter_catalog.experimental_filter_spec(filter_key)
         if spec is None:
             raise ValueError(f"Unsupported filter: {filter_key}")
 
@@ -335,17 +203,6 @@ class ParaViewBackend:
             "filename": node.get("filename") or "",
             "dataset": dataset,
         }
-
-    def _experimental_filter_spec(self, filter_key):
-        """Return the discovered experimental filter spec matching the given UI key."""
-        for spec in self._experimental_filter_specs:
-            if spec["value"] == filter_key:
-                return {
-                    "label": spec["label"],
-                    "factory": spec["factory"],
-                    "icon": spec["icon"],
-                }
-        return None
 
     def set_active_node(self, node_id):
         """Make the given pipeline node active."""
@@ -852,11 +709,14 @@ class ParaViewBackend:
             "point_arrays": point_items,
             "cell_arrays": cell_items,
             "data_stats": stats,
-            "source_properties": self._tag_property_scope(
-                self._collect_proxy_properties(source), "source"
+            "source_properties": self.property_inspector.tag_property_scope(
+                self.property_inspector.collect_proxy_properties(source), "source"
             ),
-            "display_properties": self._tag_property_scope(
-                self._collect_proxy_properties(self.display, scope="display"), "display"
+            "display_properties": self.property_inspector.tag_property_scope(
+                self.property_inspector.collect_proxy_properties(
+                    self.display, scope="display"
+                ),
+                "display",
             ),
             "show_calculator_help": self._is_active_calculator(),
             "calculator_attribute_type": self._calculator_attribute_type(),
@@ -869,8 +729,12 @@ class ParaViewBackend:
 
     def apply_property_changes(self, source_properties, display_properties):
         """Apply edited property values to the active ParaView source/display proxies."""
-        self._apply_proxy_property_changes(self.source, source_properties)
-        self._apply_proxy_property_changes(self.display, display_properties)
+        self.property_inspector.apply_proxy_property_changes(
+            self.source, source_properties
+        )
+        self.property_inspector.apply_proxy_property_changes(
+            self.display, display_properties
+        )
 
         if self.source is not None:
             self.source.UpdatePipeline()
@@ -1078,346 +942,6 @@ class ParaViewBackend:
 
         return items
 
-    @classmethod
-    def _collect_proxy_properties(cls, proxy, scope="source"):
-        """Extract user-facing proxy properties from a ParaView proxy."""
-        if proxy is None:
-            return []
-
-        properties = []
-        for name in proxy.ListProperties():
-            prop = proxy.GetProperty(name)
-            type_name = type(prop).__name__
-            sm_property = proxy.SMProxy.GetProperty(name) if proxy.SMProxy is not None else None
-
-            if type_name == "InputProperty":
-                continue
-
-            if type_name == "ProxyProperty" and name in {"ClipType", "GlyphType", "SeedType"}:
-                properties.extend(
-                    cls._collect_proxy_subproperties(
-                        proxy, name, type_name, None, sm_property, scope
-                    )
-                )
-                continue
-
-            if sm_property is None:
-                continue
-
-            visibility = sm_property.GetPanelVisibility()
-            if visibility not in {"default", "advanced"}:
-                continue
-            if sm_property.GetIsInternal() or sm_property.GetInformationOnly():
-                continue
-
-            if scope == "display" and name in {"Representation", "ColorArrayName"}:
-                continue
-
-            try:
-                value = prop.GetData()
-            except Exception:
-                value = None
-
-            available = cls._property_options(proxy, name, type_name, value)
-            effective_type = cls._effective_property_type(type_name, sm_property)
-            properties.append(
-                {
-                    "scope": "unknown",
-                    "name": name,
-                    "label": cls._property_label(name),
-                    "type": effective_type,
-                    "visibility": visibility,
-                    "value": cls._format_property_value(value),
-                    "pending_value": cls._normalize_property_value(effective_type, value),
-                    "options": available,
-                    "editable": cls._is_editable_property(effective_type, value, available),
-                    "priority": cls._property_priority(name, scope),
-                }
-            )
-
-        properties = sorted(properties, key=lambda item: (item["priority"], item["label"]))
-        if scope == "display":
-            properties = [
-                item
-                for item in properties
-                if item["name"]
-                in {
-                    "Opacity",
-                    "Interpolation",
-                    "MapScalars",
-                    "InterpolateScalarsBeforeMapping",
-                    "PointSize",
-                    "LineWidth",
-                }
-            ]
-        return properties
-
-    @classmethod
-    def _collect_proxy_subproperties(
-        cls, proxy, name, type_name, value, sm_property, scope
-    ):
-        """Expose proxy-switch properties and selected sub-proxy fields."""
-        available = list(getattr(proxy.GetProperty(name), "Available", []) or [])
-        items = []
-        parent_visibility = (
-            sm_property.GetPanelVisibility()
-            if sm_property is not None and sm_property.GetPanelVisibility() in {"default", "advanced"}
-            else "default"
-        )
-        current_proxy_name = ""
-        if value is None and hasattr(proxy, name):
-            value = getattr(proxy, name)
-        if value is not None and hasattr(value, "SMProxy") and value.SMProxy is not None:
-            current_proxy_name = value.SMProxy.GetXMLName() or ""
-
-        if available:
-            items.append(
-                {
-                    "scope": "unknown",
-                    "name": name,
-                    "label": cls._property_label(name),
-                    "type": "ProxySelectionProperty",
-                    "visibility": parent_visibility,
-                    "value": current_proxy_name,
-                    "pending_value": current_proxy_name,
-                    "options": available,
-                    "editable": True,
-                    "priority": cls._property_priority(name, scope),
-                }
-            )
-
-        if value is None or not hasattr(value, "ListProperties"):
-            return items
-
-        prefix_label = cls._property_label(name)
-        for child_name in value.ListProperties():
-            child_sm_property = value.SMProxy.GetProperty(child_name)
-            if child_sm_property is None:
-                continue
-            visibility = child_sm_property.GetPanelVisibility()
-            if visibility not in {"default", "advanced"}:
-                continue
-            if child_sm_property.GetIsInternal() or child_sm_property.GetInformationOnly():
-                continue
-
-            child_prop = value.GetProperty(child_name)
-            child_type = type(child_prop).__name__
-            if child_type in {"ProxyProperty", "InputProperty"}:
-                continue
-            try:
-                child_value = child_prop.GetData()
-            except Exception:
-                child_value = None
-            effective_child_type = cls._effective_property_type(child_type, child_sm_property)
-
-            items.append(
-                {
-                    "scope": "unknown",
-                    "name": f"{name}.{child_name}",
-                    "label": f"{prefix_label} {cls._property_label(child_name)}",
-                    "type": effective_child_type,
-                    "visibility": visibility,
-                    "value": cls._format_property_value(child_value),
-                    "pending_value": cls._normalize_property_value(effective_child_type, child_value),
-                    "options": cls._property_options(value, child_name, child_type, child_value),
-                    "editable": cls._is_editable_property(effective_child_type, child_value, []),
-                    "priority": cls._property_priority(f"{name}.{child_name}", scope),
-                }
-            )
-
-        return items
-
-    @staticmethod
-    def _tag_property_scope(properties, scope):
-        """Annotate generated properties with their owning scope."""
-        for item in properties:
-            item["scope"] = scope
-        return properties
-
-    @staticmethod
-    def _property_label(name):
-        """Convert a proxy property name into a readable label."""
-        label = []
-        for idx, char in enumerate(name):
-            if idx > 0 and char.isupper() and not name[idx - 1].isupper():
-                label.append(" ")
-            label.append(char)
-        return "".join(label)
-
-    @staticmethod
-    def _format_property_value(value):
-        """Format ParaView property values for the generated inspector."""
-        if isinstance(value, (list, tuple)):
-            return ", ".join(str(item) for item in value)
-        if value is None:
-            return ""
-        return str(value)
-
-    @staticmethod
-    def _normalize_property_value(type_name, value):
-        """Normalize property values for editing widgets."""
-        if type_name == "BooleanProperty":
-            return bool(value)
-        if type_name == "ArrayListProperty":
-            return list(value or [])
-        if type_name == "ProxySelectionProperty":
-            return value or ""
-        if type_name == "ArraySelectionProperty":
-            if isinstance(value, (list, tuple)) and len(value) >= 2:
-                association, name = value[0], value[1]
-                if not association or not name:
-                    return "__none__"
-                return f"{association}:{name}"
-            return "__none__"
-        if type_name == "VectorProperty" and isinstance(value, (list, tuple)):
-            return ", ".join(str(item) for item in value)
-        if isinstance(value, tuple):
-            return list(value)
-        return value
-
-    @staticmethod
-    def _is_editable_property(type_name, value, available):
-        """Return True for the property types supported by the generated editor."""
-        if type_name == "BooleanProperty":
-            return True
-        if type_name == "ArrayListProperty":
-            return True
-        if type_name == "ProxySelectionProperty":
-            return True
-        if type_name == "ArraySelectionProperty":
-            return True
-        if type_name == "StringListProperty":
-            return True
-        if type_name == "EnumerationProperty":
-            return True
-        if type_name == "VectorProperty":
-            return True
-        return False
-
-    @staticmethod
-    def _property_priority(name, scope):
-        """Assign a UI priority to properties so useful controls appear first."""
-        display_priority = {
-            "Opacity": 0,
-            "Interpolation": 1,
-            "MapScalars": 2,
-            "InterpolateScalarsBeforeMapping": 3,
-            "PointSize": 4,
-            "LineWidth": 5,
-            "AmbientColor": 6,
-            "DiffuseColor": 7,
-        }
-        source_priority = {
-            "PointArrayStatus": 0,
-            "CellArrayStatus": 1,
-            "TimeArray": 2,
-            "Scalars": 3,
-            "Vectors": 4,
-            "ScaleFactor": 5,
-            "GlyphMode": 6,
-            "OrientationArray": 7,
-            "ScaleArray": 8,
-            "IntegrationDirection": 9,
-            "MaximumStreamlineLength": 10,
-            "Invert": 11,
-            "Value": 12,
-            "ClipType": 13,
-            "ClipType.Origin": 14,
-            "ClipType.Normal": 15,
-            "ClipType.Offset": 16,
-        }
-        if scope == "display":
-            return display_priority.get(name, 100)
-        return source_priority.get(name, 100)
-
-    @staticmethod
-    def _apply_proxy_property_changes(proxy, properties):
-        """Apply edits for a list of generated property descriptors."""
-        if proxy is None:
-            return
-
-        for item in properties:
-            if not item.get("editable"):
-                continue
-
-            target_proxy = proxy
-            property_name = item["name"]
-            if "." in property_name:
-                parent_name, child_name = property_name.split(".", 1)
-                target_proxy = getattr(proxy, parent_name, None)
-                property_name = child_name
-                if target_proxy is None:
-                    continue
-
-            if item["type"] == "ProxySelectionProperty":
-                current_value = getattr(target_proxy, property_name)
-                current = ParaViewBackend._normalize_property_value(
-                    item["type"],
-                    current_value.SMProxy.GetXMLName()
-                    if hasattr(current_value, "SMProxy") and current_value.SMProxy is not None
-                    else current_value,
-                )
-            else:
-                prop = target_proxy.GetProperty(property_name)
-                if prop is None or not hasattr(prop, "SetData"):
-                    continue
-                current = ParaViewBackend._normalize_property_value(
-                    item["type"], prop.GetData()
-                )
-            pending = item.get("pending_value")
-            normalized_pending = ParaViewBackend._coerce_property_value(
-                item["type"], pending
-            )
-            normalized_pending_ui = ParaViewBackend._normalize_property_value(
-                item["type"], normalized_pending
-            )
-            if current == normalized_pending_ui:
-                continue
-
-            if item["type"] == "ProxySelectionProperty":
-                setattr(target_proxy, property_name, normalized_pending)
-            else:
-                prop.SetData(normalized_pending)
-
-    @staticmethod
-    def _coerce_property_value(type_name, value):
-        """Coerce UI values into a representation suitable for ParaView properties."""
-        if type_name == "ArrayListProperty":
-            if value is None:
-                return []
-            return list(value)
-
-        if type_name == "ProxySelectionProperty":
-            return value
-
-        if type_name == "BooleanProperty":
-            return 1 if bool(value) else 0
-
-        if type_name == "ArraySelectionProperty":
-            if not value or value == "__none__":
-                return [None, ""]
-            association, _, name = str(value).partition(":")
-            return [association, name]
-
-        if type_name == "EnumerationProperty":
-            return value
-
-        if type_name == "VectorProperty":
-            if value in ("", None):
-                return value
-            if isinstance(value, str) and "," in value:
-                parts = [part.strip() for part in value.split(",")]
-                try:
-                    return [float(part) for part in parts if part != ""]
-                except (TypeError, ValueError):
-                    return value
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return value
-
-        return value
-
     @staticmethod
     def _normalize_representation(representation):
         """Map UI labels to ParaView representation labels."""
@@ -1451,76 +975,6 @@ class ParaViewBackend:
             "filter_key": filter_key,
         }
 
-    @classmethod
-    def _property_options(cls, proxy, name, type_name, value):
-        """Return normalized option items for a property widget."""
-        if type_name == "ArraySelectionProperty":
-            return cls._array_selection_options(proxy, name, value)
-        return list(getattr(proxy.GetProperty(name), "Available", []) or [])
-
-    @staticmethod
-    def _effective_property_type(type_name, sm_property):
-        """Map raw ParaView property types to more useful UI-facing kinds."""
-        if type_name == "VectorProperty" and ParaViewBackend._has_domain(
-            sm_property, "vtkSMBooleanDomain"
-        ):
-            return "BooleanProperty"
-        return type_name
-
-    @staticmethod
-    def _has_domain(sm_property, domain_class_name):
-        """Return True when the given server-manager property exposes a matching domain."""
-        if sm_property is None or not hasattr(sm_property, "NewDomainIterator"):
-            return False
-        iterator = sm_property.NewDomainIterator()
-        iterator.Begin()
-        while not iterator.IsAtEnd():
-            domain = iterator.GetDomain()
-            if domain is not None and domain.GetClassName() == domain_class_name:
-                return True
-            iterator.Next()
-        return False
-
-    @classmethod
-    def _array_selection_options(cls, proxy, name, value):
-        """Build selection options for ParaView array-selection properties."""
-        data_information = None
-        if proxy is not None:
-            info_source = proxy
-            if hasattr(proxy, "Input") and proxy.Input is not None:
-                info_source = proxy.Input
-            if hasattr(info_source, "GetDataInformation"):
-                data_information = info_source.GetDataInformation()
-        if data_information is None:
-            return [{"text": "None", "value": "__none__"}]
-
-        want_vectors = name in {"Vectors", "OrientationArray"}
-        options = [{"text": "None", "value": "__none__"}]
-        for association, info in (
-            ("POINTS", data_information.GetPointDataInformation()),
-            ("CELLS", data_information.GetCellDataInformation()),
-        ):
-            if info is None:
-                continue
-            for index in range(info.GetNumberOfArrays()):
-                array_info = info.GetArrayInformation(index)
-                if array_info is None or not array_info.GetName():
-                    continue
-                if want_vectors and array_info.GetNumberOfComponents() < 2:
-                    continue
-                name_value = array_info.GetName()
-                options.append(
-                    {
-                        "text": f"{name_value} ({'Point' if association == 'POINTS' else 'Cell'})",
-                        "value": f"{association}:{name_value}",
-                    }
-                )
-
-        current = cls._normalize_property_value("ArraySelectionProperty", value)
-        if current not in {item["value"] for item in options} and current != "__none__":
-            options.append({"text": current.split(":", 1)[1], "value": current})
-        return options
-
     def _pipeline_label(self, node):
         """Return a readable pipeline label with lightweight hierarchy cues."""
         depth = 0
@@ -1548,12 +1002,7 @@ class ParaViewBackend:
 
     def _pipeline_icon(self, node):
         """Return a kind-aware icon for a pipeline entry."""
-        if node.get("kind") == "filter":
-            filter_key = node.get("filter_key")
-            if filter_key in SUPPORTED_FILTERS:
-                return SUPPORTED_FILTERS[filter_key]["icon"]
-            return "mdi-filter-outline"
-        return "mdi-database-outline"
+        return self.filter_catalog.pipeline_icon(node)
 
     def _relative_path(self, filename):
         """Return a path relative to the configured data directory when possible."""
@@ -1594,42 +1043,3 @@ class ParaViewBackend:
             if key in type_name:
                 return suffix
         return ".vtk"
-
-    def _discover_experimental_filters(self):
-        """Discover additional filter factories from `paraview.simple`."""
-        supported_factories = {spec["factory"] for spec in SUPPORTED_FILTERS.values()}
-        discovered = []
-        for name in sorted(dir(self.simple)):
-            if (
-                not name
-                or not name[0].isupper()
-                or name in FILTER_DISCOVERY_EXCLUDE
-                or name in supported_factories
-            ):
-                continue
-            attr = getattr(self.simple, name, None)
-            if not callable(attr):
-                continue
-            lower_name = name.lower()
-            if not any(keyword in lower_name for keyword in FILTER_DISCOVERY_KEYWORDS):
-                continue
-            if any(token in lower_name for token in FILTER_DISCOVERY_EXCLUDE_SUBSTRINGS):
-                continue
-            discovered.append(
-                {
-                    "value": f"factory:{name}",
-                    "label": self._property_label(name),
-                    "factory": name,
-                    "icon": self._experimental_filter_icon(name),
-                }
-            )
-        return discovered
-
-    @staticmethod
-    def _experimental_filter_icon(factory_name):
-        """Choose a best-effort icon for an experimental filter from its factory name."""
-        lower_name = factory_name.lower()
-        for keyword, icon in EXPERIMENTAL_FILTER_ICON_RULES:
-            if keyword in lower_name:
-                return icon
-        return "mdi-flask-outline"
