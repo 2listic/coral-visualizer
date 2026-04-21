@@ -126,6 +126,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
     `paraview_filter_catalog.py`, and `paraview_property_inspector.py`.
   - The new tests cover state defaults, file/save flows, handler wiring, filter discovery,
     property inspection, and property-value coercion.
+- Extended unit coverage to callback/controller registration layers.
+  - Added dedicated tests for `state_handlers.py`, `common_controllers.py`,
+    and `paraview_controllers.py`.
+  - The new tests cover callback registration, state transitions, upload/save error handling,
+    visibility toggles, and filter/property controller behavior.
 
 ## Current Behavior
 
