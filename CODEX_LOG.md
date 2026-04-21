@@ -106,6 +106,18 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Fixed a legacy `.vtk` reader bug in `file_utils.py`.
   - Files without a detectable `DATASET` header no longer raise `UnboundLocalError`.
   - Added a regression test for the fallback reader path.
+- Started refactoring `app.py` into smaller modules.
+  - Moved ParaView controller registrations to `paraview_controllers.py`.
+  - Moved VTK edit controller/state registrations to `vtk_controllers.py`.
+  - Moved shared state callbacks to `state_handlers.py`.
+  - Moved backend-agnostic button handlers to `common_controllers.py`.
+  - Moved upload/save file operations to `file_operations.py`.
+  - Moved VTK scene orchestration to `vtk_runtime.py`.
+  - Moved ParaView UI/runtime synchronization to `paraview_runtime.py`.
+  - Moved Trame state initialization defaults to `state_setup.py`.
+  - Moved controller/state registration wiring to `handler_registration.py`.
+  - Removed unused local-view helper functions that were no longer on the active path.
+  - Centralized interaction-quality presets in `constants.py`.
 
 ## Current Behavior
 
@@ -123,6 +135,7 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - ParaView edit sessions now keep a live cell-selection set for `Volume` mode and can apply scalar authoring only to those selected cells.
 - The Docker image now starts with the ParaView backend by default and listens on port `8080` inside the container.
 - Dockerized ParaView runs with offscreen rendering and can save screenshots, although some hosts still emit non-fatal EGL/X warnings during startup.
+- `app.py` is now mostly reduced to startup, state/runtime construction, view helpers, and top-level handler wiring.
 
 ## Known Limitations
 
@@ -162,6 +175,8 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - `Could not initialize a device`
   - `Failed to initialize OpenGL functions`
   - In the current setup those warnings do not prevent startup or offscreen screenshots, but the graphics path is not fully clean yet.
+- `app.py` still owns backend-selection wiring and a few inline dependency adapters for file operations.
+  - The heavy VTK/ParaView operational paths, state defaults, and handler registration logic now live outside the file.
 
 ## Backlog
 
@@ -196,3 +211,4 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Verify `Apply` / `Reset` for generated source properties on a few representative datasets.
 - Verify each supported filter can be created from the UI and that the key generated properties are editable in practice.
 - Verify browser-side interaction quality and remote rendering responsiveness with the new Docker ParaView image on a couple of hosts.
+- Continue shrinking `app.py` by reducing remaining backend-selection wiring and replacing inline dependency lambdas with more explicit objects or dataclasses.
