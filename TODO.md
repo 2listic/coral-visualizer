@@ -26,11 +26,12 @@
 
 ## Test
 
+- Estendere la copertura dai moduli helper gia testati ai runtime principali `paraview_runtime.py`, `vtk_runtime.py` e `paraview_backend.py`.
 - Aggiungere test per il bootstrap dell'app con `--backend vtk`, `--backend paraview` e `--backend auto`.
 - Aggiungere test per il cambio `pick_mode` e per la sincronizzazione di `edit_picking_modes`, `interactor_events` e `interactor_settings`.
 - Aggiungere test per il flusso di edit session ParaView: begin, pick, discard, commit.
 - Aggiungere test negativi sui fallback quando ParaView non e disponibile.
-- Estendere i test oltre gli smoke test attuali, che non coprono il wiring UI/client.
+- Aggiungere test piu alti di livello sul wiring UI/client e sui callback Trame, oltre la nuova copertura unitaria.
 
 ## Pulizia codice
 

@@ -121,6 +121,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Extracted ParaView generated-property inspection/editing into `paraview_property_inspector.py`.
   - Removed unused local-view helper functions that were no longer on the active path.
   - Centralized interaction-quality presets in `constants.py`.
+- Added broad unit-test coverage for the refactored support modules.
+  - Added dedicated tests for `state_setup.py`, `file_operations.py`, `handler_registration.py`,
+    `paraview_filter_catalog.py`, and `paraview_property_inspector.py`.
+  - The new tests cover state defaults, file/save flows, handler wiring, filter discovery,
+    property inspection, and property-value coercion.
 
 ## Current Behavior
 
@@ -139,11 +144,14 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - The Docker image now starts with the ParaView backend by default and listens on port `8080` inside the container.
 - Dockerized ParaView runs with offscreen rendering and can save screenshots, although some hosts still emit non-fatal EGL/X warnings during startup.
 - `app.py` is now mostly reduced to startup, state/runtime construction, view helpers, and top-level handler wiring.
+- Refactored helper modules now have direct unit coverage without needing a live Trame browser session.
 
 ## Known Limitations
 
 - The generated properties panel is only partially editable.
   - More ParaView property classes still need support.
+- Coverage is still strongest on pure Python helpers and wiring.
+  - Browser-driven flows, full Trame callbacks, and live ParaView interaction still need higher-level tests.
 - Filter support is currently limited to the first supported set:
   - `Calculator`
   - `Clip`
