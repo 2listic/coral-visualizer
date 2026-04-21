@@ -135,6 +135,9 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - The tests exercise array discovery, output naming, relative-path handling, pipeline hierarchy,
     UI-state synthesis, representation/coloring logic, delete behavior, and pick-coordinate helpers
     using fake ParaView objects.
+- Added direct unit coverage for `vtk_controllers.py`.
+  - The tests cover edit-mode transitions, target switching, selection clearing/filling,
+    ID assignment, save guards, and save error handling.
 
 ## Current Behavior
 
