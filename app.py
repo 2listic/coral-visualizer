@@ -6,7 +6,6 @@ from pathlib import Path
 if os.environ.get("PV_VENV") or "--venv" in os.sys.argv:
     import paraview.web.venv  # noqa: F401
 
-from trame.app.file_upload import ClientFile
 from trame.app import get_server
 from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkStringOutputWindow
 
@@ -24,7 +23,9 @@ from constants import (
 from edit_session import EditSession
 from file_utils import get_vtk_files_from_data_folder
 from pv_backend import ParaViewBackend, is_paraview_available
+from common_controllers import register_common_controllers
 from paraview_controllers import register_paraview_controllers
+from state_handlers import register_state_handlers
 from vtk_controllers import register_vtk_handlers
 from vtk_pipeline import (
     build_visualization,
@@ -830,7 +831,7 @@ def _extract_pointer_position(event):
 
 def _sync_paraview_edit_selection_overlay():
     """Update the transient selection highlight for the active ParaView edit session."""
-    if BACKEND != "paraview" or _pv_backend is None:
+    if not _is_paraview_backend():
         return
 
     if not _edit_session.active:
@@ -882,7 +883,7 @@ def _summarize_edit_event(event):
 
 def _update_paraview_ui_state():
     """Synchronize Trame state with the active ParaView source metadata."""
-    if BACKEND != "paraview" or _pv_backend is None:
+    if not _is_paraview_backend():
         return
 
     ui_state = _pv_backend.get_ui_state()
@@ -977,148 +978,32 @@ register_vtk_handlers(
     apply_vtk_representation_to_scene=_apply_vtk_representation_to_scene,
 )
 
+register_state_handlers(
+    state,
+    is_paraview_backend=_is_paraview_backend,
+    load_file_with_paraview_backend=_load_file_with_paraview_backend,
+    load_file_with_vtk_backend=_load_file_with_vtk_backend,
+    apply_paraview_coloring=_apply_paraview_coloring,
+    apply_vtk_coloring=_apply_vtk_coloring,
+    apply_active_representation=_apply_active_representation,
+    pv_backend=_pv_backend,
+    update_paraview_ui_state=_update_paraview_ui_state,
+    render_and_push=_render_and_push,
+    sync_edit_session_state=_sync_edit_session_state,
+    interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
+)
 
-# -----------------------------------------------------------------------------
-# State Callbacks
-# -----------------------------------------------------------------------------
-
-
-@state.change("selected_file")
-def on_file_change(selected_file, **kwargs):
-    """Reload pipeline and reset coloring/representation when file changes."""
-    if selected_file and os.path.exists(selected_file):
-        try:
-            print(f"\nLoading file: {selected_file}")
-
-            # Exit edit mode if active
-            if state.edit_mode:
-                state.edit_mode = False
-
-            if _is_paraview_backend():
-                _load_file_with_paraview_backend(selected_file)
-            else:
-                _load_file_with_vtk_backend(selected_file)
-        except Exception as e:
-            state.error_message = f"Error loading file: {str(e)}"
-            print(f"Error: {e}")
-            import traceback
-
-            traceback.print_exc()
-
-
-@state.change("selected_array")
-def on_array_change(selected_array, **kwargs):
-    """Update coloring when the user picks a different array."""
-    if _is_paraview_backend():
-        _apply_paraview_coloring(selected_array)
-        return
-
-    _apply_vtk_coloring(selected_array)
-
-
-@state.change("representation")
-def on_representation_change(representation, **kwargs):
-    """Update actor representation when the user picks a different mode."""
-    _apply_active_representation(representation)
-
-
-@state.change("active_pipeline_item")
-def on_active_pipeline_item_change(active_pipeline_item, **kwargs):
-    """Switch active ParaView node when the pipeline selection changes."""
-    if not _is_paraview_backend():
-        return
-    if not active_pipeline_item:
-        return
-    if not _pv_backend.set_active_node(active_pipeline_item):
-        return
-
-    _update_paraview_ui_state()
-    _render_and_push()
-
-@state.change("interaction_quality")
-def on_interaction_quality_change(interaction_quality, **kwargs):
-    """Update remote-render interaction quality preset."""
-    preset = INTERACTION_QUALITY_PRESETS.get(
-        interaction_quality, INTERACTION_QUALITY_PRESETS["high"]
-    )
-    state.interactive_quality = preset["interactive_quality"]
-    state.interactive_ratio = preset["interactive_ratio"]
-
-
-@state.change("pick_mode")
-def on_pick_mode_change(pick_mode, **kwargs):
-    """Enable or disable edit-view picking modes for the ParaView path."""
-    if not _is_paraview_backend():
-        return
-    
-    # Sync server-side rotation lock
-    if _pv_backend:
-        _pv_backend.set_interactor_rotation(not pick_mode)
-    
-    _sync_edit_session_state()
-
-
-# -----------------------------------------------------------------------------
-# Controller methods (called from UI buttons)
-# -----------------------------------------------------------------------------
-
-
-
-
-@ctrl.add("reset_camera")
-def reset_camera():
-    """Reset the active camera for the selected backend."""
-    if _is_paraview_backend():
-        _pv_backend.reset_camera()
-        _call_view_update()
-        return
-
-    _reset_vtk_camera()
-
-
-@ctrl.add("reset_view")
-def reset_view():
-    """Restore a canonical XYZ view and reset the camera framing."""
-    if _is_paraview_backend():
-        _pv_backend.reset_view()
-        _call_view_update(reset_camera=True)
-        return
-
-    _reset_vtk_view()
-
-
-@ctrl.add("upload_dataset")
-def upload_dataset(files):
-    """Handle a dataset upload from the browser file picker."""
-    uploaded_files = files or []
-    if not uploaded_files:
-        return
-
-    client_file = ClientFile(uploaded_files[0])
-    if client_file.is_empty:
-        state.upload_status = "Uploaded file was empty"
-        state.upload_status_type = "error"
-        return
-
-    try:
-        saved_path = _persist_uploaded_file(client_file)
-        _refresh_available_files()
-        state.selected_file = saved_path
-        state.upload_status = f"Loaded {os.path.basename(saved_path)}"
-        state.upload_status_type = "success"
-    except Exception as exc:
-        state.upload_status = f"Upload failed: {exc}"
-        state.upload_status_type = "error"
-
-
-@ctrl.add("open_remote_file")
-def open_remote_file(path):
-    """Open a file that already exists under the remote data directory."""
-    if not path:
-        return
-
-    state.remote_browser_dialog = False
-    state.selected_file = path
+register_common_controllers(
+    ctrl,
+    state,
+    is_paraview_backend=_is_paraview_backend,
+    pv_backend=_pv_backend,
+    call_view_update=_call_view_update,
+    reset_vtk_camera=_reset_vtk_camera,
+    reset_vtk_view=_reset_vtk_view,
+    persist_uploaded_file=_persist_uploaded_file,
+    refresh_available_files=_refresh_available_files,
+)
 
 
 # -----------------------------------------------------------------------------
