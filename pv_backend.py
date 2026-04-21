@@ -291,14 +291,18 @@ class ParaViewBackend:
         """Return a suggested output filename for the active pipeline node."""
         node = self._get_active_node()
         if node is None:
-            return "output" + self._default_output_extension()
+            return "output" + self.default_output_extension()
         label = node.get("label") or "output"
         safe_label = "".join(
             char if char.isalnum() or char in {"-", "_"} else "_" for char in label
         ).strip("_")
         if not safe_label:
             safe_label = "output"
-        return safe_label + self._default_output_extension()
+        return safe_label + self.default_output_extension()
+
+    def default_output_extension(self):
+        """Return the default output extension for saved pipeline results."""
+        return self._default_output_extension()
 
     def save_active_data(self, output_path):
         """Save the currently active pipeline result to a new file."""
@@ -365,6 +369,13 @@ class ParaViewBackend:
         node["display"].Visibility = 1 if visible else 0
         self.render()
         return True
+
+    def get_visibility(self, node_id):
+        """Return the visibility of a pipeline node, or ``None`` if unavailable."""
+        node = self._find_node(node_id)
+        if node is None or node["display"] is None:
+            return None
+        return bool(node["display"].Visibility)
 
     def delete_node(self, node_id):
         """Delete a pipeline node and adjust active selection."""
