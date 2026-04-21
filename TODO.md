@@ -26,7 +26,7 @@
 
 ## Test
 
-- Estendere la copertura dai moduli helper/controller gia testati ai runtime principali `paraview_runtime.py`, `vtk_runtime.py` e `paraview_backend.py`.
+- Estendere la copertura dai moduli helper/controller/backend gia testati ai runtime principali `paraview_runtime.py` e `vtk_runtime.py`.
 - Aggiungere test dedicati per `vtk_controllers.py`, specialmente per edit mode, selezione e salvataggio `.vtu`.
 - Aggiungere test per il bootstrap dell'app con `--backend vtk`, `--backend paraview` e `--backend auto`.
 - Aggiungere test per il cambio `pick_mode` e per la sincronizzazione di `edit_picking_modes`, `interactor_events` e `interactor_settings`.

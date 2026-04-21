@@ -131,6 +131,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
     and `paraview_controllers.py`.
   - The new tests cover callback registration, state transitions, upload/save error handling,
     visibility toggles, and filter/property controller behavior.
+- Added direct unit coverage for `paraview_backend.py` without requiring a live ParaView session.
+  - The tests exercise array discovery, output naming, relative-path handling, pipeline hierarchy,
+    UI-state synthesis, representation/coloring logic, delete behavior, and pick-coordinate helpers
+    using fake ParaView objects.
 
 ## Current Behavior
 
@@ -150,6 +154,8 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Dockerized ParaView runs with offscreen rendering and can save screenshots, although some hosts still emit non-fatal EGL/X warnings during startup.
 - `app.py` is now mostly reduced to startup, state/runtime construction, view helpers, and top-level handler wiring.
 - Refactored helper modules now have direct unit coverage without needing a live Trame browser session.
+- `paraview_backend.py` now has targeted coverage for its internal logic, while the remaining gaps are
+  mostly in live runtime integration and server-side ParaView interaction.
 
 ## Known Limitations
 
