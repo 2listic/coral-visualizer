@@ -28,7 +28,7 @@ def _wait_for_http_ready(url, timeout_s=45):
             time.sleep(0.25)
     raise RuntimeError(f"Timed out waiting for server at {url}")
 
-def test_paraview_non_edit_mode_rotates_on_drag():
+def test_paraview_non_edit_mode_rotates_on_drag(show_browser):
     if not is_paraview_available():
         pytest.skip("ParaView backend is not available in this environment")
 
@@ -47,6 +47,7 @@ def test_paraview_non_edit_mode_rotates_on_drag():
             "app.py",
             "--backend",
             "paraview",
+            "--no-browser",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -65,7 +66,7 @@ def test_paraview_non_edit_mode_rotates_on_drag():
     try:
         _wait_for_http_ready(url)
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=not show_browser)
             page = browser.new_page(viewport={"width": 1200, "height": 800})
             page.goto(url, wait_until="domcontentloaded")
             
@@ -91,7 +92,8 @@ def test_paraview_non_edit_mode_rotates_on_drag():
             
             assert screenshot_initial != screenshot_after_rotate_drag, "Screenshots are identical! The view did NOT rotate during drag in non-edit mode."
 
-            browser.close()
+            if not show_browser:
+                browser.close()
     finally:
         if proc.poll() is None:
             proc.terminate()

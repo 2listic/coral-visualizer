@@ -120,12 +120,17 @@ pytest          # run all smoke tests
 pytest -v       # verbose output
 ```
 
-The standard suite now includes a headless UI E2E test for ParaView edit-mode
-selection (`tests/test_e2e_edit_selection_playwright.py`). Install the browser
+The standard suite includes headless E2E tests for ParaView. Install the browser
 once in your dev environment:
 
 ```bash
 python -m playwright install chromium
+```
+
+By default, E2E tests run in headless mode. To run them with a visible browser, use:
+
+```bash
+pytest tests/ --show-browser
 ```
 
 Test meshes used by the suite live in `test_data/` (for example
