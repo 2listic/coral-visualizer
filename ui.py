@@ -913,19 +913,6 @@ def _build_paraview_inspector_panel(ctrl):
                                     children=["{{ edit_selection_status }}"],
                                     classes="ma-0",
                                 )
-                        with vuetify.VListItem(v_show=("edit_selection_event",)):
-                            with vuetify.VListItemContent():
-                                vuetify.VTextarea(
-                                    value=("edit_selection_event",),
-                                    label="Last selection event",
-                                    auto_grow=True,
-                                    rows=3,
-                                    readonly=True,
-                                    outlined=True,
-                                    hide_details=True,
-                                )
-
-
 def _build_property_list(ctrl, state_key):
     with vuetify.VExpansionPanels(accordion=True, flat=True, style="background: transparent;"):
         with vuetify.VExpansionPanel():

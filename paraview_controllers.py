@@ -42,18 +42,22 @@ def register_paraview_controllers(
 
         if mode != "volume":
             if mode == "surface":
-                appended = edit_session.materialize_surface_selection()
+                field_name = edit_session.apply_surface_field(
+                    state.edit_field_name,
+                    state.edit_expression,
+                    state.edit_default_value,
+                    overwrite=overwrite,
+                )
                 sync_edit_session_state()
-                if appended:
-                    state.edit_apply_status = (
-                        f"Added {appended} missing surface cell(s) from the current selection."
-                    )
-                    state.edit_apply_status_type = "success"
-                else:
-                    state.edit_apply_status = (
-                        "No new surface cells were added. Selected faces/edges are already present."
-                    )
-                    state.edit_apply_status_type = "info"
+                target_scope = (
+                    f"{edit_session.selected_count()} selected surface element(s)"
+                    if edit_session.selected_count()
+                    else "all cells"
+                )
+                state.edit_apply_status = (
+                    f"Updated cell field '{field_name}' on {target_scope}."
+                )
+                state.edit_apply_status_type = "success"
                 return
             state.edit_apply_status = (
                 f"{mode.capitalize()} mode is visible in the UI but not implemented yet. "
@@ -101,7 +105,7 @@ def register_paraview_controllers(
         return mode
 
     def _apply_selection_ids(picked_ids, source_label):
-        _sync_edit_mode_from_state()
+        mode = _sync_edit_mode_from_state()
         selection_mode = _set_selection_mode(
             getattr(state, "edit_selection_mode", "replace")
         )
@@ -129,8 +133,9 @@ def register_paraview_controllers(
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         state.selection_count = count
+        entity_label = "surface element(s)" if mode == "surface" else "cell(s)"
         state.edit_selection_status = (
-            f"{action} {len(picked_ids)} cell(s) with {source_label}. {count} selected total."
+            f"{action} {len(picked_ids)} {entity_label} with {source_label}. {count} selected total."
         )
         state.edit_selection_status_type = "success"
         render_and_push()
@@ -499,13 +504,14 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not edit_session.active:
             return
 
-        _sync_edit_mode_from_state()
+        mode = _sync_edit_mode_from_state()
         count = edit_session.select_all_cells()
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         state.selection_count = count
+        entity_label = "surface element(s)" if mode == "surface" else "cell(s)"
         state.edit_selection_status = (
-            f"Selected all {count} cell(s) in the edit-session dataset."
+            f"Selected all {count} {entity_label} in the edit-session dataset."
         )
         state.edit_selection_status_type = "success"
         render_and_push()

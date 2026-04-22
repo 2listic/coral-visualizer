@@ -138,3 +138,18 @@ def test_surface_mode_save_keeps_cell_data_lengths_consistent(tmp_path):
     assert loaded.GetNumberOfPoints() == 4
     assert loaded.GetNumberOfCells() == 5
     assert loaded.GetCellData().GetArray("BoundaryID") is not None
+
+
+def test_apply_surface_field_sets_default_on_all_cells_and_expression_on_selected_surface():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+    session.replace_selection([(0, 1, 2)])
+
+    session.apply_surface_field("BoundaryID", "1", "0", overwrite=True)
+    field = session.working_dataset.GetCellData().GetArray("BoundaryID")
+
+    assert field is not None
+    assert session.working_dataset.GetNumberOfCells() == 2
+    assert field.GetTuple1(0) == pytest.approx(0.0)
+    assert field.GetTuple1(1) == pytest.approx(1.0)

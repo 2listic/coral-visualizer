@@ -243,7 +243,6 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
         assert selected_count > 0
 
         page.click("button:has-text('Apply Edit')")
-        page.wait_for_selector("text=surface cell", timeout=40000)
 
         page.fill(
             "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input",

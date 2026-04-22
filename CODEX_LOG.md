@@ -192,6 +192,13 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
     (with default initialization for new tuples), preventing invalid files that load as empty datasets.
   - Added regressions in `tests/test_edit_session.py`, `tests/test_paraview_backend.py`,
     and `tests/test_paraview_controllers.py`.
+- Fixed surface-field application so the edited field is always visible in Surface mode.
+  - Added `EditSession.apply_surface_field(...)` and shared scalar-field assignment logic.
+  - Surface apply now materializes selected codim-1 entities, writes the expression only on selected
+    surface entities, and writes the default value on all non-selected cells.
+  - Updated controller messaging and selection labels to use `surface element(s)` in Surface mode.
+  - Added regression coverage for default-on-unselected behavior and controller surface apply flow.
+- Removed the non-informative `Last selection event` textarea from the ParaView Edit inspector.
 
 ## Current Behavior
 

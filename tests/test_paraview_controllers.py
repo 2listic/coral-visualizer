@@ -367,9 +367,10 @@ def test_pv_confirm_overwrite_edit_field_applies_with_overwrite_true():
 
 def test_pv_apply_edit_field_surface_mode_materializes_selection():
     ctrl = FakeCtrl()
+    calls = []
     state = SimpleNamespace(
         edit_geometry_mode="surface",
-        edit_field_name="ignored",
+        edit_field_name="BoundaryID",
         edit_expression="",
         edit_default_value="0",
         edit_apply_status="",
@@ -383,7 +384,11 @@ def test_pv_apply_edit_field_surface_mode_materializes_selection():
         field_name="",
         expression="",
         default_value="",
-        materialize_surface_selection=lambda: 2,
+        apply_surface_field=lambda field, expr, default, overwrite=False: calls.append(
+            (field, expr, default, overwrite)
+        )
+        or field,
+        selected_count=lambda: 4,
     )
 
     register_paraview_controllers(
@@ -409,8 +414,9 @@ def test_pv_apply_edit_field_surface_mode_materializes_selection():
     ctrl.handlers["pv_apply_edit_field"]()
 
     assert edit_session.geometry_mode == "surface"
+    assert calls == [("BoundaryID", "", "0", False)]
     assert state.edit_apply_status_type == "success"
-    assert "Added 2 missing surface cell(s)" in state.edit_apply_status
+    assert "Updated cell field 'BoundaryID' on 4 selected surface element(s)." == state.edit_apply_status
 
 
 def test_surface_mode_selection_keeps_surface_mode_after_sync():
@@ -571,6 +577,10 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
 
     assert actions == [("replace", [(4, 5, 6), (7, 8, 9)], False)]
     assert calls == ["sync", "overlay", "render"]
+    assert (
+        state.edit_selection_status
+        == "Selected 2 surface element(s) with box selection. 2 selected total."
+    )
 
 
 def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():

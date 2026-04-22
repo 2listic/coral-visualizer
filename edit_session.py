@@ -276,6 +276,40 @@ class EditSession:
         """Create or update a scalar cell-data field on selected volume cells."""
         if not self.active or self.working_dataset is None:
             raise RuntimeError("No active edit session")
+        selected_ids = (
+            sorted(self.selected_cell_ids)
+            if self.selected_cell_ids
+            else list(range(self.working_dataset.GetNumberOfCells()))
+        )
+        return self._apply_scalar_field(
+            field_name,
+            expression,
+            default_value,
+            selected_cell_ids=selected_ids,
+            overwrite=overwrite,
+        )
+
+    def apply_surface_field(self, field_name, expression, default_value, overwrite=False):
+        """Create/update a scalar cell-data field using selected surface entities only."""
+        if not self.active or self.working_dataset is None:
+            raise RuntimeError("No active edit session")
+
+        self.materialize_surface_selection()
+        selected_ids = sorted(self._selected_surface_cell_ids())
+        return self._apply_scalar_field(
+            field_name,
+            expression,
+            default_value,
+            selected_cell_ids=selected_ids,
+            overwrite=overwrite,
+        )
+
+    def _apply_scalar_field(
+        self, field_name, expression, default_value, *, selected_cell_ids, overwrite=False
+    ):
+        """Shared implementation for scalar field assignment on selected cell ids."""
+        if not self.active or self.working_dataset is None:
+            raise RuntimeError("No active edit session")
 
         field_name = (field_name or "").strip()
         if not field_name:
@@ -290,11 +324,11 @@ class EditSession:
         if cell_count == 0:
             raise RuntimeError("The working dataset has no cells")
 
-        selected_ids = (
-            sorted(self.selected_cell_ids)
-            if self.selected_cell_ids
-            else list(range(cell_count))
-        )
+        selected_ids = [
+            int(cell_id)
+            for cell_id in (selected_cell_ids or [])
+            if 0 <= int(cell_id) < cell_count
+        ]
         result_values = [default_numeric] * cell_count
         if expression:
             calculator = vtkArrayCalculator()
@@ -592,6 +626,30 @@ class EditSession:
                 id_list.InsertNextId(int(point_id))
             output.InsertNextCell(int(cell_type), id_list)
         return output
+
+    def _selected_surface_cell_ids(self):
+        """Return ids of codim-1 cells matching selected surface keys."""
+        dataset = self.working_dataset
+        if dataset is None:
+            return set()
+
+        top_dim = self._top_dimension()
+        if top_dim < 2:
+            return set()
+        codim_dim = top_dim - 1
+
+        key_to_ids = {}
+        for cell_id in range(dataset.GetNumberOfCells()):
+            cell = dataset.GetCell(cell_id)
+            if cell.GetCellDimension() != codim_dim:
+                continue
+            key = self._cell_key(cell)
+            key_to_ids.setdefault(key, set()).add(int(cell_id))
+
+        selected_ids = set()
+        for key in self.selected_surface_keys:
+            selected_ids |= key_to_ids.get(tuple(key), set())
+        return selected_ids
 
     def _invalidate_geometry_caches(self):
         self._volume_adjacency = None
