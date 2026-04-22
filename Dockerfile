@@ -13,6 +13,9 @@ RUN apt-get update && \
     libgl1 \
     libxrender1 \
     libxcursor1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
     libxft2 \
     libxinerama1 \
     libgomp1 \
@@ -43,7 +46,6 @@ RUN micromamba create -y -n coral -f /tmp/environment-docker.yml && \
     trame \
     trame-vtk \
     trame-vuetify \
-    trame-paraview \
     pytest \
     pytest-playwright \
     Pillow && \
