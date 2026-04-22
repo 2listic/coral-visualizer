@@ -65,8 +65,10 @@ def test_paraview_pick_mode_does_not_rotate_on_drag():
     try:
         _wait_for_http_ready(url)
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1200, "height": 800})
+            browser = p.chromium.launch(headless=not show_browser)
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = context.pages[0] if context.pages else context.new_page(viewport={"width": 1200, "height": 800})
+            page.set_viewport_size({"width": 1200, "height": 800})
             page.goto(url, wait_until="domcontentloaded")
             
             # Wait for app to be ready

@@ -84,8 +84,10 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless():
     try:
         _wait_for_http_ready(url)
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1600, "height": 1000})
+            browser = p.chromium.launch(headless=not show_browser)
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = context.pages[0] if context.pages else context.new_page(viewport={"width": 1600, "height": 1000})
+            page.set_viewport_size({"width": 1600, "height": 1000})
             page.goto(url, wait_until="domcontentloaded")
             page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
 
