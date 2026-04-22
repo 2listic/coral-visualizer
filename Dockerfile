@@ -7,7 +7,7 @@ ENV MAMBA_DOCKERFILE_ACTIVATE=1
 ENV TRAME_CLIENT_TYPE=vue2
 ENV PV_VENV=1
 
-# ParaView offscreen rendering still needs a minimal Mesa/X11 userspace.
+# ParaView offscreen rendering and Playwright dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libgl1 \
@@ -18,6 +18,20 @@ RUN apt-get update && \
     libgomp1 \
     libosmesa6 \
     libosmesa6-dev \
+    # Playwright dependencies
+    libnss3 \
+    libnspr4 \
+    libasound2 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libexpat1 \
+    libgbm1 \
+    libxkbcommon0 \
+    libpango-1.0-0 \
+    libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --chown=$MAMBA_USER:$MAMBA_USER setup/environment-docker.yml /tmp/environment-docker.yml
@@ -28,8 +42,16 @@ RUN micromamba create -y -n coral -f /tmp/environment-docker.yml && \
     micromamba run -n coral python -m pip install --no-cache-dir \
     trame \
     trame-vtk \
-    trame-vuetify && \
+    trame-vuetify \
+    trame-paraview \
+    pytest \
+    pytest-playwright \
+    Pillow && \
+    micromamba run -n coral playwright install chromium && \
     micromamba clean --all --yes
+
+# Verify ParaView availability
+RUN micromamba run -n coral python -c "import paraview.simple; print('ParaView version:', paraview.simple.GetParaViewVersion())"
 
 WORKDIR /deploy
 COPY --chown=$MAMBA_USER:$MAMBA_USER . /deploy
