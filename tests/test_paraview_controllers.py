@@ -365,6 +365,54 @@ def test_pv_confirm_overwrite_edit_field_applies_with_overwrite_true():
     assert "Updated cell field 'A field'" in state.edit_apply_status
 
 
+def test_pv_apply_edit_field_surface_mode_materializes_selection():
+    ctrl = FakeCtrl()
+    state = SimpleNamespace(
+        edit_geometry_mode="surface",
+        edit_field_name="ignored",
+        edit_expression="",
+        edit_default_value="0",
+        edit_apply_status="",
+        edit_apply_status_type="info",
+        edit_overwrite_dialog=False,
+        edit_overwrite_field_name="",
+    )
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="",
+        field_name="",
+        expression="",
+        default_value="",
+        materialize_surface_selection=lambda: 2,
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_apply_edit_field"]()
+
+    assert edit_session.geometry_mode == "surface"
+    assert state.edit_apply_status_type == "success"
+    assert "Added 2 missing surface cell(s)" in state.edit_apply_status
+
+
 def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
     ctrl = FakeCtrl()
     calls = []

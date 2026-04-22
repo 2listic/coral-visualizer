@@ -50,8 +50,13 @@ def save_paraview_output(*, state, data_directory, pv_backend, edit_session):
     if edit_session.active:
         fallback_name = edit_session.default_output_filename()
         output_path = resolve_output_path(data_directory, state.save_filename, fallback_name)
-        if not os.path.splitext(output_path)[1]:
+        suffix = os.path.splitext(output_path)[1].lower()
+        if not suffix:
             output_path += ".vtu"
+        elif suffix not in {".vtu", ".vtk"}:
+            raise ValueError(
+                "Unsupported edit output format. Use .vtu or .vtk for edit-session saves."
+            )
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         edit_session.save(output_path)
         saved_kind = "edited dataset"

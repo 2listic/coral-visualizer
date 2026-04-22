@@ -5,6 +5,7 @@ from pathlib import Path
 from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIdList
 from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
 from vtkmodules.vtkFiltersCore import vtkArrayCalculator, vtkCellCenters, vtkExtractCells
+from vtkmodules.vtkIOLegacy import vtkUnstructuredGridWriter
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
 
 
@@ -23,7 +24,9 @@ class EditSession:
         self.expression = ""
         self.default_value = "0"
         self.selected_cell_ids = set()
+        self.selected_surface_keys = set()
         self._volume_adjacency = None
+        self._surface_boundary_map = None
 
     def clear(self):
         """Reset the session to an inactive state."""
@@ -38,7 +41,9 @@ class EditSession:
         self.expression = ""
         self.default_value = "0"
         self.selected_cell_ids = set()
+        self.selected_surface_keys = set()
         self._volume_adjacency = None
+        self._surface_boundary_map = None
 
     def begin(self, node_id, source_label, source_filename, dataset):
         """Start a new edit session from a fetched VTK dataset copy."""
@@ -61,7 +66,9 @@ class EditSession:
         self.expression = ""
         self.default_value = "0"
         self.selected_cell_ids = set()
+        self.selected_surface_keys = set()
         self._volume_adjacency = None
+        self._surface_boundary_map = None
         self._ensure_cell_centers_array()
         return self.working_dataset
 
@@ -82,7 +89,18 @@ class EditSession:
         if not self.active or self.working_dataset is None:
             raise RuntimeError("No active edit session to save")
 
-        writer = vtkXMLUnstructuredGridWriter()
+        if self.geometry_mode == "surface":
+            self.materialize_surface_selection()
+
+        suffix = Path(output_path).suffix.lower()
+        if suffix == ".vtk":
+            writer = vtkUnstructuredGridWriter()
+        elif suffix == ".vtu":
+            writer = vtkXMLUnstructuredGridWriter()
+        else:
+            raise ValueError(
+                "Unsupported edit output format. Use .vtu or .vtk for edit-session saves."
+            )
         writer.SetFileName(str(output_path))
         writer.SetInputData(self.working_dataset)
         if writer.Write() != 1:
@@ -112,16 +130,22 @@ class EditSession:
 
     def selected_count(self):
         """Return the number of currently selected cells."""
+        if self.geometry_mode == "surface":
+            return len(self.selected_surface_keys)
         return len(self.selected_cell_ids)
 
     def clear_selection(self):
         """Drop the current volume-cell selection."""
         self.selected_cell_ids.clear()
+        self.selected_surface_keys.clear()
 
     def select_all_cells(self):
         """Select every cell in the working dataset."""
         if not self.active or self.working_dataset is None:
             return 0
+        if self.geometry_mode == "surface":
+            self.selected_surface_keys = set(self._surface_boundary_map_for_top_cells())
+            return len(self.selected_surface_keys)
         self.selected_cell_ids = set(range(self.working_dataset.GetNumberOfCells()))
         return len(self.selected_cell_ids)
 
@@ -129,6 +153,15 @@ class EditSession:
         """Toggle a single picked cell, optionally growing by adjacency."""
         if not self.active or self.working_dataset is None:
             return 0
+
+        if self.geometry_mode == "surface":
+            surface_keys = self._surface_keys_from_top_cells([cell_id])
+            for key in surface_keys:
+                if key in self.selected_surface_keys:
+                    self.selected_surface_keys.discard(key)
+                else:
+                    self.selected_surface_keys.add(key)
+            return len(self.selected_surface_keys)
 
         try:
             cell_id = int(cell_id)
@@ -157,6 +190,10 @@ class EditSession:
         if not self.active or self.working_dataset is None:
             return 0
 
+        if self.geometry_mode == "surface":
+            self.selected_surface_keys = self._surface_keys_from_top_cells(cell_ids)
+            return len(self.selected_surface_keys)
+
         normalized = {
             int(cell_id)
             for cell_id in (cell_ids or [])
@@ -171,6 +208,10 @@ class EditSession:
         """Union the provided cell IDs into the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
+
+        if self.geometry_mode == "surface":
+            self.selected_surface_keys |= self._surface_keys_from_top_cells(cell_ids)
+            return len(self.selected_surface_keys)
 
         normalized = {
             int(cell_id)
@@ -187,6 +228,10 @@ class EditSession:
         if not self.active or self.working_dataset is None:
             return 0
 
+        if self.geometry_mode == "surface":
+            self.selected_surface_keys -= self._surface_keys_from_top_cells(cell_ids)
+            return len(self.selected_surface_keys)
+
         normalized = {
             int(cell_id)
             for cell_id in (cell_ids or [])
@@ -202,6 +247,14 @@ class EditSession:
         """Toggle the provided cell IDs against the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
+
+        if self.geometry_mode == "surface":
+            for key in self._surface_keys_from_top_cells(cell_ids):
+                if key in self.selected_surface_keys:
+                    self.selected_surface_keys.discard(key)
+                else:
+                    self.selected_surface_keys.add(key)
+            return len(self.selected_surface_keys)
 
         normalized = {
             int(cell_id)
@@ -306,11 +359,22 @@ class EditSession:
 
     def build_selected_volume_dataset(self):
         """Return a lightweight dataset containing the currently selected cells."""
+        return self.build_selected_dataset()
+
+    def build_selected_dataset(self):
+        """Return a lightweight dataset containing currently selected editable entities."""
         if (
             not self.active
             or self.working_dataset is None
-            or not self.selected_cell_ids
         ):
+            return None
+
+        if self.geometry_mode == "surface":
+            if not self.selected_surface_keys:
+                return None
+            return self._build_surface_dataset(self.selected_surface_keys)
+
+        if not self.selected_cell_ids:
             return None
 
         id_list = vtkIdList()
@@ -325,6 +389,40 @@ class EditSession:
         output = vtkUnstructuredGrid()
         output.DeepCopy(extractor.GetOutput())
         return output
+
+    def materialize_surface_selection(self):
+        """Append selected boundary faces/edges as missing codim-1 cells."""
+        if not self.active or self.working_dataset is None:
+            return 0
+        if self.geometry_mode != "surface":
+            return 0
+        if not self.selected_surface_keys:
+            return 0
+
+        dataset = self.working_dataset
+        top_dim = self._top_dimension()
+        if top_dim < 2:
+            return 0
+
+        boundary_map = self._surface_boundary_map_for_top_cells()
+        existing = self._existing_codim_keys(top_dim - 1)
+        missing_keys = [
+            key for key in sorted(self.selected_surface_keys) if key in boundary_map and key not in existing
+        ]
+        if not missing_keys:
+            return 0
+
+        for key in missing_keys:
+            cell_type, point_ids = boundary_map[key]
+            id_list = vtkIdList()
+            for point_id in point_ids:
+                id_list.InsertNextId(int(point_id))
+            dataset.InsertNextCell(int(cell_type), id_list)
+
+        dataset.Modified()
+        self.dirty = True
+        self._invalidate_geometry_caches()
+        return len(missing_keys)
 
     def _grow_volume_selection(self, seed_ids):
         """Expand a set of cells by shared-face/shared-edge adjacency."""
@@ -345,6 +443,145 @@ class EditSession:
                 pending.append(neighbor)
 
         return visited
+
+    def _top_dimension(self):
+        if self.working_dataset is None:
+            return 0
+        return max(
+            (
+                self.working_dataset.GetCell(cell_id).GetCellDimension()
+                for cell_id in range(self.working_dataset.GetNumberOfCells())
+            ),
+            default=0,
+        )
+
+    @staticmethod
+    def _cell_key(cell):
+        return tuple(
+            sorted(int(cell.GetPointId(point_id)) for point_id in range(cell.GetNumberOfPoints()))
+        )
+
+    def _surface_boundary_map_for_top_cells(self):
+        if self._surface_boundary_map is not None:
+            return self._surface_boundary_map
+
+        dataset = self.working_dataset
+        if dataset is None:
+            self._surface_boundary_map = {}
+            return self._surface_boundary_map
+
+        top_dim = self._top_dimension()
+        if top_dim < 2:
+            self._surface_boundary_map = {}
+            return self._surface_boundary_map
+
+        counts = {}
+        metadata = {}
+        for cell_id in range(dataset.GetNumberOfCells()):
+            cell = dataset.GetCell(cell_id)
+            if cell.GetCellDimension() != top_dim:
+                continue
+
+            if top_dim == 3:
+                subcell_count = cell.GetNumberOfFaces()
+                getter = cell.GetFace
+            else:
+                subcell_count = cell.GetNumberOfEdges()
+                getter = cell.GetEdge
+
+            for subcell_id in range(subcell_count):
+                subcell = getter(subcell_id)
+                key = self._cell_key(subcell)
+                counts[key] = counts.get(key, 0) + 1
+                if key not in metadata:
+                    point_ids = tuple(
+                        int(subcell.GetPointId(point_id))
+                        for point_id in range(subcell.GetNumberOfPoints())
+                    )
+                    metadata[key] = (int(subcell.GetCellType()), point_ids)
+
+        self._surface_boundary_map = {
+            key: metadata[key] for key, count in counts.items() if count == 1
+        }
+        return self._surface_boundary_map
+
+    def _surface_keys_from_top_cells(self, cell_ids):
+        dataset = self.working_dataset
+        if dataset is None:
+            return set()
+
+        boundary_map = self._surface_boundary_map_for_top_cells()
+        top_dim = self._top_dimension()
+        if top_dim < 2:
+            return set()
+
+        keys = set()
+        top_cell_ids = set()
+        for cell_id in (cell_ids or []):
+            if not isinstance(cell_id, (int, float)):
+                continue
+            cell_id = int(cell_id)
+            if cell_id < 0 or cell_id >= dataset.GetNumberOfCells():
+                continue
+
+            cell = dataset.GetCell(cell_id)
+            cell_dim = cell.GetCellDimension()
+            if cell_dim == top_dim - 1:
+                keys.add(self._cell_key(cell))
+            elif cell_dim == top_dim:
+                top_cell_ids.add(cell_id)
+
+        for cell_id in top_cell_ids:
+            cell = dataset.GetCell(int(cell_id))
+            if top_dim == 3:
+                subcell_count = cell.GetNumberOfFaces()
+                getter = cell.GetFace
+            else:
+                subcell_count = cell.GetNumberOfEdges()
+                getter = cell.GetEdge
+            for subcell_id in range(subcell_count):
+                key = self._cell_key(getter(subcell_id))
+                if key in boundary_map:
+                    keys.add(key)
+        return keys
+
+    def _existing_codim_keys(self, codim_dimension):
+        dataset = self.working_dataset
+        if dataset is None:
+            return set()
+        keys = set()
+        for cell_id in range(dataset.GetNumberOfCells()):
+            cell = dataset.GetCell(cell_id)
+            if cell.GetCellDimension() != codim_dimension:
+                continue
+            keys.add(self._cell_key(cell))
+        return keys
+
+    def _build_surface_dataset(self, surface_keys):
+        dataset = self.working_dataset
+        if dataset is None:
+            return None
+        boundary_map = self._surface_boundary_map_for_top_cells()
+        if not boundary_map:
+            return None
+
+        selected = [key for key in sorted(surface_keys) if key in boundary_map]
+        if not selected:
+            return None
+
+        output = vtkUnstructuredGrid()
+        output.SetPoints(dataset.GetPoints())
+        for key in selected:
+            cell_type, point_ids = boundary_map[key]
+            id_list = vtkIdList()
+            for point_id in point_ids:
+                id_list.InsertNextId(int(point_id))
+            output.InsertNextCell(int(cell_type), id_list)
+        return output
+
+    def _invalidate_geometry_caches(self):
+        self._volume_adjacency = None
+        self._surface_boundary_map = None
 
     def _ensure_volume_adjacency(self):
         """Build and cache a face/edge adjacency graph for top-dimensional cells."""

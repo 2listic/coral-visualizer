@@ -2,7 +2,7 @@ import pytest
 
 from edit_session import EditSession
 from vtkmodules.vtkCommonCore import vtkIntArray, vtkPoints
-from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid, vtkVertex
+from vtkmodules.vtkCommonDataModel import vtkTetra, vtkTriangle, vtkUnstructuredGrid, vtkVertex
 
 
 def _single_cell_grid():
@@ -15,6 +15,25 @@ def _single_cell_grid():
     vertex = vtkVertex()
     vertex.GetPointIds().SetId(0, 0)
     grid.InsertNextCell(vertex.GetCellType(), vertex.GetPointIds())
+    return grid
+
+
+def _single_tetra_grid():
+    points = vtkPoints()
+    points.InsertNextPoint(0.0, 0.0, 0.0)
+    points.InsertNextPoint(1.0, 0.0, 0.0)
+    points.InsertNextPoint(0.0, 1.0, 0.0)
+    points.InsertNextPoint(0.0, 0.0, 1.0)
+
+    grid = vtkUnstructuredGrid()
+    grid.SetPoints(points)
+
+    tetra = vtkTetra()
+    tetra.GetPointIds().SetId(0, 0)
+    tetra.GetPointIds().SetId(1, 1)
+    tetra.GetPointIds().SetId(2, 2)
+    tetra.GetPointIds().SetId(3, 3)
+    grid.InsertNextCell(tetra.GetCellType(), tetra.GetPointIds())
     return grid
 
 
@@ -39,3 +58,53 @@ def test_apply_volume_field_requires_overwrite_for_existing_field():
 
     assert replaced.GetClassName() == "vtkDoubleArray"
     assert replaced.GetTuple1(0) == pytest.approx(2.5)
+
+
+def test_edit_session_save_supports_vtu_and_vtk(tmp_path):
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_cell_grid())
+
+    vtu_path = tmp_path / "edited.vtu"
+    vtk_path = tmp_path / "edited.vtk"
+
+    session.save(str(vtu_path))
+    session.save(str(vtk_path))
+
+    assert vtu_path.exists() and vtu_path.stat().st_size > 0
+    assert vtk_path.exists() and vtk_path.stat().st_size > 0
+
+
+def test_edit_session_save_rejects_unsupported_extension(tmp_path):
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_cell_grid())
+
+    with pytest.raises(ValueError, match="Use .vtu or .vtk"):
+        session.save(str(tmp_path / "edited.foo"))
+
+
+def test_surface_mode_materialize_adds_missing_boundary_faces_once():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+
+    assert session.replace_selection([0]) == 4
+    assert session.materialize_surface_selection() == 4
+    assert session.working_dataset.GetNumberOfCells() == 5
+    assert session.materialize_surface_selection() == 0
+
+
+def test_surface_mode_materialize_skips_existing_codim_one_cells():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+
+    triangle = vtkTriangle()
+    triangle.GetPointIds().SetId(0, 0)
+    triangle.GetPointIds().SetId(1, 1)
+    triangle.GetPointIds().SetId(2, 2)
+    session.working_dataset.InsertNextCell(triangle.GetCellType(), triangle.GetPointIds())
+    session.working_dataset.Modified()
+
+    assert session.replace_selection([1]) == 1
+    assert session.replace_selection([0]) == 4
+    assert session.materialize_surface_selection() == 3

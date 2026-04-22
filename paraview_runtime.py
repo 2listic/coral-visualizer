@@ -231,7 +231,11 @@ class ParaViewRuntime:
             self.call_view_update()
             return
 
-        dataset = self.edit_session.build_selected_volume_dataset()
+        build_dataset = getattr(self.edit_session, "build_selected_dataset", None)
+        if callable(build_dataset):
+            dataset = build_dataset()
+        else:
+            dataset = self.edit_session.build_selected_volume_dataset()
         if dataset is None or dataset.GetNumberOfCells() == 0:
             self.pv_backend.clear_edit_selection_overlay()
             self.call_view_update()

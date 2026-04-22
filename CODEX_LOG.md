@@ -164,6 +164,17 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Confirming overwrite removes the existing field and recreates it with generated values.
   - Added edit-session overwrite handling to avoid scalar-type mismatch failures (`SetValue` float vs int array).
   - Added regression coverage in `tests/test_edit_session.py` and `tests/test_paraview_controllers.py`.
+- Implemented first working `Surface` edit mode flow in ParaView edit sessions.
+  - Surface-mode selection now tracks codimension-one boundary entities (faces in 3D, edges in 2D).
+  - `Apply Edit` in `Surface` mode now materializes selected missing boundary entities into the dataset.
+  - Existing codimension-one entities are detected and not duplicated.
+  - Surface-mode save now materializes pending selected entities before writing output.
+  - Added regression coverage for surface materialization semantics in `tests/test_edit_session.py`
+    and controller behavior in `tests/test_paraview_controllers.py`.
+- Added a Playwright E2E test for the surface-mode boundary workflow.
+  - New test enters edit mode, switches to `Surface`, selects the left boundary side, applies,
+    sets field `BoundaryID` and value `1`, then saves output.
+  - Test file: `tests/test_e2e_edit_selection_playwright.py`.
 
 ## Current Behavior
 

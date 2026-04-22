@@ -116,6 +116,54 @@ def test_save_paraview_output_saves_edit_session_and_updates_state(tmp_path, mon
     assert state.available_files == [{"text": "edited", "value": "results/edited_mesh.vtu"}]
 
 
+def test_save_paraview_output_edit_session_preserves_vtk_extension(tmp_path, monkeypatch):
+    state = SimpleNamespace(
+        save_filename="results/edited_mesh.vtk",
+        save_status="",
+        save_status_type="info",
+        available_files=[],
+    )
+    edit_session = FakeEditSession(active=True)
+    pv_backend = FakeParaViewBackend()
+
+    monkeypatch.setattr(
+        file_operations,
+        "get_vtk_files_from_data_folder",
+        lambda directory: [{"text": "edited", "value": "results/edited_mesh.vtk"}],
+    )
+
+    output_path = file_operations.save_paraview_output(
+        state=state,
+        data_directory=str(tmp_path),
+        pv_backend=pv_backend,
+        edit_session=edit_session,
+    )
+
+    assert output_path == str(tmp_path / "results" / "edited_mesh.vtk")
+    assert edit_session.saved_paths == [output_path]
+    assert state.save_filename == "results/edited_mesh.vtk"
+    assert state.save_status == "Saved edited dataset to results/edited_mesh.vtk"
+
+
+def test_save_paraview_output_edit_session_rejects_unsupported_extension(tmp_path):
+    state = SimpleNamespace(
+        save_filename="results/edited_mesh.foo",
+        save_status="",
+        save_status_type="info",
+        available_files=[],
+    )
+    edit_session = FakeEditSession(active=True)
+    pv_backend = FakeParaViewBackend()
+
+    with pytest.raises(ValueError, match="Use .vtu or .vtk"):
+        file_operations.save_paraview_output(
+            state=state,
+            data_directory=str(tmp_path),
+            pv_backend=pv_backend,
+            edit_session=edit_session,
+        )
+
+
 def test_save_paraview_output_saves_pipeline_result_with_backend_extension(tmp_path, monkeypatch):
     state = SimpleNamespace(
         save_filename="exports/final",

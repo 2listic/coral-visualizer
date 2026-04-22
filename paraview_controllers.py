@@ -30,9 +30,23 @@ def register_paraview_controllers(
         edit_session.default_value = (state.edit_default_value or "0").strip()
 
         if mode != "volume":
+            if mode == "surface":
+                appended = edit_session.materialize_surface_selection()
+                sync_edit_session_state()
+                if appended:
+                    state.edit_apply_status = (
+                        f"Added {appended} missing surface cell(s) from the current selection."
+                    )
+                    state.edit_apply_status_type = "success"
+                else:
+                    state.edit_apply_status = (
+                        "No new surface cells were added. Selected faces/edges are already present."
+                    )
+                    state.edit_apply_status_type = "info"
+                return
             state.edit_apply_status = (
                 f"{mode.capitalize()} mode is visible in the UI but not implemented yet. "
-                "Volume mode is the first working slice."
+                "Volume and Surface modes are currently supported."
             )
             state.edit_apply_status_type = "info"
             sync_edit_session_state()
