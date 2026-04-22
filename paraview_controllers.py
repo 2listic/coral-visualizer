@@ -22,6 +22,49 @@ def register_paraview_controllers(
     normalize_edit_selection_ids,
 ):
     """Register ParaView-only controller callbacks on the provided Trame controller."""
+    def _apply_edit_field(*, overwrite):
+        mode = (state.edit_geometry_mode or "volume").strip().lower()
+        edit_session.geometry_mode = mode
+        edit_session.field_name = (state.edit_field_name or "").strip()
+        edit_session.expression = (state.edit_expression or "").strip()
+        edit_session.default_value = (state.edit_default_value or "0").strip()
+
+        if mode != "volume":
+            state.edit_apply_status = (
+                f"{mode.capitalize()} mode is visible in the UI but not implemented yet. "
+                "Volume mode is the first working slice."
+            )
+            state.edit_apply_status_type = "info"
+            sync_edit_session_state()
+            return
+
+        field_name = (state.edit_field_name or "").strip()
+        if not overwrite and field_name and edit_session.has_cell_field(field_name):
+            state.edit_overwrite_field_name = field_name
+            state.edit_overwrite_dialog = True
+            state.edit_apply_status = (
+                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
+            )
+            state.edit_apply_status_type = "warning"
+            sync_edit_session_state()
+            return
+
+        field_name = edit_session.apply_volume_field(
+            state.edit_field_name,
+            state.edit_expression,
+            state.edit_default_value,
+            overwrite=overwrite,
+        )
+        sync_edit_session_state()
+        target_scope = (
+            f"{edit_session.selected_count()} selected cells"
+            if edit_session.selected_count()
+            else "all cells"
+        )
+        state.edit_apply_status = (
+            f"Updated cell field '{field_name}' on {target_scope} of the edit-session dataset."
+        )
+        state.edit_apply_status_type = "success"
 
     def _set_selection_mode(mode):
         if mode not in {"replace", "add", "subtract", "flip"}:
@@ -291,41 +334,33 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not edit_session.active:
             return
 
-        mode = (state.edit_geometry_mode or "volume").strip().lower()
-        edit_session.geometry_mode = mode
-        edit_session.field_name = (state.edit_field_name or "").strip()
-        edit_session.expression = (state.edit_expression or "").strip()
-        edit_session.default_value = (state.edit_default_value or "0").strip()
-
-        if mode != "volume":
-            state.edit_apply_status = (
-                f"{mode.capitalize()} mode is visible in the UI but not implemented yet. "
-                "Volume mode is the first working slice."
-            )
-            state.edit_apply_status_type = "info"
-            sync_edit_session_state()
-            return
-
         try:
-            field_name = edit_session.apply_volume_field(
-                state.edit_field_name,
-                state.edit_expression,
-                state.edit_default_value,
-            )
-            sync_edit_session_state()
-            target_scope = (
-                f"{edit_session.selected_count()} selected cells"
-                if edit_session.selected_count()
-                else "all cells"
-            )
-            state.edit_apply_status = (
-                f"Updated cell field '{field_name}' on {target_scope} of the edit-session dataset."
-            )
-            state.edit_apply_status_type = "success"
+            _apply_edit_field(overwrite=False)
         except Exception as exc:
             sync_edit_session_state()
             state.edit_apply_status = f"Edit apply failed: {exc}"
             state.edit_apply_status_type = "error"
+
+    @ctrl.add("pv_confirm_overwrite_edit_field")
+    def pv_confirm_overwrite_edit_field():
+        """Confirm overwrite of an existing edit field and apply the operation."""
+        if not is_paraview_backend() or not edit_session.active:
+            return
+
+        try:
+            state.edit_overwrite_dialog = False
+            state.edit_overwrite_field_name = ""
+            _apply_edit_field(overwrite=True)
+        except Exception as exc:
+            sync_edit_session_state()
+            state.edit_apply_status = f"Edit apply failed: {exc}"
+            state.edit_apply_status_type = "error"
+
+    @ctrl.add("pv_cancel_overwrite_edit_field")
+    def pv_cancel_overwrite_edit_field():
+        """Dismiss overwrite confirmation without modifying the dataset."""
+        state.edit_overwrite_dialog = False
+        state.edit_overwrite_field_name = ""
 
     @ctrl.add("pv_edit_click_selection")
     def pv_edit_click_selection(event):

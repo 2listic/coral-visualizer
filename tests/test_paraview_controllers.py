@@ -252,6 +252,119 @@ def test_pv_add_filter_success_and_failure_paths():
     assert state.error_message == "Error adding filter: bad filter"
 
 
+def test_pv_apply_edit_field_existing_name_opens_overwrite_dialog():
+    ctrl = FakeCtrl()
+    state = SimpleNamespace(
+        edit_geometry_mode="volume",
+        edit_field_name="A field",
+        edit_expression="",
+        edit_default_value="1.5",
+        edit_apply_status="",
+        edit_apply_status_type="info",
+        edit_overwrite_dialog=False,
+        edit_overwrite_field_name="",
+    )
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="",
+        field_name="",
+        expression="",
+        default_value="",
+        has_cell_field=lambda name: name == "A field",
+        apply_volume_field=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("apply_volume_field should not run before overwrite confirm")
+        ),
+        selected_count=lambda: 0,
+    )
+    sync_calls = []
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: sync_calls.append("sync"),
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_apply_edit_field"]()
+
+    assert state.edit_overwrite_dialog is True
+    assert state.edit_overwrite_field_name == "A field"
+    assert state.edit_apply_status_type == "warning"
+    assert "already exists" in state.edit_apply_status
+    assert sync_calls == ["sync"]
+
+
+def test_pv_confirm_overwrite_edit_field_applies_with_overwrite_true():
+    ctrl = FakeCtrl()
+    state = SimpleNamespace(
+        edit_geometry_mode="volume",
+        edit_field_name="A field",
+        edit_expression="",
+        edit_default_value="2.5",
+        edit_apply_status="",
+        edit_apply_status_type="info",
+        edit_overwrite_dialog=True,
+        edit_overwrite_field_name="A field",
+    )
+    calls = []
+
+    def apply_volume_field(field_name, expression, default_value, overwrite=False):
+        calls.append((field_name, expression, default_value, overwrite))
+        return field_name
+
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="",
+        field_name="",
+        expression="",
+        default_value="",
+        has_cell_field=lambda name: True,
+        apply_volume_field=apply_volume_field,
+        selected_count=lambda: 3,
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_confirm_overwrite_edit_field"]()
+
+    assert calls == [("A field", "", "2.5", True)]
+    assert state.edit_overwrite_dialog is False
+    assert state.edit_overwrite_field_name == ""
+    assert state.edit_apply_status_type == "success"
+    assert "Updated cell field 'A field'" in state.edit_apply_status
+
+
 def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
     ctrl = FakeCtrl()
     calls = []

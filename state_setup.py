@@ -101,6 +101,8 @@ def initialize_state(
     state.edit_vector_syntax = "Use arrayName[0], arrayName[1], arrayName[2]"
     state.edit_apply_status = ""
     state.edit_apply_status_type = "info"
+    state.edit_overwrite_dialog = False
+    state.edit_overwrite_field_name = ""
     state.edit_selection_status = ""
     state.edit_selection_status_type = "info"
     state.edit_selection_event = ""

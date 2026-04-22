@@ -101,6 +101,15 @@ class EditSession:
             if cell_data.GetArrayName(i)
         ]
 
+    def has_cell_field(self, field_name):
+        """Return True when a cell-data field with ``field_name`` already exists."""
+        if not self.active or self.working_dataset is None:
+            return False
+        name = (field_name or "").strip()
+        if not name:
+            return False
+        return self.working_dataset.GetCellData().GetArray(name) is not None
+
     def selected_count(self):
         """Return the number of currently selected cells."""
         return len(self.selected_cell_ids)
@@ -210,7 +219,7 @@ class EditSession:
                 self.selected_cell_ids.add(cell_id)
         return len(self.selected_cell_ids)
 
-    def apply_volume_field(self, field_name, expression, default_value):
+    def apply_volume_field(self, field_name, expression, default_value, overwrite=False):
         """Create or update a scalar cell-data field on selected volume cells."""
         if not self.active or self.working_dataset is None:
             raise RuntimeError("No active edit session")
@@ -268,19 +277,21 @@ class EditSession:
             for cell_id in selected_ids:
                 result_values[cell_id] = calculated[cell_id]
 
-        target = dataset.GetCellData().GetArray(field_name)
-        if target is None:
-            target = vtkDoubleArray()
-            target.SetName(field_name)
-            target.SetNumberOfComponents(1)
-            target.SetNumberOfTuples(cell_count)
-            dataset.GetCellData().AddArray(target)
-        elif target.GetNumberOfComponents() != 1:
+        cell_data = dataset.GetCellData()
+        existing = cell_data.GetArray(field_name)
+        if existing is not None and not overwrite:
             raise RuntimeError(
-                f"Existing field '{field_name}' is not scalar and cannot be overwritten in Volume mode."
+                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
             )
-        else:
-            target.SetNumberOfTuples(cell_count)
+
+        if existing is not None:
+            cell_data.RemoveArray(field_name)
+
+        target = vtkDoubleArray()
+        target.SetName(field_name)
+        target.SetNumberOfComponents(1)
+        target.SetNumberOfTuples(cell_count)
+        cell_data.AddArray(target)
 
         for cell_id, value in enumerate(result_values):
             target.SetValue(cell_id, value)

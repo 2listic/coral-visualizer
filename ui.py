@@ -583,6 +583,36 @@ def _build_paraview_pipeline_panel(ctrl):
                             click=ctrl.pv_apply_edit_field,
                             classes="mb-2",
                         )
+                        with vuetify.VDialog(
+                            v_model=("edit_overwrite_dialog",),
+                            max_width="560",
+                        ):
+                            with vuetify.VCard():
+                                vuetify.VCardTitle("Overwrite Existing Field?")
+                                with vuetify.VCardText():
+                                    vuetify.VAlert(
+                                        type="warning",
+                                        dense=True,
+                                        outlined=True,
+                                        children=[
+                                            "Field '{{ edit_overwrite_field_name }}' already exists. "
+                                            "Overwrite will remove the existing field and replace it "
+                                            "with the newly generated values."
+                                        ],
+                                    )
+                                with vuetify.VCardActions():
+                                    vuetify.VSpacer()
+                                    vuetify.VBtn(
+                                        "Cancel",
+                                        text=True,
+                                        click=ctrl.pv_cancel_overwrite_edit_field,
+                                    )
+                                    vuetify.VBtn(
+                                        "Overwrite",
+                                        color="warning",
+                                        text=True,
+                                        click=ctrl.pv_confirm_overwrite_edit_field,
+                                    )
                         vuetify.VAlert(
                             v_show=("edit_apply_status",),
                             type=("edit_apply_status_type",),

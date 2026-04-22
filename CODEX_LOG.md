@@ -159,6 +159,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Re-opening the same `.vtk`/`.vtu` path now reliably triggers a new load.
   - Removed temporary same-path reload workarounds from common controllers.
   - Added regression coverage in `tests/test_paraview_controllers.py`.
+- Added overwrite confirmation flow for ParaView `Apply Edit` when the target cell field already exists.
+  - `Apply Edit` now opens a warning dialog instead of failing immediately.
+  - Confirming overwrite removes the existing field and recreates it with generated values.
+  - Added edit-session overwrite handling to avoid scalar-type mismatch failures (`SetValue` float vs int array).
+  - Added regression coverage in `tests/test_edit_session.py` and `tests/test_paraview_controllers.py`.
 
 ## Current Behavior
 
