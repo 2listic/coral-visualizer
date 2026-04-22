@@ -287,8 +287,7 @@ class ParaViewBackend:
         array_value = self._resolve_available_array_value(array_value)
 
         if array_value == ARRAY_SOLID or array_value is None:
-            self.simple.ColorBy(display, None)
-            self.simple.HideUnusedScalarBars(self.view)
+            self._disable_scalar_coloring(display)
             self.render()
             return
 
@@ -305,6 +304,32 @@ class ParaViewBackend:
         display.RescaleTransferFunctionToDataRange(True, False)
         display.SetScalarBarVisibility(self.view, True)
         self.render()
+
+    def _disable_scalar_coloring(self, display):
+        """Best-effort disable scalar coloring across ParaView version differences."""
+        try:
+            self.simple.ColorBy(display, None)
+        except Exception:
+            if hasattr(display, "ColorArrayName"):
+                try:
+                    display.ColorArrayName = [None, ""]
+                except Exception:
+                    pass
+            if hasattr(display, "LookupTable"):
+                try:
+                    display.LookupTable = None
+                except Exception:
+                    pass
+            if hasattr(display, "SetScalarBarVisibility"):
+                try:
+                    display.SetScalarBarVisibility(self.view, False)
+                except Exception:
+                    pass
+
+        try:
+            self.simple.HideUnusedScalarBars(self.view)
+        except Exception:
+            pass
 
     def apply_representation(self, representation):
         """Update the representation used by the active display."""
@@ -457,26 +482,7 @@ class ParaViewBackend:
         overlay.GetClientSideObject().SetOutput(dataset)
         overlay.UpdatePipeline()
         display = self.simple.Show(overlay, self.view)
-        try:
-            self.simple.ColorBy(display, None)
-        except Exception:
-            # Some ParaView builds reject "NONE" association on transient producers.
-            # Fall back to explicit scalar-coloring disable without interrupting edit mode.
-            if hasattr(display, "ColorArrayName"):
-                try:
-                    display.ColorArrayName = [None, ""]
-                except Exception:
-                    pass
-            if hasattr(display, "LookupTable"):
-                try:
-                    display.LookupTable = None
-                except Exception:
-                    pass
-            if hasattr(display, "SetScalarBarVisibility"):
-                try:
-                    display.SetScalarBarVisibility(self.view, False)
-                except Exception:
-                    pass
+        self._disable_scalar_coloring(display)
         display.SetRepresentationType("Surface With Edges")
         display.DiffuseColor = [1.0, 0.92, 0.25]  # Bright Gold
         display.AmbientColor = [1.0, 0.92, 0.25]
@@ -561,6 +567,31 @@ class ParaViewBackend:
             return picked
         return self._filter_cell_ids_inside_rect(source, picked, rect)
 
+    def pick_visible_surface_keys(self, x, y, radius=2):
+        """Return boundary face/edge keys touched by a display-space click."""
+        try:
+            x = int(round(float(x)))
+            y = int(round(float(y)))
+            radius = int(round(float(radius)))
+        except (TypeError, ValueError):
+            return []
+
+        rect = [x - radius, y - radius, x + radius, y + radius]
+        return self._pick_surface_keys_in_rect(rect, behavior="touch")
+
+    def pick_visible_surface_keys_in_rect(self, x0, y0, x1, y1, behavior="touch"):
+        """Return boundary face/edge keys touched by a display-space rectangle."""
+        try:
+            x0 = int(round(float(x0)))
+            y0 = int(round(float(y0)))
+            x1 = int(round(float(x1)))
+            y1 = int(round(float(y1)))
+        except (TypeError, ValueError):
+            return []
+
+        rect = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+        return self._pick_surface_keys_in_rect(rect, behavior=behavior)
+
     def _filter_cell_ids_inside_rect(self, source, cell_ids, rect):
         """Return only cells whose projected vertices are fully inside the display rect."""
         try:
@@ -602,6 +633,185 @@ class ParaViewBackend:
                 selected.append(int(cell_id))
 
         return selected
+
+    def _pick_surface_keys_in_rect(self, rect, behavior="touch"):
+        """Return boundary keys whose projected geometry intersects/is inside rect."""
+        source = self.source
+        if self.view is None or source is None:
+            return []
+
+        try:
+            dataset = self.servermanager.Fetch(source)
+        except Exception:
+            return []
+
+        if dataset is None:
+            return []
+
+        client_view = self.view.GetClientSideObject()
+        renderer = client_view.GetRenderer() if client_view is not None else None
+        if renderer is None:
+            return []
+
+        boundary = self._boundary_codim_elements(dataset)
+        if not boundary:
+            return []
+
+        inside_only = behavior == "inside"
+        picked = []
+        for key, element in boundary.items():
+            projected = self._project_points_to_display(dataset, element["point_ids"], renderer)
+            if not projected:
+                continue
+            if inside_only:
+                if all(self._point_in_rect(point, rect) for point in projected):
+                    picked.append(key)
+            else:
+                if self._polyline_intersects_rect(projected, rect):
+                    picked.append(key)
+        return picked
+
+    @staticmethod
+    def _boundary_codim_elements(dataset):
+        """Return boundary codimension-one entities keyed by sorted point ids."""
+        cell_count = dataset.GetNumberOfCells()
+        top_dim = max(
+            (dataset.GetCell(cell_id).GetCellDimension() for cell_id in range(cell_count)),
+            default=0,
+        )
+        if top_dim < 2:
+            return {}
+
+        counts = {}
+        metadata = {}
+        for cell_id in range(cell_count):
+            cell = dataset.GetCell(cell_id)
+            if cell.GetCellDimension() != top_dim:
+                continue
+
+            if top_dim == 3:
+                subcell_count = cell.GetNumberOfFaces()
+                getter = cell.GetFace
+            else:
+                subcell_count = cell.GetNumberOfEdges()
+                getter = cell.GetEdge
+
+            for subcell_id in range(subcell_count):
+                subcell = getter(subcell_id)
+                ordered_ids = tuple(
+                    int(subcell.GetPointId(point_id))
+                    for point_id in range(subcell.GetNumberOfPoints())
+                )
+                key = tuple(sorted(ordered_ids))
+                counts[key] = counts.get(key, 0) + 1
+                if key not in metadata:
+                    metadata[key] = {"point_ids": ordered_ids}
+
+        return {
+            key: metadata[key]
+            for key, count in counts.items()
+            if count == 1
+        }
+
+    @staticmethod
+    def _project_points_to_display(dataset, point_ids, renderer):
+        projected = []
+        for point_id in point_ids:
+            point = dataset.GetPoint(int(point_id))
+            renderer.SetWorldPoint(point[0], point[1], point[2], 1.0)
+            renderer.WorldToDisplay()
+            dx, dy, dz = renderer.GetDisplayPoint()
+            if not (isfinite(dx) and isfinite(dy) and isfinite(dz)):
+                return []
+            projected.append((float(dx), float(dy)))
+        return projected
+
+    @staticmethod
+    def _point_in_rect(point, rect):
+        x, y = point
+        xmin, ymin, xmax, ymax = rect
+        return xmin <= x <= xmax and ymin <= y <= ymax
+
+    def _polyline_intersects_rect(self, points, rect):
+        """Return True if polygon/polyline projected points intersect a screen rect."""
+        xmin, ymin, xmax, ymax = rect
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        if max(xs) < xmin or min(xs) > xmax or max(ys) < ymin or min(ys) > ymax:
+            return False
+
+        if any(self._point_in_rect(point, rect) for point in points):
+            return True
+
+        rect_corners = [(xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax)]
+        if len(points) >= 3 and any(self._point_in_polygon(corner, points) for corner in rect_corners):
+            return True
+
+        edges = list(zip(points, points[1:]))
+        if len(points) >= 3:
+            edges.append((points[-1], points[0]))
+
+        rect_edges = [
+            ((xmin, ymin), (xmax, ymin)),
+            ((xmax, ymin), (xmax, ymax)),
+            ((xmax, ymax), (xmin, ymax)),
+            ((xmin, ymax), (xmin, ymin)),
+        ]
+        for segment in edges:
+            if any(self._segments_intersect(segment[0], segment[1], edge[0], edge[1]) for edge in rect_edges):
+                return True
+
+        return False
+
+    @staticmethod
+    def _point_in_polygon(point, polygon):
+        """Ray-casting point-in-polygon test in 2D."""
+        x, y = point
+        inside = False
+        j = len(polygon) - 1
+        for i in range(len(polygon)):
+            xi, yi = polygon[i]
+            xj, yj = polygon[j]
+            intersects = ((yi > y) != (yj > y)) and (
+                x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi
+            )
+            if intersects:
+                inside = not inside
+            j = i
+        return inside
+
+    @staticmethod
+    def _segments_intersect(p1, p2, q1, q2):
+        """Return True if 2D segments p1-p2 and q1-q2 intersect."""
+
+        def orientation(a, b, c):
+            value = (b[1] - a[1]) * (c[0] - b[0]) - (b[0] - a[0]) * (c[1] - b[1])
+            if abs(value) < 1e-9:
+                return 0
+            return 1 if value > 0 else 2
+
+        def on_segment(a, b, c):
+            return (
+                min(a[0], c[0]) - 1e-9 <= b[0] <= max(a[0], c[0]) + 1e-9
+                and min(a[1], c[1]) - 1e-9 <= b[1] <= max(a[1], c[1]) + 1e-9
+            )
+
+        o1 = orientation(p1, p2, q1)
+        o2 = orientation(p1, p2, q2)
+        o3 = orientation(q1, q2, p1)
+        o4 = orientation(q1, q2, p2)
+
+        if o1 != o2 and o3 != o4:
+            return True
+        if o1 == 0 and on_segment(p1, q1, p2):
+            return True
+        if o2 == 0 and on_segment(p1, q2, p2):
+            return True
+        if o3 == 0 and on_segment(q1, p1, q2):
+            return True
+        if o4 == 0 and on_segment(q1, p2, q2):
+            return True
+        return False
 
     def get_pick_debug_info(self, x, y, radius=4):
         """Return debug information for the current click-to-pick attempt."""

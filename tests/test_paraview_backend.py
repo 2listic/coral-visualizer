@@ -299,6 +299,24 @@ def test_apply_coloring_handles_solid_and_scalar_arrays():
     assert display.rescale_calls == [(True, False)]
 
 
+def test_apply_coloring_solid_tolerates_colorby_none_failures():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    display = FakeDisplay()
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.simple.ColorBy = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        RuntimeError("invalid association string 'NONE'")
+    )
+
+    backend.apply_coloring(ARRAY_SOLID)
+
+    # Should not raise and should still render
+    assert ("Render", backend.view) in backend.simple.calls
+
+
 def test_apply_representation_and_apply_property_changes_render():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())

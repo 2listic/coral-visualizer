@@ -3,6 +3,7 @@ import pytest
 from edit_session import EditSession
 from vtkmodules.vtkCommonCore import vtkIntArray, vtkPoints
 from vtkmodules.vtkCommonDataModel import vtkTetra, vtkTriangle, vtkUnstructuredGrid, vtkVertex
+from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 
 
 def _single_cell_grid():
@@ -108,3 +109,32 @@ def test_surface_mode_materialize_skips_existing_codim_one_cells():
     assert session.replace_selection([1]) == 1
     assert session.replace_selection([0]) == 4
     assert session.materialize_surface_selection() == 3
+
+
+def test_surface_mode_accepts_explicit_surface_key_tuples():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+
+    assert session.replace_selection([(0, 1, 2)]) == 1
+
+
+def test_surface_mode_save_keeps_cell_data_lengths_consistent(tmp_path):
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+    session.apply_volume_field("BoundaryID", "", "1", overwrite=True)
+    session.replace_selection([0])
+    assert session.materialize_surface_selection() == 4
+
+    output_path = tmp_path / "surface_saved.vtu"
+    session.save(str(output_path))
+
+    reader = vtkXMLUnstructuredGridReader()
+    reader.SetFileName(str(output_path))
+    reader.Update()
+    loaded = reader.GetOutput()
+
+    assert loaded.GetNumberOfPoints() == 4
+    assert loaded.GetNumberOfCells() == 5
+    assert loaded.GetCellData().GetArray("BoundaryID") is not None

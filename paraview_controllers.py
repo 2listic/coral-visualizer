@@ -408,8 +408,16 @@ def register_paraview_controllers(
             ),
             None,
         )
+        mode = _sync_edit_mode_from_state()
         if coords is not None:
-            picked_ids = pv_backend.pick_visible_cell_ids(coords[0], coords[1])
+            if mode == "surface":
+                picker = getattr(pv_backend, "pick_visible_surface_keys", None)
+                if callable(picker):
+                    picked_ids = picker(coords[0], coords[1])
+                else:
+                    picked_ids = pv_backend.pick_visible_cell_ids(coords[0], coords[1])
+            else:
+                picked_ids = pv_backend.pick_visible_cell_ids(coords[0], coords[1])
         else:
             picked_ids = [item for item in normalized if isinstance(item, int)]
 
@@ -436,13 +444,33 @@ def register_paraview_controllers(
             return
 
         x0, x1, y0, y1 = selection
-        picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
-            x0,
-            y0,
-            x1,
-            y1,
-            behavior=(state.selection_behavior or "touch"),
-        )
+        mode = _sync_edit_mode_from_state()
+        if mode == "surface":
+            picker = getattr(pv_backend, "pick_visible_surface_keys_in_rect", None)
+            if callable(picker):
+                picked_ids = picker(
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    behavior=(state.selection_behavior or "touch"),
+                )
+            else:
+                picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    behavior=(state.selection_behavior or "touch"),
+                )
+        else:
+            picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
+                x0,
+                y0,
+                x1,
+                y1,
+                behavior=(state.selection_behavior or "touch"),
+            )
         if not picked_ids:
             state.edit_selection_status = "Box selection did not resolve any editable cells."
             state.edit_selection_status_type = "info"

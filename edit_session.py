@@ -412,12 +412,15 @@ class EditSession:
         if not missing_keys:
             return 0
 
+        old_cell_count = dataset.GetNumberOfCells()
         for key in missing_keys:
             cell_type, point_ids = boundary_map[key]
             id_list = vtkIdList()
             for point_id in point_ids:
                 id_list.InsertNextId(int(point_id))
             dataset.InsertNextCell(int(cell_type), id_list)
+
+        self._extend_cell_data_for_new_cells(dataset, old_cell_count)
 
         dataset.Modified()
         self.dirty = True
@@ -517,10 +520,21 @@ class EditSession:
 
         keys = set()
         top_cell_ids = set()
-        for cell_id in (cell_ids or []):
-            if not isinstance(cell_id, (int, float)):
+        existing_keys = self._existing_codim_keys(top_dim - 1)
+
+        for item in (cell_ids or []):
+            if isinstance(item, (tuple, list)) and len(item) >= 2:
+                try:
+                    key = tuple(sorted(int(value) for value in item))
+                except (TypeError, ValueError):
+                    continue
+                if key in boundary_map or key in existing_keys:
+                    keys.add(key)
                 continue
-            cell_id = int(cell_id)
+
+            if not isinstance(item, (int, float)):
+                continue
+            cell_id = int(item)
             if cell_id < 0 or cell_id >= dataset.GetNumberOfCells():
                 continue
 
@@ -582,6 +596,29 @@ class EditSession:
     def _invalidate_geometry_caches(self):
         self._volume_adjacency = None
         self._surface_boundary_map = None
+
+    @staticmethod
+    def _extend_cell_data_for_new_cells(dataset, old_cell_count):
+        """Resize existing cell-data arrays after appending new cells."""
+        new_cell_count = dataset.GetNumberOfCells()
+        if new_cell_count <= old_cell_count:
+            return
+
+        cell_data = dataset.GetCellData()
+        for array_index in range(cell_data.GetNumberOfArrays()):
+            array = cell_data.GetArray(array_index)
+            if array is None:
+                continue
+
+            components = max(int(array.GetNumberOfComponents()), 1)
+            array.SetNumberOfTuples(new_cell_count)
+            for cell_id in range(old_cell_count, new_cell_count):
+                for component in range(components):
+                    try:
+                        array.SetComponent(cell_id, component, 0.0)
+                    except Exception:
+                        # Best effort: keep tuple resize even if component assignment is unsupported.
+                        break
 
     def _ensure_volume_adjacency(self):
         """Build and cache a face/edge adjacency graph for top-dimensional cells."""

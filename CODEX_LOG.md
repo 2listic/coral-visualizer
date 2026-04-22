@@ -183,6 +183,15 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
     `invalid association string 'NONE'` for transient producers.
   - Added a backend regression test that simulates the `ColorBy(None)` failure and verifies
     overlay update continues without aborting edit mode.
+- Fixed Surface-mode touched-entity selection and save consistency.
+  - Surface picking now resolves touched codimension-one entities (faces in 3D, edges in 2D)
+    instead of selecting every boundary face/edge of a touched top-dimensional cell.
+  - Save/Add-to-pipeline now uses robust scalar-coloring disable fallback even when ParaView rejects
+    `ColorBy(..., None)` with `invalid association string 'NONE'`.
+  - After appending new surface cells, all existing `CellData` arrays are resized to the new cell count
+    (with default initialization for new tuples), preventing invalid files that load as empty datasets.
+  - Added regressions in `tests/test_edit_session.py`, `tests/test_paraview_backend.py`,
+    and `tests/test_paraview_controllers.py`.
 
 ## Current Behavior
 
