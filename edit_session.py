@@ -1,6 +1,7 @@
 """Edit-session scaffolding for the ParaView-backed workflow."""
 
 from pathlib import Path
+from math import acos, degrees, sqrt
 
 from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIdList
 from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
@@ -27,6 +28,8 @@ class EditSession:
         self.selected_surface_keys = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._surface_adjacency = None
+        self._surface_element_vectors = None
 
     def clear(self):
         """Reset the session to an inactive state."""
@@ -44,6 +47,8 @@ class EditSession:
         self.selected_surface_keys = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._surface_adjacency = None
+        self._surface_element_vectors = None
 
     def begin(self, node_id, source_label, source_filename, dataset):
         """Start a new edit session from a fetched VTK dataset copy."""
@@ -69,6 +74,8 @@ class EditSession:
         self.selected_surface_keys = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._surface_adjacency = None
+        self._surface_element_vectors = None
         self._ensure_cell_centers_array()
         return self.working_dataset
 
@@ -149,13 +156,17 @@ class EditSession:
         self.selected_cell_ids = set(range(self.working_dataset.GetNumberOfCells()))
         return len(self.selected_cell_ids)
 
-    def toggle_cell_selection(self, cell_id, grow=False):
+    def toggle_cell_selection(self, cell_id, grow=False, angle_threshold=None):
         """Toggle a single picked cell, optionally growing by adjacency."""
         if not self.active or self.working_dataset is None:
             return 0
 
         if self.geometry_mode == "surface":
             surface_keys = self._surface_keys_from_top_cells([cell_id])
+            if grow:
+                surface_keys = self._grow_surface_selection(
+                    surface_keys, angle_threshold=angle_threshold
+                )
             for key in surface_keys:
                 if key in self.selected_surface_keys:
                     self.selected_surface_keys.discard(key)
@@ -185,13 +196,18 @@ class EditSession:
 
         return len(self.selected_cell_ids)
 
-    def replace_selection(self, cell_ids, grow=False):
+    def replace_selection(self, cell_ids, grow=False, angle_threshold=None):
         """Replace the current selection with the provided cell IDs."""
         if not self.active or self.working_dataset is None:
             return 0
 
         if self.geometry_mode == "surface":
-            self.selected_surface_keys = self._surface_keys_from_top_cells(cell_ids)
+            selected = self._surface_keys_from_top_cells(cell_ids)
+            if grow:
+                selected = self._grow_surface_selection(
+                    selected, angle_threshold=angle_threshold
+                )
+            self.selected_surface_keys = selected
             return len(self.selected_surface_keys)
 
         normalized = {
@@ -204,13 +220,18 @@ class EditSession:
         self.selected_cell_ids = normalized
         return len(self.selected_cell_ids)
 
-    def add_selection(self, cell_ids, grow=False):
+    def add_selection(self, cell_ids, grow=False, angle_threshold=None):
         """Union the provided cell IDs into the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
 
         if self.geometry_mode == "surface":
-            self.selected_surface_keys |= self._surface_keys_from_top_cells(cell_ids)
+            selected = self._surface_keys_from_top_cells(cell_ids)
+            if grow:
+                selected = self._grow_surface_selection(
+                    selected, angle_threshold=angle_threshold
+                )
+            self.selected_surface_keys |= selected
             return len(self.selected_surface_keys)
 
         normalized = {
@@ -223,13 +244,18 @@ class EditSession:
         self.selected_cell_ids |= normalized
         return len(self.selected_cell_ids)
 
-    def subtract_selection(self, cell_ids, grow=False):
+    def subtract_selection(self, cell_ids, grow=False, angle_threshold=None):
         """Remove the provided cell IDs from the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
 
         if self.geometry_mode == "surface":
-            self.selected_surface_keys -= self._surface_keys_from_top_cells(cell_ids)
+            selected = self._surface_keys_from_top_cells(cell_ids)
+            if grow:
+                selected = self._grow_surface_selection(
+                    selected, angle_threshold=angle_threshold
+                )
+            self.selected_surface_keys -= selected
             return len(self.selected_surface_keys)
 
         normalized = {
@@ -243,13 +269,18 @@ class EditSession:
         self.selected_cell_ids -= normalized
         return len(self.selected_cell_ids)
 
-    def flip_selection(self, cell_ids, grow=False):
+    def flip_selection(self, cell_ids, grow=False, angle_threshold=None):
         """Toggle the provided cell IDs against the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
 
         if self.geometry_mode == "surface":
-            for key in self._surface_keys_from_top_cells(cell_ids):
+            selected = self._surface_keys_from_top_cells(cell_ids)
+            if grow:
+                selected = self._grow_surface_selection(
+                    selected, angle_threshold=angle_threshold
+                )
+            for key in selected:
                 if key in self.selected_surface_keys:
                     self.selected_surface_keys.discard(key)
                 else:
@@ -481,6 +512,25 @@ class EditSession:
 
         return visited
 
+    def _grow_surface_selection(self, seed_keys, angle_threshold=None):
+        """Expand a set of surface keys by one adjacency ring (non-transitive)."""
+        seeds = {tuple(key) for key in (seed_keys or [])}
+        if not seeds:
+            return set()
+
+        adjacency = self._ensure_surface_adjacency()
+        threshold = self._normalized_angle_threshold(angle_threshold)
+        grown = set(seeds)
+        for key in seeds:
+            for neighbor in adjacency.get(key, set()):
+                if threshold is None:
+                    grown.add(neighbor)
+                    continue
+                angle = self._surface_neighbor_angle_degrees(key, neighbor)
+                if angle <= threshold:
+                    grown.add(neighbor)
+        return grown
+
     def _top_dimension(self):
         if self.working_dataset is None:
             return 0
@@ -654,6 +704,142 @@ class EditSession:
     def _invalidate_geometry_caches(self):
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._surface_adjacency = None
+        self._surface_element_vectors = None
+
+    def _ensure_surface_adjacency(self):
+        """Build and cache codim-1 adjacency graph for surface-mode grow selection."""
+        if self._surface_adjacency is not None:
+            return self._surface_adjacency
+
+        dataset = self.working_dataset
+        if dataset is None:
+            self._surface_adjacency = {}
+            return self._surface_adjacency
+
+        top_dim = self._top_dimension()
+        if top_dim < 2:
+            self._surface_adjacency = {}
+            return self._surface_adjacency
+        codim_dim = top_dim - 1
+
+        selectable_keys = set(self._surface_boundary_map_for_top_cells().keys())
+        selectable_keys |= self._existing_codim_keys(codim_dim)
+        adjacency = {tuple(key): set() for key in selectable_keys}
+        if not selectable_keys:
+            self._surface_adjacency = adjacency
+            return self._surface_adjacency
+
+        # Faces in 3D are adjacent by shared edge (2 vertices), edges in 2D by shared point (1 vertex).
+        min_shared = max(1, codim_dim)
+        point_to_keys = {}
+        for key in selectable_keys:
+            normalized = tuple(key)
+            for point_id in normalized:
+                point_to_keys.setdefault(int(point_id), set()).add(normalized)
+
+        for key in selectable_keys:
+            normalized = tuple(key)
+            candidates = set()
+            for point_id in normalized:
+                candidates |= point_to_keys.get(int(point_id), set())
+            candidates.discard(normalized)
+            for candidate in candidates:
+                if len(set(normalized).intersection(candidate)) >= min_shared:
+                    adjacency[normalized].add(candidate)
+
+        self._surface_adjacency = adjacency
+        return self._surface_adjacency
+
+    @staticmethod
+    def _normalized_angle_threshold(angle_threshold):
+        if angle_threshold is None:
+            return None
+        try:
+            threshold = float(angle_threshold)
+        except (TypeError, ValueError):
+            return None
+        if threshold < 0.0:
+            return 0.0
+        if threshold > 180.0:
+            return 180.0
+        return threshold
+
+    def _surface_neighbor_angle_degrees(self, key_a, key_b):
+        """Return angle between surface element directions in degrees."""
+        vectors = self._ensure_surface_element_vectors()
+        va = vectors.get(tuple(key_a))
+        vb = vectors.get(tuple(key_b))
+        if va is None or vb is None:
+            return 180.0
+        dot = va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2]
+        dot = max(-1.0, min(1.0, abs(dot)))
+        return degrees(acos(dot))
+
+    def _ensure_surface_element_vectors(self):
+        """Build and cache representative unit vectors for selectable surface elements."""
+        if self._surface_element_vectors is not None:
+            return self._surface_element_vectors
+
+        dataset = self.working_dataset
+        if dataset is None:
+            self._surface_element_vectors = {}
+            return self._surface_element_vectors
+
+        top_dim = self._top_dimension()
+        if top_dim < 2:
+            self._surface_element_vectors = {}
+            return self._surface_element_vectors
+        codim_dim = top_dim - 1
+
+        selectable_keys = set(self._surface_boundary_map_for_top_cells().keys())
+        selectable_keys |= self._existing_codim_keys(codim_dim)
+
+        vectors = {}
+        for key in selectable_keys:
+            point_ids = [int(point_id) for point_id in key]
+            points = [dataset.GetPoint(point_id) for point_id in point_ids]
+            vector = self._surface_element_vector(points)
+            if vector is not None:
+                vectors[tuple(key)] = vector
+
+        self._surface_element_vectors = vectors
+        return self._surface_element_vectors
+
+    @staticmethod
+    def _surface_element_vector(points):
+        """Return a unit normal (faces) or tangent (edges) vector for a surface element."""
+        if not points:
+            return None
+        if len(points) == 1:
+            return None
+        if len(points) == 2:
+            dx = points[1][0] - points[0][0]
+            dy = points[1][1] - points[0][1]
+            dz = points[1][2] - points[0][2]
+            norm = sqrt(dx * dx + dy * dy + dz * dz)
+            if norm <= 1e-12:
+                return None
+            return (dx / norm, dy / norm, dz / norm)
+
+        p0 = points[0]
+        for i in range(1, len(points) - 1):
+            p1 = points[i]
+            p2 = points[i + 1]
+            ux = p1[0] - p0[0]
+            uy = p1[1] - p0[1]
+            uz = p1[2] - p0[2]
+            vx = p2[0] - p0[0]
+            vy = p2[1] - p0[1]
+            vz = p2[2] - p0[2]
+            nx = uy * vz - uz * vy
+            ny = uz * vx - ux * vz
+            nz = ux * vy - uy * vx
+            norm = sqrt(nx * nx + ny * ny + nz * nz)
+            if norm > 1e-12:
+                return (nx / norm, ny / norm, nz / norm)
+        return None
+
 
     @staticmethod
     def _extend_cell_data_for_new_cells(dataset, old_cell_count):

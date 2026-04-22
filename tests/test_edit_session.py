@@ -119,6 +119,40 @@ def test_surface_mode_accepts_explicit_surface_key_tuples():
     assert session.replace_selection([(0, 1, 2)]) == 1
 
 
+def test_surface_mode_grow_selection_expands_across_adjacent_faces():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+
+    assert session.replace_selection([(0, 1, 2)], grow=False) == 1
+    assert session.replace_selection([(0, 1, 2)], grow=True, angle_threshold=180) == 4
+
+
+def test_surface_mode_grow_selection_respects_angle_threshold():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+
+    # 0 degrees should keep only the seed face (no adjacent face is coplanar).
+    assert session.replace_selection([(0, 1, 2)], grow=True, angle_threshold=0) == 1
+    # Wide threshold should include one-ring adjacent faces.
+    assert session.replace_selection([(0, 1, 2)], grow=True, angle_threshold=180) == 4
+
+
+def test_surface_mode_grow_selection_is_one_ring_not_transitive():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+    session._ensure_surface_adjacency = lambda: {
+        ("A",): {("B",)},
+        ("B",): {("A",), ("C",)},
+        ("C",): {("B",)},
+    }
+
+    grown = session._grow_surface_selection({("A",)})
+    assert grown == {("A",), ("B",)}
+
+
 def test_surface_mode_save_keeps_cell_data_lengths_consistent(tmp_path):
     session = EditSession()
     session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())

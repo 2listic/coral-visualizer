@@ -115,25 +115,34 @@ def register_paraview_controllers(
         selection_mode = _set_selection_mode(
             getattr(state, "edit_selection_mode", "replace")
         )
+        angle_threshold = getattr(state, "angle_threshold", None)
 
         if selection_mode == "add":
             count = edit_session.add_selection(
-                picked_ids, grow=bool(state.group_select)
+                picked_ids,
+                grow=bool(state.group_select),
+                angle_threshold=angle_threshold,
             )
             action = "Added"
         elif selection_mode == "subtract":
             count = edit_session.subtract_selection(
-                picked_ids, grow=bool(state.group_select)
+                picked_ids,
+                grow=bool(state.group_select),
+                angle_threshold=angle_threshold,
             )
             action = "Removed"
         elif selection_mode == "flip":
             count = edit_session.flip_selection(
-                picked_ids, grow=bool(state.group_select)
+                picked_ids,
+                grow=bool(state.group_select),
+                angle_threshold=angle_threshold,
             )
             action = "Flipped"
         else:
             count = edit_session.replace_selection(
-                picked_ids, grow=bool(state.group_select)
+                picked_ids,
+                grow=bool(state.group_select),
+                angle_threshold=angle_threshold,
             )
             action = "Selected"
         sync_edit_session_state()
