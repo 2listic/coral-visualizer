@@ -9,9 +9,10 @@ class FakeState(SimpleNamespace):
         super().__init__(**kwargs)
         self._handlers = {}
 
-    def change(self, name):
+    def change(self, *names):
         def decorator(fn):
-            self._handlers[name] = fn
+            for name in names:
+                self._handlers[name] = fn
             return fn
 
         return decorator
@@ -77,6 +78,7 @@ def test_array_representation_and_pipeline_callbacks_dispatch_to_expected_runtim
     )
     state = FakeState(
         edit_mode=False,
+        edit_session_active=False,
         error_message="",
         interactive_quality=0,
         interactive_ratio=0,
@@ -101,11 +103,12 @@ def test_array_representation_and_pipeline_callbacks_dispatch_to_expected_runtim
     state._handlers["representation"]("Wireframe")
     state._handlers["active_pipeline_item"]("node-1")
     state._handlers["interaction_quality"]("fast")
-    state._handlers["pick_mode"](True)
+    # In non-edit mode, even if pick_mode=True, rotation should be ENABLED (True)
+    state._handlers["pick_mode"](True, False)
 
     assert ("pv_color", "point:U") in calls
     assert ("repr", "Wireframe") in calls
-    assert ("rotate", False) in calls
+    assert ("rotate", True) in calls
     assert "update_ui" in calls
     assert "render" in calls
     assert "sync_edit" in calls
@@ -133,6 +136,6 @@ def test_pick_mode_ignored_outside_paraview():
         interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
     )
 
-    state._handlers["pick_mode"](False)
+    state._handlers["pick_mode"](False, False)
 
-    assert calls == []
+    assert calls == ["sync"]

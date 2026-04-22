@@ -76,14 +76,25 @@ def register_state_handlers(
         state.interactive_quality = preset["interactive_quality"]
         state.interactive_ratio = preset["interactive_ratio"]
 
-    @state.change("pick_mode")
-    def on_pick_mode_change(pick_mode, **kwargs):
-        """Enable or disable edit-view picking modes for the ParaView path."""
+    @state.change("pick_mode", "edit_session_active")
+    def on_interaction_mode_change(pick_mode, edit_session_active, **kwargs):
+        """Update ParaView interactor rotation and cursor style based on pick mode."""
         if not is_paraview_backend():
+            sync_edit_session_state()
             return
 
         if pv_backend is not None:
-            pv_backend.set_interactor_rotation(not pick_mode)
+            # Only disable rotation if an edit session is active and we are in pick mode.
+            # In non-edit mode, rotation should always be enabled.
+            rotation_enabled = not (edit_session_active and pick_mode)
+            pv_backend.set_interactor_rotation(rotation_enabled)
+
+        # Update cursor style: crosshair only when picking in an active edit session.
+        state.edit_view_style = (
+            "width: 100%; height: 100%; cursor: crosshair; outline: none;"
+            if edit_session_active and pick_mode
+            else "width: 100%; height: 100%; cursor: default; outline: none;"
+        )
 
         sync_edit_session_state()
 

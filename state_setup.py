@@ -119,7 +119,7 @@ def initialize_state(
         {"button": 2, "action": "Pan"},
         {"button": 3, "action": "Zoom", "scrollEnabled": True},
     ]
-    state.edit_view_style = "width: 100%; height: 100%; cursor: crosshair; outline: none;"
+    state.edit_view_style = "width: 100%; height: 100%; cursor: default; outline: none;"
     state.pv_runtime_message = ""
     state.pv_runtime_type = "error"
     state.show_calculator_help = False
@@ -133,7 +133,7 @@ def initialize_state(
     state.save_filename = "output"
     state.save_status = ""
     state.save_status_type = "success"
-    state.pick_mode = True
+    state.pick_mode = False
     state.selection_behavior = "touch"
     state.selection_behavior_options = [
         {"text": "Touch", "value": "touch"},

@@ -145,12 +145,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - The tests cover scalar-bar policy, edit-mode coloring, scene representation/coloring updates,
     VTK load flow, and camera reset/view reset behavior.
 - Fixed a regex bug in `tests/test_e2e_edit_selection_playwright.py` that caused selection count parsing to fail.
-- Fixed a major bug where the grid would rotate during box selection in ParaView pick mode.
-  - Updated `paraview_backend.py` to disable all server-side camera manipulators (3D and 2D) when picking is active.
-  - Updated `paraview_runtime.py` to clear client-side interactor settings in pick mode, preventing all client-side camera interaction.
-  - Added state change handlers in `state_handlers.py` to restore rotation when exiting edit mode or switching to rotate mode.
-  - Added a new E2E test `tests/test_e2e_rotation_lock.py` that uses screenshot comparison to verify the fix.
-  - Added a unique CSS class `coral-main-viewport` to the 3D view in `ui.py` for reliable E2E test locators.
+- Fixed a bug where camera rotation was blocked in non-edit mode.
+  - Re-enabled rotation by default and made `pick_mode` False by default.
+  - Updated state management in `state_handlers.py` to correctly handle interaction modes.
+  - Added E2E test `tests/test_e2e_non_edit_rotation.py` to verify rotation behavior.
+- Fixed rotation lock E2E test failure caused by state setup changes.
 
 ## Current Behavior
 
