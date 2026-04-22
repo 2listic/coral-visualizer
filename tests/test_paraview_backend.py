@@ -339,6 +339,14 @@ def test_get_ui_state_reports_defaults_without_active_source():
 
     assert ui_state["pipeline_items"] == []
     assert ui_state["active_pipeline_item"] is None
+    assert ui_state["active_source_label"] == ""
+    assert ui_state["active_source_kind"] == "Reader Type"
+    assert ui_state["show_calculator_help"] is False
+    assert ui_state["calculator_coordinate_variables"] == [
+        "coordsX",
+        "coordsY",
+        "coordsZ",
+    ]
     assert ui_state["selected_array"] == ARRAY_SOLID
     assert ui_state["representation"] == "Surface with Edges"
 

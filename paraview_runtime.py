@@ -284,7 +284,29 @@ class ParaViewRuntime:
 
     def update_ui_state(self):
         """Synchronize Trame state with the active ParaView source metadata."""
-        ui_state = self.pv_backend.get_ui_state()
+        ui_state = self.pv_backend.get_ui_state() or {}
+        ui_state = {
+            "pipeline_items": [],
+            "active_pipeline_item": None,
+            "active_source_label": "",
+            "active_source_type": "",
+            "active_source_kind": "Reader Type",
+            "active_parent_label": "",
+            "source_path": "",
+            "point_arrays": [],
+            "cell_arrays": [],
+            "data_stats": [],
+            "source_properties": [],
+            "display_properties": [],
+            "show_calculator_help": False,
+            "calculator_attribute_type": "",
+            "calculator_input_variables": [],
+            "calculator_coordinate_variables": ["coordsX", "coordsY", "coordsZ"],
+            "active_visibility": True,
+            "selected_array": ARRAY_SOLID,
+            "representation": "Surface with Edges",
+            **ui_state,
+        }
         self.state.pipeline_items = ui_state["pipeline_items"]
         self.state.active_pipeline_item = ui_state["active_pipeline_item"]
         self.state.active_source_label = ui_state["active_source_label"]

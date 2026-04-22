@@ -137,6 +137,49 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     assert state.save_status_type == "error"
 
 
+def test_pv_delete_active_clears_selected_file_when_pipeline_becomes_empty():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        selected_file="/tmp/data/mesh.vtk",
+        save_status="old",
+    )
+    pv_backend = SimpleNamespace(
+        delete_node=lambda node_id: calls.append(("delete", node_id))
+    )
+
+    def update_ui_state():
+        state.active_pipeline_item = None
+        calls.append("update_ui")
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=SimpleNamespace(),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=update_ui_state,
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_delete_active"]()
+
+    assert calls == [("delete", "node-1"), "update_ui", "render"]
+    assert state.selected_file == ""
+    assert state.save_status == ""
+
+
 def test_pv_add_filter_success_and_failure_paths():
     ctrl = FakeCtrl()
     calls = []

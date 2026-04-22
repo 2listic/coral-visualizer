@@ -150,6 +150,15 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Updated state management in `state_handlers.py` to correctly handle interaction modes.
   - Added E2E test `tests/test_e2e_non_edit_rotation.py` to verify rotation behavior.
 - Fixed rotation lock E2E test failure caused by state setup changes.
+- Fixed a ParaView UI-state crash after deleting the last pipeline node.
+  - `paraview_backend.get_ui_state()` now returns a complete default schema even with no active source.
+  - `paraview_runtime.update_ui_state()` now merges backend payloads with defensive defaults.
+  - Added regression tests for backend-default UI state and runtime tolerance to partial UI payloads.
+- Fixed reload behavior when re-opening the same file after deleting the last pipeline node.
+  - `pv_delete_active` now clears `selected_file` when the pipeline becomes empty.
+  - Re-opening the same `.vtk`/`.vtu` path now reliably triggers a new load.
+  - Removed temporary same-path reload workarounds from common controllers.
+  - Added regression coverage in `tests/test_paraview_controllers.py`.
 
 ## Current Behavior
 

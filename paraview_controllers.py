@@ -147,6 +147,8 @@ def register_paraview_controllers(
 
         pv_backend.delete_node(state.active_pipeline_item)
         update_paraview_ui_state()
+        if not state.active_pipeline_item:
+            state.selected_file = ""
         state.save_status = ""
         render_and_push()
 

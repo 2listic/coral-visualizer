@@ -260,6 +260,23 @@ def test_update_ui_state_applies_backend_metadata_and_editability_flags():
     assert state.edit_session_active is True
 
 
+def test_update_ui_state_tolerates_missing_backend_keys():
+    runtime, state, backend, edit_session, view_calls = make_runtime()
+    backend.get_ui_state = lambda: {
+        "pipeline_items": [],
+        "active_pipeline_item": None,
+    }
+
+    runtime.update_ui_state()
+
+    assert state.active_source_label == ""
+    assert state.active_source_kind == "Reader Type"
+    assert state.show_calculator_help is False
+    assert state.available_arrays == [{"text": "Solid Color", "value": ARRAY_SOLID}]
+    assert state.selected_array == ARRAY_SOLID
+    assert state.representation == "Surface with Edges"
+
+
 def test_apply_representation_apply_coloring_and_load_file_refresh_state():
     runtime, state, backend, edit_session, view_calls = make_runtime()
 
