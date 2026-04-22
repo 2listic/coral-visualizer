@@ -305,7 +305,7 @@ class ParaViewBackend:
         display.SetScalarBarVisibility(self.view, True)
         self.render()
 
-    def _disable_scalar_coloring(self, display):
+    def _disable_scalar_coloring(self, display, *, hide_unused_scalar_bars=True):
         """Best-effort disable scalar coloring across ParaView version differences."""
         try:
             self.simple.ColorBy(display, None)
@@ -326,10 +326,11 @@ class ParaViewBackend:
                 except Exception:
                     pass
 
-        try:
-            self.simple.HideUnusedScalarBars(self.view)
-        except Exception:
-            pass
+        if hide_unused_scalar_bars:
+            try:
+                self.simple.HideUnusedScalarBars(self.view)
+            except Exception:
+                pass
 
     def apply_representation(self, representation):
         """Update the representation used by the active display."""
@@ -482,7 +483,8 @@ class ParaViewBackend:
         overlay.GetClientSideObject().SetOutput(dataset)
         overlay.UpdatePipeline()
         display = self.simple.Show(overlay, self.view)
-        self._disable_scalar_coloring(display)
+        # Overlay producers may not expose a stable LUT; skip scalar-bar cleanup to avoid warnings.
+        self._disable_scalar_coloring(display, hide_unused_scalar_bars=False)
         display.SetRepresentationType("Surface With Edges")
         display.DiffuseColor = [1.0, 0.92, 0.25]  # Bright Gold
         display.AmbientColor = [1.0, 0.92, 0.25]
@@ -532,6 +534,7 @@ class ParaViewBackend:
             rect = [px - radius, py - radius, px + radius, py + radius]
             self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
             picked_result = self._fetch_selected_original_cell_ids(source)
+            picked_result = self._filter_visible_cell_ids_by_depth(source, picked_result)
             if picked_result:
                 break
 
@@ -561,6 +564,7 @@ class ParaViewBackend:
         self.simple.ClearSelection(source)
         self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
         picked = self._fetch_selected_original_cell_ids(source)
+        picked = self._filter_visible_cell_ids_by_depth(source, picked)
         self.simple.ClearSelection(source)
         self.render()
         if not picked or behavior != "inside":
@@ -660,6 +664,8 @@ class ParaViewBackend:
         inside_only = behavior == "inside"
         picked = []
         for key, element in boundary.items():
+            if not self._surface_element_is_visible(dataset, element["point_ids"], renderer):
+                continue
             projected = self._project_points_to_display(dataset, element["point_ids"], renderer)
             if not projected:
                 continue
@@ -725,6 +731,112 @@ class ParaViewBackend:
                 return []
             projected.append((float(dx), float(dy)))
         return projected
+
+    def _surface_element_is_visible(self, dataset, point_ids, renderer):
+        """Return True when the element centroid is visible in the current depth buffer."""
+        if dataset is None or renderer is None or not point_ids:
+            return False
+
+        points = []
+        for point_id in point_ids:
+            try:
+                points.append(dataset.GetPoint(int(point_id)))
+            except Exception:
+                return False
+        if not points:
+            return False
+
+        count = float(len(points))
+        centroid = (
+            sum(point[0] for point in points) / count,
+            sum(point[1] for point in points) / count,
+            sum(point[2] for point in points) / count,
+        )
+        projected = self._project_world_point_to_display(renderer, centroid)
+        if projected is None:
+            return False
+        return self._is_display_depth_visible(renderer, projected[0], projected[1], projected[2])
+
+    def _filter_visible_cell_ids_by_depth(self, source, cell_ids):
+        """Keep only cell ids with centroid visible from the current camera."""
+        if not cell_ids:
+            return []
+
+        renderer = self._get_renderer()
+        if renderer is None:
+            return list(cell_ids)
+
+        try:
+            dataset = self.servermanager.Fetch(source)
+        except Exception:
+            return list(cell_ids)
+        if dataset is None:
+            return list(cell_ids)
+
+        visible_ids = []
+        for cell_id in cell_ids:
+            try:
+                cid = int(cell_id)
+            except (TypeError, ValueError):
+                continue
+            if cid < 0 or cid >= dataset.GetNumberOfCells():
+                continue
+
+            cell = dataset.GetCell(cid)
+            if cell is None or cell.GetNumberOfPoints() <= 0:
+                continue
+
+            points = []
+            for point_idx in range(cell.GetNumberOfPoints()):
+                points.append(dataset.GetPoint(cell.GetPointId(point_idx)))
+            count = float(len(points))
+            centroid = (
+                sum(point[0] for point in points) / count,
+                sum(point[1] for point in points) / count,
+                sum(point[2] for point in points) / count,
+            )
+            projected = self._project_world_point_to_display(renderer, centroid)
+            if projected is None:
+                continue
+            if self._is_display_depth_visible(renderer, projected[0], projected[1], projected[2]):
+                visible_ids.append(cid)
+
+        return visible_ids
+
+    def _get_renderer(self):
+        if self.view is None:
+            return None
+        client_view = self.view.GetClientSideObject()
+        if client_view is None:
+            return None
+        return client_view.GetRenderer()
+
+    @staticmethod
+    def _project_world_point_to_display(renderer, point):
+        """Project one 3D world point to display coords and return (x, y, z)."""
+        try:
+            renderer.SetWorldPoint(float(point[0]), float(point[1]), float(point[2]), 1.0)
+            renderer.WorldToDisplay()
+            dx, dy, dz = renderer.GetDisplayPoint()
+        except Exception:
+            return None
+        if not (isfinite(dx) and isfinite(dy) and isfinite(dz)):
+            return None
+        return (float(dx), float(dy), float(dz))
+
+    @staticmethod
+    def _is_display_depth_visible(renderer, x, y, z, tolerance=1e-4):
+        """Return True when display depth ``z`` is on/near the visible z-buffer value."""
+        if renderer is None:
+            return True
+        try:
+            buffer_z = float(renderer.GetZ(int(round(x)), int(round(y))))
+        except Exception:
+            return True
+        if not isfinite(buffer_z):
+            return True
+        # Smaller z is closer to camera in display coordinates.
+        return float(z) <= buffer_z + float(tolerance)
 
     @staticmethod
     def _point_in_rect(point, rect):

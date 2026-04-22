@@ -207,13 +207,42 @@ class FakePropertyInspector:
         self.calls.append(("apply", proxy, properties))
 
 
+class FakeClientView:
+    def __init__(self, renderer):
+        self._renderer = renderer
+
+    def GetRenderer(self):
+        return self._renderer
+
+
+class FakeRenderer:
+    def __init__(self, z_value=0.5):
+        self.world_point = None
+        self.display_point = (10.0, 10.0, 0.5)
+        self.z_value = z_value
+
+    def SetWorldPoint(self, x, y, z, w):
+        self.world_point = (x, y, z, w)
+
+    def WorldToDisplay(self):
+        return None
+
+    def GetDisplayPoint(self):
+        return self.display_point
+
+    def GetZ(self, x, y):
+        return self.z_value
+
+
 def make_backend():
     backend = ParaViewBackend.__new__(ParaViewBackend)
+    renderer = FakeRenderer()
     backend.simple = FakeSimple()
     backend.servermanager = SimpleNamespace()
     backend.view = SimpleNamespace(
         ViewSize=(400, 200),
         GetProperty=lambda name: FakeProperty(),
+        GetClientSideObject=lambda: FakeClientView(renderer),
     )
     backend.pipeline_nodes = []
     backend.active_node_id = None
@@ -494,3 +523,64 @@ def test_update_edit_selection_overlay_tolerates_colorby_none_failures():
     assert backend._edit_selection_overlay is overlay
     assert backend._edit_selection_display is overlay_display
     assert backend.simple.active_source is source
+
+
+def test_update_edit_selection_overlay_does_not_cleanup_scalar_bars():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    display = FakeDisplay()
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    overlay_display = FakeDisplay()
+    overlay = FakeOverlayProducer()
+
+    backend.simple.TrivialProducer = lambda registrationName=None: overlay
+    backend.simple.Show = lambda producer, view: overlay_display
+
+    backend.update_edit_selection_overlay(FakeOverlayDataset(2))
+
+    hide_calls = [call for call in backend.simple.calls if call[0] == "HideUnusedScalarBars"]
+    assert hide_calls == []
+
+
+def test_pick_visible_cell_ids_in_rect_filters_out_occluded_cells():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.simple.ClearSelection = lambda *_args, **_kwargs: None
+    backend.simple.SelectSurfaceCells = lambda **_kwargs: None
+    backend._fetch_selected_original_cell_ids = lambda _source: [1, 2, 3]
+    backend._filter_visible_cell_ids_by_depth = lambda _source, ids: [1, 3]
+
+    picked = backend.pick_visible_cell_ids_in_rect(1, 2, 30, 40, behavior="touch")
+
+    assert picked == [1, 3]
+
+
+def test_pick_surface_keys_in_rect_skips_occluded_boundary_elements():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend.servermanager.Fetch = lambda _source: object()
+
+    boundary = {
+        (1, 2, 3): {"point_ids": (1, 2, 3)},
+        (4, 5, 6): {"point_ids": (4, 5, 6)},
+    }
+    backend._boundary_codim_elements = lambda _dataset: boundary
+    backend._project_points_to_display = lambda _dataset, _point_ids, _renderer: [
+        (10.0, 10.0),
+        (20.0, 10.0),
+        (15.0, 20.0),
+    ]
+    backend._surface_element_is_visible = lambda _dataset, point_ids, _renderer: point_ids == (1, 2, 3)
+
+    picked = backend._pick_surface_keys_in_rect([0, 0, 30, 30], behavior="touch")
+
+    assert picked == [(1, 2, 3)]
