@@ -36,9 +36,26 @@ def register_paraview_controllers(
 
     def _apply_edit_field(*, overwrite):
         mode = _sync_edit_mode_from_state()
-        edit_session.field_name = (state.edit_field_name or "").strip()
+        field_name = (state.edit_field_name or "").strip()
+        edit_session.field_name = field_name
         edit_session.expression = (state.edit_expression or "").strip()
         edit_session.default_value = (state.edit_default_value or "0").strip()
+
+        has_cell_field = getattr(edit_session, "has_cell_field", None)
+        if (
+            not overwrite
+            and field_name
+            and callable(has_cell_field)
+            and has_cell_field(field_name)
+        ):
+            state.edit_overwrite_field_name = field_name
+            state.edit_overwrite_dialog = True
+            state.edit_apply_status = (
+                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
+            )
+            state.edit_apply_status_type = "warning"
+            sync_edit_session_state()
+            return
 
         if mode != "volume":
             if mode == "surface":
@@ -64,17 +81,6 @@ def register_paraview_controllers(
                 "Volume and Surface modes are currently supported."
             )
             state.edit_apply_status_type = "info"
-            sync_edit_session_state()
-            return
-
-        field_name = (state.edit_field_name or "").strip()
-        if not overwrite and field_name and edit_session.has_cell_field(field_name):
-            state.edit_overwrite_field_name = field_name
-            state.edit_overwrite_dialog = True
-            state.edit_apply_status = (
-                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
-            )
-            state.edit_apply_status_type = "warning"
             sync_edit_session_state()
             return
 
