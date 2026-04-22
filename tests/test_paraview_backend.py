@@ -107,6 +107,8 @@ class FakeDisplay:
         self.ColorArrayName = color_array
         self.Visibility = visibility
         self._representation = FakeProperty(representation)
+        self._pickable = FakeProperty(1)
+        self.Pickable = 1
         self.scalar_bar_calls = []
         self.representation_calls = []
         self.rescale_calls = []
@@ -114,6 +116,8 @@ class FakeDisplay:
     def GetProperty(self, name):
         if name == "Representation":
             return self._representation
+        if name == "Pickable":
+            return self._pickable
         return None
 
     def SetRepresentationType(self, value):
@@ -157,6 +161,29 @@ class FakeSimple:
 
     def Delete(self, source):
         self.deleted.append(source)
+
+
+class FakeOverlayProducer:
+    def __init__(self):
+        self.output = None
+        self.updated = 0
+
+    def GetClientSideObject(self):
+        return self
+
+    def SetOutput(self, dataset):
+        self.output = dataset
+
+    def UpdatePipeline(self):
+        self.updated += 1
+
+
+class FakeOverlayDataset:
+    def __init__(self, cell_count):
+        self.cell_count = cell_count
+
+    def GetNumberOfCells(self):
+        return self.cell_count
 
 
 class FakeFilterCatalog:
@@ -396,3 +423,25 @@ def test_candidate_pick_positions_and_pick_debug_info_cover_fallbacks():
     assert debug["view_size"] == {"width": 400, "height": 200}
     assert debug["pick_radius"] == 3
     assert debug["candidate_positions"][0]["rect"] == [7, 17, 13, 23]
+
+
+def test_update_edit_selection_overlay_makes_overlay_non_pickable_and_restores_active_source():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    display = FakeDisplay()
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    overlay_display = FakeDisplay()
+    overlay = FakeOverlayProducer()
+
+    backend.simple.TrivialProducer = lambda registrationName=None: overlay
+    backend.simple.Show = lambda producer, view: overlay_display
+
+    backend.update_edit_selection_overlay(FakeOverlayDataset(2))
+
+    assert backend._edit_selection_overlay is overlay
+    assert backend._edit_selection_display is overlay_display
+    assert overlay_display.Pickable == 0
+    assert overlay_display.GetProperty("Pickable").GetData() == 0
+    assert backend.simple.active_source is source

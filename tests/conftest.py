@@ -3,7 +3,7 @@ import pathlib
 import pytest
 from vtkmodules.vtkRenderingCore import vtkRenderer
 
-DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
+DATA_DIR = pathlib.Path(__file__).parent.parent / "test_data"
 
 
 @pytest.fixture

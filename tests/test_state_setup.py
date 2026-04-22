@@ -83,6 +83,15 @@ def test_initialize_state_populates_defaults_for_paraview_backend():
         {"text": "Touch", "value": "touch"},
         {"text": "Contained", "value": "inside"},
     ]
+    assert state.edit_selection_mode == "replace"
+    assert state.edit_selection_mode_options == [
+        {"text": "Replace", "value": "replace"},
+        {"text": "Add", "value": "add"},
+        {"text": "Subtract", "value": "subtract"},
+        {"text": "Flip", "value": "flip"},
+    ]
+    assert state.edit_enable_picking is False
+    assert "cursor: crosshair" in state.edit_view_style
 
 
 def test_initialize_state_uses_empty_filter_catalog_without_paraview_backend():

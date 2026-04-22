@@ -71,15 +71,18 @@ class ParaViewRuntime:
         self.state.edit_default_value = self.edit_session.default_value
         self.state.edit_available_variables = self.edit_session.available_cell_variables()
         self.state.selection_count = self.edit_session.selected_count()
+        self.state.edit_enable_picking = bool(
+            self.edit_session.active and self.state.pick_mode
+        )
         self.state.edit_picking_modes = (
-            ["click", "mesh", "box"]
+            ["select"]
             if self.edit_session.active and self.state.pick_mode
             else []
         )
         self.state.edit_interactor_events = ["EndAnimation"]
         if self.edit_session.active and self.state.pick_mode:
             self.state.edit_interactor_settings = [
-                {"button": 1, "action": "Pan"},
+                {"button": 1, "action": "Select"},
                 {"button": 2, "action": "Pan"},
                 {"button": 3, "action": "Zoom", "scrollEnabled": True},
             ]
@@ -107,11 +110,9 @@ class ParaViewRuntime:
                 if result:
                     return result
 
-            pos = event.get("position")
-            if isinstance(pos, dict) and "x" in pos and "y" in pos:
-                return [("coords", pos["x"], pos["y"])]
-            if "x" in event and "y" in event:
-                return [("coords", event["x"], event["y"])]
+            coords = self._resolve_event_view_coordinates(event)
+            if coords is not None:
+                return [("coords", coords[0], coords[1])]
             return []
 
         if isinstance(event, list):
@@ -123,22 +124,123 @@ class ParaViewRuntime:
 
         return []
 
+    def _resolve_event_view_coordinates(self, event):
+        """Map browser-side pointer coordinates into ParaView view coordinates."""
+        if not isinstance(event, dict):
+            return None
+
+        x = y = None
+        pos = event.get("position")
+        if isinstance(pos, dict) and "x" in pos and "y" in pos:
+            x = pos["x"]
+            y = pos["y"]
+        elif "x" in event and "y" in event:
+            x = event["x"]
+            y = event["y"]
+        else:
+            return None
+
+        try:
+            x = float(x)
+            y = float(y)
+        except (TypeError, ValueError):
+            return None
+
+        size_width, size_height = self._extract_size_pair(event.get("size"))
+        scale_x, scale_y = self._extract_scale_pair(event.get("scale"))
+        view_width, view_height = self._view_size()
+
+        if scale_x is not None and scale_y is not None:
+            x *= scale_x
+            y *= scale_y
+        elif (
+            size_width is not None
+            and size_height is not None
+            and view_width is not None
+            and view_height is not None
+            and size_width > 0
+            and size_height > 0
+        ):
+            x *= view_width / size_width
+            y *= view_height / size_height
+
+        if view_width is not None:
+            x = min(max(x, 0.0), max(view_width - 1.0, 0.0))
+        if view_height is not None:
+            y = min(max(y, 0.0), max(view_height - 1.0, 0.0))
+
+        return int(round(x)), int(round(y))
+
+    def _view_size(self):
+        """Return the current ParaView view size when available."""
+        view = getattr(self.pv_backend, "view", None)
+        if view is None or not hasattr(view, "ViewSize"):
+            return None, None
+
+        try:
+            width, height = view.ViewSize
+            return float(width), float(height)
+        except (TypeError, ValueError):
+            return None, None
+
+    @staticmethod
+    def _extract_size_pair(size):
+        """Extract width/height from an event size payload."""
+        if isinstance(size, dict):
+            for width_key, height_key in (
+                ("width", "height"),
+                ("w", "h"),
+                ("x", "y"),
+            ):
+                if width_key in size and height_key in size:
+                    try:
+                        return float(size[width_key]), float(size[height_key])
+                    except (TypeError, ValueError):
+                        return None, None
+        if isinstance(size, (list, tuple)) and len(size) >= 2:
+            try:
+                return float(size[0]), float(size[1])
+            except (TypeError, ValueError):
+                return None, None
+        return None, None
+
+    @staticmethod
+    def _extract_scale_pair(scale):
+        """Extract x/y scale factors from an event scale payload."""
+        if isinstance(scale, dict):
+            for x_key, y_key in (
+                ("x", "y"),
+                ("width", "height"),
+                ("sx", "sy"),
+            ):
+                if x_key in scale and y_key in scale:
+                    try:
+                        return float(scale[x_key]), float(scale[y_key])
+                    except (TypeError, ValueError):
+                        return None, None
+        try:
+            uniform = float(scale)
+        except (TypeError, ValueError):
+            uniform = None
+        if uniform is not None:
+            return uniform, uniform
+        return None, None
+
     def sync_edit_selection_overlay(self):
         """Update the transient selection highlight for the active edit session."""
+        self.pv_backend.clear_active_selection()
         if not self.edit_session.active:
-            self.pv_backend.clear_active_selection()
             self.pv_backend.clear_edit_selection_overlay()
             self.call_view_update()
             return
 
-        overlay_dataset = self.edit_session.build_selected_volume_dataset()
-        if overlay_dataset is None:
-            self.pv_backend.clear_active_selection()
+        dataset = self.edit_session.build_selected_volume_dataset()
+        if dataset is None or dataset.GetNumberOfCells() == 0:
             self.pv_backend.clear_edit_selection_overlay()
             self.call_view_update()
             return
 
-        self.pv_backend.update_edit_selection_overlay(overlay_dataset)
+        self.pv_backend.update_edit_selection_overlay(dataset)
         self.call_view_update()
 
     def summarize_edit_event(self, event):

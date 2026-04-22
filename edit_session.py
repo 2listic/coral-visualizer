@@ -173,6 +173,43 @@ class EditSession:
         self.selected_cell_ids |= normalized
         return len(self.selected_cell_ids)
 
+    def subtract_selection(self, cell_ids, grow=False):
+        """Remove the provided cell IDs from the current selection."""
+        if not self.active or self.working_dataset is None:
+            return 0
+
+        normalized = {
+            int(cell_id)
+            for cell_id in (cell_ids or [])
+            if isinstance(cell_id, (int, float))
+            and 0 <= int(cell_id) < self.working_dataset.GetNumberOfCells()
+        }
+        if grow:
+            normalized = self._grow_volume_selection(normalized)
+        self.selected_cell_ids -= normalized
+        return len(self.selected_cell_ids)
+
+    def flip_selection(self, cell_ids, grow=False):
+        """Toggle the provided cell IDs against the current selection."""
+        if not self.active or self.working_dataset is None:
+            return 0
+
+        normalized = {
+            int(cell_id)
+            for cell_id in (cell_ids or [])
+            if isinstance(cell_id, (int, float))
+            and 0 <= int(cell_id) < self.working_dataset.GetNumberOfCells()
+        }
+        if grow:
+            normalized = self._grow_volume_selection(normalized)
+
+        for cell_id in normalized:
+            if cell_id in self.selected_cell_ids:
+                self.selected_cell_ids.discard(cell_id)
+            else:
+                self.selected_cell_ids.add(cell_id)
+        return len(self.selected_cell_ids)
+
     def apply_volume_field(self, field_name, expression, default_value):
         """Create or update a scalar cell-data field on selected volume cells."""
         if not self.active or self.working_dataset is None:

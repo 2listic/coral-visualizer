@@ -104,6 +104,14 @@ def initialize_state(
     state.edit_selection_status = ""
     state.edit_selection_status_type = "info"
     state.edit_selection_event = ""
+    state.edit_selection_mode = "replace"
+    state.edit_selection_mode_options = [
+        {"text": "Replace", "value": "replace"},
+        {"text": "Add", "value": "add"},
+        {"text": "Subtract", "value": "subtract"},
+        {"text": "Flip", "value": "flip"},
+    ]
+    state.edit_enable_picking = False
     state.edit_picking_modes = []
     state.edit_interactor_events = []
     state.edit_interactor_settings = [
@@ -111,6 +119,7 @@ def initialize_state(
         {"button": 2, "action": "Pan"},
         {"button": 3, "action": "Zoom", "scrollEnabled": True},
     ]
+    state.edit_view_style = "width: 100%; height: 100%; cursor: crosshair; outline: none;"
     state.pv_runtime_message = ""
     state.pv_runtime_type = "error"
     state.show_calculator_help = False

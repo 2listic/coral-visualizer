@@ -3,3 +3,4 @@ black
 ruff
 pre-commit
 pytest
+playwright

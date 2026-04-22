@@ -46,6 +46,7 @@ class FakeParaViewBackend:
         self.calls = []
         self.display = object()
         self.source = object()
+        self.view = SimpleNamespace(ViewSize=(400, 200))
 
     def render(self):
         self.calls.append("render")
@@ -164,12 +165,14 @@ def test_sync_edit_session_state_updates_modes_and_interactor_settings():
     assert state.edit_session_label == "Edited Source"
     assert state.edit_available_variables == ["A", "B"]
     assert state.selection_count == 3
-    assert state.edit_picking_modes == ["click", "mesh", "box"]
+    assert state.edit_enable_picking is True
+    assert state.edit_picking_modes == ["select"]
     assert state.edit_interactor_events == ["EndAnimation"]
-    assert state.edit_interactor_settings[0]["action"] == "Pan"
+    assert state.edit_interactor_settings[0]["action"] == "Select"
 
     state.pick_mode = False
     runtime.sync_edit_session_state()
+    assert state.edit_enable_picking is False
     assert state.edit_picking_modes == []
     assert state.edit_interactor_settings[0]["action"] == "Rotate"
 
@@ -186,6 +189,18 @@ def test_normalize_edit_selection_ids_and_event_summary_cover_payload_shapes():
         ("coords", 1, 2)
     ]
     assert runtime.normalize_edit_selection_ids({"x": 4, "y": 6}) == [("coords", 4, 6)]
+    assert runtime.normalize_edit_selection_ids(
+        {
+            "position": {"x": 100, "y": 50},
+            "size": {"width": 200, "height": 100},
+        }
+    ) == [("coords", 200, 100)]
+    assert runtime.normalize_edit_selection_ids(
+        {
+            "position": {"x": 100, "y": 50},
+            "scale": {"x": 0.5, "y": 2.0},
+        }
+    ) == [("coords", 50, 100)]
     assert runtime.normalize_edit_selection_ids([{"compositeID": 9}]) == [9]
 
     summary = runtime.summarize_edit_event({"mode": "click", "compositeID": 7, "x": 1, "y": 2})
@@ -211,9 +226,12 @@ def test_sync_edit_selection_overlay_covers_inactive_empty_and_present_selection
     assert backend.calls[:2] == ["clear_active_selection", "clear_edit_selection_overlay"]
 
     backend.calls.clear()
-    edit_session.overlay_dataset = {"cells": [1, 2]}
+    edit_session.overlay_dataset = SimpleNamespace(GetNumberOfCells=lambda: 2)
     runtime.sync_edit_selection_overlay()
-    assert backend.calls == [("update_edit_selection_overlay", {"cells": [1, 2]})]
+    assert backend.calls == [
+        "clear_active_selection",
+        ("update_edit_selection_overlay", edit_session.overlay_dataset),
+    ]
 
 
 def test_update_ui_state_applies_backend_metadata_and_editability_flags():

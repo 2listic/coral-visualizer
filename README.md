@@ -120,6 +120,18 @@ pytest          # run all smoke tests
 pytest -v       # verbose output
 ```
 
+The standard suite now includes a headless UI E2E test for ParaView edit-mode
+selection (`tests/test_e2e_edit_selection_playwright.py`). Install the browser
+once in your dev environment:
+
+```bash
+python -m playwright install chromium
+```
+
+Test meshes used by the suite live in `test_data/` (for example
+`test_data/hyper_cube-2ref.vtk`) so tests do not depend on the regular `data/`
+working directory.
+
 ## Inspecting VTU files
 
 `inspect_vtu.py` decodes and prints all cell types and data arrays from a `.vtu` file (binary/compressed and not human-readable).

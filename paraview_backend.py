@@ -412,39 +412,44 @@ class ParaViewBackend:
         if self.view is None:
             return
 
+        source = self.source
+
         if dataset is None or dataset.GetNumberOfCells() == 0:
             self.clear_edit_selection_overlay()
             self.render()
             return
 
-        if self._edit_selection_overlay is None:
-            overlay = self.simple.TrivialProducer(registrationName="__edit_selection__")
-            overlay.GetClientSideObject().SetOutput(dataset)
-            overlay.UpdatePipeline()
-            display = self.simple.Show(overlay, self.view)
-            self.simple.ColorBy(display, None)
-            display.SetRepresentationType("Surface With Edges")
-            display.DiffuseColor = [1.0, 0.92, 0.25]  # Bright Gold
-            display.AmbientColor = [1.0, 0.92, 0.25]
-            display.EdgeColor = [0.0, 0.0, 0.0]       # Black edges for contrast
-            display.Opacity = 1.0
-            if hasattr(display, "LineWidth"):
-                display.LineWidth = 4.0
-            if hasattr(display, "PointSize"):
-                display.PointSize = 10.0
-            
-            # Ensure it's always on top if possible (Polygon Offset)
-            if hasattr(display, "RelativeCoincidentTopologyPolygonOffsetParameters"):
-                display.RelativeCoincidentTopologyPolygonOffsetParameters = [-2.0, -2.0]
-            
-            self._edit_selection_overlay = overlay
-            self._edit_selection_display = display
-        else:
-            self._edit_selection_overlay.GetClientSideObject().SetOutput(dataset)
-            self._edit_selection_overlay.UpdatePipeline()
-            if self._edit_selection_display is not None:
-                self._edit_selection_display.Visibility = 1
-                self.simple.ColorBy(self._edit_selection_display, None)
+        # Recreate the transient overlay on each update to avoid stale proxy state.
+        self.clear_edit_selection_overlay()
+        overlay = self.simple.TrivialProducer(registrationName="__edit_selection__")
+        overlay.GetClientSideObject().SetOutput(dataset)
+        overlay.UpdatePipeline()
+        display = self.simple.Show(overlay, self.view)
+        self.simple.ColorBy(display, None)
+        display.SetRepresentationType("Surface With Edges")
+        display.DiffuseColor = [1.0, 0.92, 0.25]  # Bright Gold
+        display.AmbientColor = [1.0, 0.92, 0.25]
+        display.EdgeColor = [0.0, 0.0, 0.0]       # Black edges for contrast
+        display.Opacity = 1.0
+        if hasattr(display, "Pickable"):
+            display.Pickable = 0
+        pickable_property = display.GetProperty("Pickable")
+        if pickable_property is not None and hasattr(pickable_property, "SetData"):
+            pickable_property.SetData(0)
+        if hasattr(display, "LineWidth"):
+            display.LineWidth = 4.0
+        if hasattr(display, "PointSize"):
+            display.PointSize = 10.0
+
+        # Ensure it's always on top if possible (Polygon Offset)
+        if hasattr(display, "RelativeCoincidentTopologyPolygonOffsetParameters"):
+            display.RelativeCoincidentTopologyPolygonOffsetParameters = [-2.0, -2.0]
+
+        self._edit_selection_overlay = overlay
+        self._edit_selection_display = display
+
+        if source is not None:
+            self.simple.SetActiveSource(source)
 
         self.render()
 

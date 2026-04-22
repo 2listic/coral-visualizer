@@ -23,6 +23,49 @@ def register_paraview_controllers(
 ):
     """Register ParaView-only controller callbacks on the provided Trame controller."""
 
+    def _set_selection_mode(mode):
+        if mode not in {"replace", "add", "subtract", "flip"}:
+            mode = "replace"
+        state.edit_selection_mode = mode
+        state.edit_view_style = (
+            "width: 100%; height: 100%; cursor: crosshair; outline: none;"
+        )
+        return mode
+
+    def _apply_selection_ids(picked_ids, source_label):
+        selection_mode = _set_selection_mode(
+            getattr(state, "edit_selection_mode", "replace")
+        )
+
+        if selection_mode == "add":
+            count = edit_session.add_selection(
+                picked_ids, grow=bool(state.group_select)
+            )
+            action = "Added"
+        elif selection_mode == "subtract":
+            count = edit_session.subtract_selection(
+                picked_ids, grow=bool(state.group_select)
+            )
+            action = "Removed"
+        elif selection_mode == "flip":
+            count = edit_session.flip_selection(
+                picked_ids, grow=bool(state.group_select)
+            )
+            action = "Flipped"
+        else:
+            count = edit_session.replace_selection(
+                picked_ids, grow=bool(state.group_select)
+            )
+            action = "Selected"
+        sync_edit_session_state()
+        sync_paraview_edit_selection_overlay()
+        state.selection_count = count
+        state.edit_selection_status = (
+            f"{action} {len(picked_ids)} cell(s) with {source_label}. {count} selected total."
+        )
+        state.edit_selection_status_type = "success"
+        render_and_push()
+
     @ctrl.add("pv_update_property")
     def pv_update_property(scope, name, value):
         """Update a pending ParaView property edit in Trame state."""
@@ -169,6 +212,7 @@ def register_paraview_controllers(
             state.edit_selection_event = ""
             state.selection_count = 0
             state.inspector_tab = 3
+            _set_selection_mode("replace")
             sync_edit_session_state()
             sync_paraview_edit_selection_overlay()
             render_and_push()
@@ -203,6 +247,7 @@ def register_paraview_controllers(
         state.edit_selection_event = ""
         state.selection_count = 0
         state.inspector_tab = 0
+        _set_selection_mode("replace")
         call_view_set_remote_rendering(True)
         call_view_update(reset_camera=True)
         debug_view("pv_discard_edit_session.end", mode=state.mainViewMode)
@@ -280,43 +325,39 @@ def register_paraview_controllers(
             state.edit_apply_status = f"Edit apply failed: {exc}"
             state.edit_apply_status_type = "error"
 
-    @ctrl.add("pv_edit_click")
-    def pv_edit_click(event):
-        """Capture native local-view click selection events."""
+    @ctrl.add("pv_edit_click_selection")
+    def pv_edit_click_selection(event):
+        """Capture single-click picking events for edit-session selection."""
         if not is_paraview_backend() or not edit_session.active or not state.pick_mode:
             return
 
         state.edit_selection_event = summarize_edit_event(event)
-        payload = normalize_edit_selection_ids(event)
-        if not payload:
-            state.edit_selection_status = "No editable cell was resolved from the click event."
-            state.edit_selection_status_type = "warning"
+        normalized = normalize_edit_selection_ids(event)
+        picked_ids = []
+
+        coords = next(
+            (
+                (item[1], item[2])
+                for item in normalized
+                if isinstance(item, tuple)
+                and len(item) == 3
+                and item[0] == "coords"
+            ),
+            None,
+        )
+        if coords is not None:
+            picked_ids = pv_backend.pick_visible_cell_ids(coords[0], coords[1])
+        else:
+            picked_ids = [item for item in normalized if isinstance(item, int)]
+
+        if not picked_ids:
+            state.edit_selection_status = (
+                "Click selection did not resolve any editable cells."
+            )
+            state.edit_selection_status_type = "info"
             return
 
-        if isinstance(payload[0], tuple) and payload[0][0] == "coords":
-            _, x, y = payload[0]
-            picked_ids = pv_backend.pick_visible_cell_ids(x, y)
-            if not picked_ids:
-                state.edit_selection_status = (
-                    f"No cell found at coordinates ({int(x)}, {int(y)})."
-                )
-                state.edit_selection_status_type = "info"
-                return
-            cell_id = picked_ids[0]
-        else:
-            cell_id = payload[0]
-
-        count = edit_session.toggle_cell_selection(int(cell_id), grow=bool(state.group_select))
-        sync_edit_session_state()
-        sync_paraview_edit_selection_overlay()
-        state.selection_count = count
-        state.edit_selection_status = (
-            f"Selected {count} cell(s) in Volume mode."
-            if count
-            else "Selection cleared."
-        )
-        state.edit_selection_status_type = "success" if count else "info"
-        render_and_push()
+        _apply_selection_ids(picked_ids, "click selection")
 
     @ctrl.add("pv_edit_box_selection")
     def pv_edit_box_selection(event):
@@ -344,15 +385,7 @@ def register_paraview_controllers(
             state.edit_selection_status_type = "info"
             return
 
-        count = edit_session.replace_selection(
-            picked_ids, grow=bool(state.group_select)
-        )
-        sync_edit_session_state()
-        sync_paraview_edit_selection_overlay()
-        state.selection_count = count
-        state.edit_selection_status = f"Box selection resolved {count} cell(s)."
-        state.edit_selection_status_type = "success"
-        render_and_push()
+        _apply_selection_ids(picked_ids, "box selection")
 
     @ctrl.add("pv_clear_edit_preview")
     def pv_clear_edit_preview():

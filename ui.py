@@ -19,15 +19,15 @@ def _build_view_widget(backend, render_target, ctrl=None):
             still_ratio=("still_ratio",),
             interactive_quality=("interactive_quality",),
             still_quality=("still_quality",),
-            enable_picking=("edit_session_active && pick_mode",),
+            enable_picking=("edit_enable_picking",),
             box_selection=("edit_session_active && pick_mode",),
             picking_modes=("edit_picking_modes",),
             interactor_events=("edit_interactor_events",),
             interactor_settings=("edit_interactor_settings",),
-            click=(ctrl.pv_edit_click, "[$event]"),
+            click=(ctrl.pv_edit_click_selection, "[$event]"),
             box_selection_change=(ctrl.pv_edit_box_selection, "[$event]"),
             on_ready=ctrl.view_update,
-            style="width: 100%; height: 100%;",
+            style=("edit_view_style", "width: 100%; height: 100%; cursor: crosshair; outline: none;"),
         )
 
     from trame.widgets import vtk
@@ -812,6 +812,17 @@ def _build_paraview_inspector_panel(ctrl):
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
                                 vuetify.VSelect(
+                                    v_model=("edit_selection_mode",),
+                                    items=("edit_selection_mode_options",),
+                                    label="Selection mode",
+                                    dense=True,
+                                    outlined=True,
+                                    hide_details=True,
+                                    disabled=("!pick_mode",),
+                                )
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VSelect(
                                     v_model=("selection_behavior",),
                                     items=("selection_behavior_options",),
                                     label="Selection behavior",
@@ -843,7 +854,7 @@ def _build_paraview_inspector_panel(ctrl):
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
                                 vuetify.VListItemTitle("{{ selection_count }} selected")
-                                vuetify.VListItemSubtitle("Current edit-session cell selection")
+                                vuetify.VListItemSubtitle("{{ edit_selection_mode }} mode")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
                                 with vuetify.VRow(dense=True):
@@ -1301,7 +1312,6 @@ def build_ui(server, render_target, backend):
             ):
                 _build_alerts()
                 _build_remote_browser_dialog(ctrl)
-
                 if backend == "paraview":
                     _build_paraview_pipeline_panel(ctrl)
                     _build_paraview_inspector_panel(ctrl)
