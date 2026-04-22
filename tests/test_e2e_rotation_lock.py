@@ -47,6 +47,7 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(show_browser):
             "app.py",
             "--backend",
             "paraview",
+            "--no-browser",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
