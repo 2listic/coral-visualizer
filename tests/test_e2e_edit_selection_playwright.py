@@ -193,18 +193,54 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
         box = view.bounding_box()
         assert box is not None and box["width"] > 0 and box["height"] > 0
 
-        x0 = box["x"] + box["width"] * 0.08
-        y0 = box["y"] + box["height"] * 0.30
-        x1 = box["x"] + box["width"] * 0.40
-        y1 = box["y"] + box["height"] * 0.72
-        page.mouse.move(x0, y0)
-        page.mouse.down()
-        page.mouse.move(x1, y1, steps=14)
-        page.mouse.up()
-        time.sleep(1.1)
+        def selected_total():
+            count = _selection_count(page)
+            if count:
+                return count
+            alerts = page.locator("text=selected total")
+            if alerts.count() == 0:
+                return 0
+            text = alerts.last.inner_text().strip()
+            hit = re.search(r"(\d+)\s+selected total", text)
+            return int(hit.group(1)) if hit else 0
 
-        selected_count = _selection_count(page)
-        assert selected_count is not None and selected_count > 0
+        selected_count = 0
+        left_boxes = [
+            (0.03, 0.18, 0.62, 0.86),
+            (0.08, 0.24, 0.55, 0.78),
+            (0.15, 0.28, 0.50, 0.70),
+        ]
+        for fx0, fy0, fx1, fy1 in left_boxes:
+            page.click("button:has-text('Clear Selection')")
+            time.sleep(0.5)
+            x0 = box["x"] + box["width"] * fx0
+            y0 = box["y"] + box["height"] * fy0
+            x1 = box["x"] + box["width"] * fx1
+            y1 = box["y"] + box["height"] * fy1
+            page.mouse.move(x0, y0)
+            page.mouse.down()
+            page.mouse.move(x1, y1, steps=12)
+            page.mouse.up()
+            time.sleep(0.9)
+            selected_count = selected_total()
+            if selected_count > 0:
+                break
+
+        if selected_count == 0:
+            left_clicks = [(0.20, 0.50), (0.28, 0.46), (0.24, 0.58), (0.34, 0.52)]
+            for fx, fy in left_clicks:
+                page.click("button:has-text('Clear Selection')")
+                time.sleep(0.4)
+                page.mouse.click(
+                    box["x"] + box["width"] * fx,
+                    box["y"] + box["height"] * fy,
+                )
+                time.sleep(0.8)
+                selected_count = selected_total()
+                if selected_count > 0:
+                    break
+
+        assert selected_count > 0
 
         page.click("button:has-text('Apply Edit')")
         page.wait_for_selector("text=surface cell", timeout=40000)

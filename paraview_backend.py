@@ -457,7 +457,26 @@ class ParaViewBackend:
         overlay.GetClientSideObject().SetOutput(dataset)
         overlay.UpdatePipeline()
         display = self.simple.Show(overlay, self.view)
-        self.simple.ColorBy(display, None)
+        try:
+            self.simple.ColorBy(display, None)
+        except Exception:
+            # Some ParaView builds reject "NONE" association on transient producers.
+            # Fall back to explicit scalar-coloring disable without interrupting edit mode.
+            if hasattr(display, "ColorArrayName"):
+                try:
+                    display.ColorArrayName = [None, ""]
+                except Exception:
+                    pass
+            if hasattr(display, "LookupTable"):
+                try:
+                    display.LookupTable = None
+                except Exception:
+                    pass
+            if hasattr(display, "SetScalarBarVisibility"):
+                try:
+                    display.SetScalarBarVisibility(self.view, False)
+                except Exception:
+                    pass
         display.SetRepresentationType("Surface With Edges")
         display.DiffuseColor = [1.0, 0.92, 0.25]  # Bright Gold
         display.AmbientColor = [1.0, 0.92, 0.25]

@@ -453,3 +453,26 @@ def test_update_edit_selection_overlay_makes_overlay_non_pickable_and_restores_a
     assert overlay_display.Pickable == 0
     assert overlay_display.GetProperty("Pickable").GetData() == 0
     assert backend.simple.active_source is source
+
+
+def test_update_edit_selection_overlay_tolerates_colorby_none_failures():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    display = FakeDisplay()
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    overlay_display = FakeDisplay()
+    overlay = FakeOverlayProducer()
+
+    backend.simple.TrivialProducer = lambda registrationName=None: overlay
+    backend.simple.Show = lambda producer, view: overlay_display
+    backend.simple.ColorBy = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        RuntimeError("invalid association string 'NONE'")
+    )
+
+    backend.update_edit_selection_overlay(FakeOverlayDataset(2))
+
+    assert backend._edit_selection_overlay is overlay
+    assert backend._edit_selection_display is overlay_display
+    assert backend.simple.active_source is source

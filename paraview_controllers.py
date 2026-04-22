@@ -22,9 +22,20 @@ def register_paraview_controllers(
     normalize_edit_selection_ids,
 ):
     """Register ParaView-only controller callbacks on the provided Trame controller."""
-    def _apply_edit_field(*, overwrite):
-        mode = (state.edit_geometry_mode or "volume").strip().lower()
+    def _sync_edit_mode_from_state():
+        mode = (
+            getattr(state, "edit_geometry_mode", None)
+            or getattr(edit_session, "geometry_mode", None)
+            or "volume"
+        )
+        mode = mode.strip().lower()
+        if mode not in {"volume", "surface", "edge", "point"}:
+            mode = "volume"
         edit_session.geometry_mode = mode
+        return mode
+
+    def _apply_edit_field(*, overwrite):
+        mode = _sync_edit_mode_from_state()
         edit_session.field_name = (state.edit_field_name or "").strip()
         edit_session.expression = (state.edit_expression or "").strip()
         edit_session.default_value = (state.edit_default_value or "0").strip()
@@ -90,6 +101,7 @@ def register_paraview_controllers(
         return mode
 
     def _apply_selection_ids(picked_ids, source_label):
+        _sync_edit_mode_from_state()
         selection_mode = _set_selection_mode(
             getattr(state, "edit_selection_mode", "replace")
         )
@@ -444,6 +456,7 @@ def register_paraview_controllers(
         if not is_paraview_backend():
             return
 
+        _sync_edit_mode_from_state()
         edit_session.clear_selection()
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
@@ -458,6 +471,7 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not edit_session.active:
             return
 
+        _sync_edit_mode_from_state()
         count = edit_session.select_all_cells()
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()

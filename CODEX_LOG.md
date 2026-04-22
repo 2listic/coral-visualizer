@@ -175,6 +175,14 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - New test enters edit mode, switches to `Surface`, selects the left boundary side, applies,
     sets field `BoundaryID` and value `1`, then saves output.
   - Test file: `tests/test_e2e_edit_selection_playwright.py`.
+- Fixed Surface-mode stability and overlay compatibility issues discovered during live runs.
+  - `edit_geometry_mode` now stays aligned with `edit_session.geometry_mode` during selection callbacks,
+    preventing silent fallback back to `Volume`.
+  - Added controller regression coverage to ensure Surface mode remains active after selection sync.
+  - Fixed ParaView overlay rendering crash in some builds where `ColorBy(display, None)` raised
+    `invalid association string 'NONE'` for transient producers.
+  - Added a backend regression test that simulates the `ColorBy(None)` failure and verifies
+    overlay update continues without aborting edit mode.
 
 ## Current Behavior
 

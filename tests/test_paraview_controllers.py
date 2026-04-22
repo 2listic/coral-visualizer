@@ -413,6 +413,60 @@ def test_pv_apply_edit_field_surface_mode_materializes_selection():
     assert "Added 2 missing surface cell(s)" in state.edit_apply_status
 
 
+def test_surface_mode_selection_keeps_surface_mode_after_sync():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        pick_mode=True,
+        group_select=False,
+        selection_count=0,
+        edit_selection_event="",
+        edit_selection_status="",
+        edit_selection_status_type="info",
+        selection_behavior="touch",
+        edit_selection_mode="replace",
+        edit_geometry_mode="surface",
+        edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
+    )
+    edit_session = SimpleNamespace(active=True, geometry_mode="volume")
+    edit_session.replace_selection = lambda ids, grow=False: 2
+    edit_session.add_selection = lambda ids, grow=False: 2
+    edit_session.subtract_selection = lambda ids, grow=False: 0
+    edit_session.flip_selection = lambda ids, grow=False: 2
+
+    def sync_from_session():
+        state.edit_geometry_mode = edit_session.geometry_mode
+        calls.append("sync")
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(
+            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12]
+        ),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=sync_from_session,
+        sync_paraview_edit_selection_overlay=lambda: calls.append("overlay"),
+        summarize_edit_event=lambda event: "summary",
+        normalize_edit_selection_ids=lambda event: [],
+    )
+
+    ctrl.handlers["pv_edit_box_selection"]({"selection": [1, 2, 3, 4]})
+
+    assert edit_session.geometry_mode == "surface"
+    assert state.edit_geometry_mode == "surface"
+    assert calls == ["sync", "overlay", "render"]
+
+
 def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
     ctrl = FakeCtrl()
     calls = []
