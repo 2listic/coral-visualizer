@@ -86,3 +86,14 @@ def register_state_handlers(
             pv_backend.set_interactor_rotation(not pick_mode)
 
         sync_edit_session_state()
+
+    @state.change("edit_mode")
+    def on_edit_mode_change(edit_mode, **kwargs):
+        """Ensure rotation is restored when exiting edit mode."""
+        if not is_paraview_backend() or edit_mode:
+            return
+
+        if pv_backend is not None:
+            pv_backend.set_interactor_rotation(True)
+
+        sync_edit_session_state()

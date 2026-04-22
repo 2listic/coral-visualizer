@@ -42,7 +42,7 @@ def _selection_count(page):
     matches = []
     for i in range(loc.count()):
         text = loc.nth(i).inner_text().strip()
-        hit = re.search(r"(\\d+)\\s+selected", text)
+        hit = re.search(r"(\d+)\s+.*selected", text)
         if hit:
             matches.append(int(hit.group(1)))
     return matches[0] if matches else None

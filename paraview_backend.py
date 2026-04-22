@@ -390,22 +390,54 @@ class ParaViewBackend:
             pass
 
     def set_interactor_rotation(self, enabled):
-        """Enable or disable left-button rotation on the ParaView server-side view."""
+        """Enable or disable grid manipulation on the ParaView server-side view."""
         if self.view is None:
             return
 
-        # Default ParaView interactions: Left=Rotate, Middle=Pan, Right=Zoom, ...
-        # Interactions is a list of strings.
-        try:
-            current = list(self.view.Interactions)
-            if enabled:
-                current[0] = "Rotate"
-            else:
-                # Set to "Pan" or something that doesn't conflict with selection
-                current[0] = "Pan"
-            self.view.Interactions = current
-        except Exception:
-            pass
+        # Attempt to use modern ParaView 'Interactions' property if available
+        if hasattr(self.view, "Interactions"):
+            try:
+                current = list(self.view.Interactions)
+                if enabled:
+                    current[0] = "Rotate"
+                    current[1] = "Pan"
+                    current[2] = "Zoom"
+                else:
+                    # Disable common interactions
+                    current[0] = "None"
+                    current[1] = "None"
+                    current[2] = "None"
+                self.view.Interactions = current
+                return
+            except Exception:
+                pass
+
+        # Fallback for ParaView versions that use Camera3DManipulators / Camera2DManipulators
+        if hasattr(self.view, "Camera3DManipulators"):
+            try:
+                m3d = list(self.view.Camera3DManipulators)
+                if enabled:
+                    # Restore standard defaults if they appear disabled
+                    if m3d[0] == "None": m3d[0] = "Rotate"
+                    if m3d[1] == "None": m3d[1] = "Pan"
+                    if m3d[2] == "None": m3d[2] = "Zoom"
+                else:
+                    # Disable everything to prevent accidental rotation/pan during picking
+                    m3d = ["None"] * 9
+                self.view.Camera3DManipulators = m3d
+            except Exception:
+                pass
+
+        if hasattr(self.view, "Camera2DManipulators"):
+            try:
+                m2d = list(self.view.Camera2DManipulators)
+                if enabled:
+                    if m2d[0] == "None": m2d[0] = "Pan"
+                else:
+                    m2d = ["None"] * 9
+                self.view.Camera2DManipulators = m2d
+            except Exception:
+                pass
 
     def update_edit_selection_overlay(self, dataset):
         """Show the selected edit-session cells as a transient ParaView overlay."""

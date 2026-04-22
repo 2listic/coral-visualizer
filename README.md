@@ -49,7 +49,7 @@ You can override the defaults if needed:
 ENV_NAME=my-pv-env PYTHON_VERSION=3.10 ./tools/setup_pv_env.sh
 ```
 
-Mesh editing still only works on the VTK backend.
+Mesh editing is supported on both VTK and ParaView backends.
 
 ## Usage with Docker
 

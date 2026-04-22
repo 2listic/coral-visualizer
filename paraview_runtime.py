@@ -81,11 +81,8 @@ class ParaViewRuntime:
         )
         self.state.edit_interactor_events = ["EndAnimation"]
         if self.edit_session.active and self.state.pick_mode:
-            self.state.edit_interactor_settings = [
-                {"button": 1, "action": "Select"},
-                {"button": 2, "action": "Pan"},
-                {"button": 3, "action": "Zoom", "scrollEnabled": True},
-            ]
+            # Disable all grid manipulation when picking is active as requested by user.
+            self.state.edit_interactor_settings = []
             return
 
         self.state.edit_interactor_settings = [

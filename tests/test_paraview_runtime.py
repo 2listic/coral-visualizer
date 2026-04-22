@@ -168,7 +168,8 @@ def test_sync_edit_session_state_updates_modes_and_interactor_settings():
     assert state.edit_enable_picking is True
     assert state.edit_picking_modes == ["select"]
     assert state.edit_interactor_events == ["EndAnimation"]
-    assert state.edit_interactor_settings[0]["action"] == "Select"
+    # We now disable all interactor settings when picking is active to prevent rotation
+    assert state.edit_interactor_settings == []
 
     state.pick_mode = False
     runtime.sync_edit_session_state()

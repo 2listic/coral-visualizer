@@ -27,6 +27,7 @@ def _build_view_widget(backend, render_target, ctrl=None):
             click=(ctrl.pv_edit_click_selection, "[$event]"),
             box_selection_change=(ctrl.pv_edit_box_selection, "[$event]"),
             on_ready=ctrl.view_update,
+            classes="coral-main-viewport",
             style=("edit_view_style", "width: 100%; height: 100%; cursor: crosshair; outline: none;"),
         )
 

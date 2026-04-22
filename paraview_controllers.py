@@ -236,6 +236,7 @@ def register_paraview_controllers(
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         if is_paraview_backend() and pv_backend is not None:
+            pv_backend.set_interactor_rotation(True)
             state.save_filename = pv_backend.default_output_filename()
             state.save_target_label = (
                 f"Active pipeline result: {state.active_source_label}"
