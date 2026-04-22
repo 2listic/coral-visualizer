@@ -28,15 +28,9 @@ def _wait_for_http_ready(url, timeout_s=45):
             time.sleep(0.25)
     raise RuntimeError(f"Timed out waiting for server at {url}")
 
-def test_paraview_non_edit_mode_rotates_on_drag(show_browser):
+def test_paraview_non_edit_mode_rotates_on_drag(shared_browser):
     if not is_paraview_available():
         pytest.skip("ParaView backend is not available in this environment")
-
-    playwright = pytest.importorskip(
-        "playwright.sync_api",
-        reason="playwright is required for headless UI E2E tests",
-    )
-    sync_playwright = playwright.sync_playwright
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"
@@ -65,37 +59,33 @@ def test_paraview_non_edit_mode_rotates_on_drag(show_browser):
 
     try:
         _wait_for_http_ready(url)
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=not show_browser)
-            context = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = context.pages[0] if context.pages else context.new_page()
-            page.set_viewport_size({"width": 1200, "height": 800})
-            page.goto(url, wait_until="domcontentloaded")
-            
-            page.wait_for_selector(".coral-main-viewport", timeout=40000)
-            viewport = page.locator(".coral-main-viewport")
-            screenshot_initial = viewport.screenshot()
-            
-            box = viewport.bounding_box()
-            x0 = box["x"] + box["width"] * 0.3
-            y0 = box["y"] + box["height"] * 0.3
-            x1 = box["x"] + box["width"] * 0.7
-            y1 = box["y"] + box["height"] * 0.7
-            
-            # Drag to rotate
-            page.mouse.move(x0, y0)
-            page.mouse.down()
-            page.mouse.move(x1, y1, steps=20)
-            page.mouse.up()
-            
-            time.sleep(1.5) # Wait for rotation render
-            
-            screenshot_after_rotate_drag = viewport.screenshot()
-            
-            assert screenshot_initial != screenshot_after_rotate_drag, "Screenshots are identical! The view did NOT rotate during drag in non-edit mode."
+        context = shared_browser.new_context(viewport={"width": 1200, "height": 800})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        
+        page.wait_for_selector(".coral-main-viewport", timeout=40000)
+        viewport = page.locator(".coral-main-viewport")
+        screenshot_initial = viewport.screenshot()
+        
+        box = viewport.bounding_box()
+        x0 = box["x"] + box["width"] * 0.3
+        y0 = box["y"] + box["height"] * 0.3
+        x1 = box["x"] + box["width"] * 0.7
+        y1 = box["y"] + box["height"] * 0.7
+        
+        # Drag to rotate
+        page.mouse.move(x0, y0)
+        page.mouse.down()
+        page.mouse.move(x1, y1, steps=20)
+        page.mouse.up()
+        
+        time.sleep(1.5) # Wait for rotation render
+        
+        screenshot_after_rotate_drag = viewport.screenshot()
+        
+        assert screenshot_initial != screenshot_after_rotate_drag, "Screenshots are identical! The view did NOT rotate during drag in non-edit mode."
 
-            if not show_browser:
-                browser.close()
+        context.close()
     finally:
         if proc.poll() is None:
             proc.terminate()

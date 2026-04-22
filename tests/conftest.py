@@ -12,9 +12,15 @@ def pytest_addoption(parser):
         help="Run E2E tests with visible browser (disables headless mode)",
     )
 
-@pytest.fixture
-def show_browser(request):
-    return request.config.getoption("--show-browser")
+@pytest.fixture(scope="session")
+def shared_browser(request):
+    show_browser = request.config.getoption("--show-browser")
+    from playwright.sync_api import sync_playwright
+    playwright = sync_playwright().start()
+    browser = playwright.chromium.launch(headless=not show_browser)
+    yield browser
+    browser.close()
+    playwright.stop()
 
 @pytest.fixture
 def tmp_renderer():
