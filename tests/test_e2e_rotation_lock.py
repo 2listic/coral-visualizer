@@ -9,7 +9,8 @@ from paraview_backend import is_paraview_available
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = ROOT_DIR / "test_data"
-TEST_GRID = TEST_DATA_DIR / "hyper_cube-2ref.vtk"
+TEST_GRID = TEST_DATA_DIR / "square.vtk"
+
 
 def _free_tcp_port():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -17,6 +18,7 @@ def _free_tcp_port():
     _, port = sock.getsockname()
     sock.close()
     return port
+
 
 def _wait_for_http_ready(url, timeout_s=45):
     deadline = time.time() + timeout_s
@@ -28,6 +30,7 @@ def _wait_for_http_ready(url, timeout_s=45):
             time.sleep(0.25)
     raise RuntimeError(f"Timed out waiting for server at {url}")
 
+
 def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
     if not is_paraview_available():
         pytest.skip("ParaView backend is not available in this environment")
@@ -37,7 +40,7 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
     proc = subprocess.Popen(
         [
             sys.executable,
-            "-u", # Unbuffered output
+            "-u",  # Unbuffered output
             "app.py",
             "--backend",
             "paraview",
@@ -59,13 +62,15 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1200, "height": 800})
+        context = shared_browser.new_context(
+            viewport={"width": 1200, "height": 800})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        
+
         # Wait for app to be ready
-        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
-        
+        page.wait_for_selector(
+            "button:has-text('Enter Edit Mode')", timeout=40000)
+
         # Enter Edit Mode (defaults to Pick mode)
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
@@ -73,7 +78,7 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
         # Clear any initial selection to have a clean state
         page.click("button:has-text('Clear Selection')")
         time.sleep(1.0)
-        
+
         # Click in a safe place to remove hover state from buttons
         page.mouse.click(10, 10)
         time.sleep(0.5)
@@ -81,7 +86,7 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
         # Take a screenshot BEFORE any drag (only of the viewport)
         viewport = page.locator(".coral-main-viewport")
         screenshot_initial = viewport.screenshot()
-        
+
         # --- PHASE 1: DRAG IN PICK MODE ---
         # Perform a drag that WOULD rotate if not locked
         box = viewport.bounding_box()
@@ -89,24 +94,24 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
         y0 = box["y"] + box["height"] * 0.3
         x1 = box["x"] + box["width"] * 0.7
         y1 = box["y"] + box["height"] * 0.7
-        
+
         page.mouse.move(x0, y0)
         page.mouse.down()
         page.mouse.move(x1, y1, steps=20)
         page.mouse.up()
-        
-        time.sleep(1.0) # Wait for any potential (but unwanted) rotation
-        
+
+        time.sleep(1.0)  # Wait for any potential (but unwanted) rotation
+
         # Clear selection AGAIN to remove highlight from the drag we just did
         page.click("button:has-text('Clear Selection')")
         time.sleep(1.0)
-        
+
         # Click in a safe place to remove hover state from buttons
         page.mouse.click(10, 10)
         time.sleep(0.5)
-        
+
         screenshot_after_pick_drag = viewport.screenshot()
-        
+
         # PHASE 1 ASSERT: Should NOT have rotated.
         assert screenshot_initial == screenshot_after_pick_drag, "Screenshots differ! The view likely rotated or changed during drag in PICK mode."
 
@@ -114,19 +119,19 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
         # Switch to Rotate mode
         page.click("button:has-text('Rotate')")
         time.sleep(1.0)
-        
-        page.mouse.click(10, 10) # Remove hover
+
+        page.mouse.click(10, 10)  # Remove hover
         time.sleep(0.5)
-        
+
         page.mouse.move(x0, y0)
         page.mouse.down()
         page.mouse.move(x1, y1, steps=20)
         page.mouse.up()
-        
-        time.sleep(1.5) # Wait for rotation to render
-        
+
+        time.sleep(1.5)  # Wait for rotation to render
+
         screenshot_after_rotate_drag = viewport.screenshot()
-        
+
         # PHASE 2 ASSERT: SHOULD have rotated.
         assert screenshot_after_pick_drag != screenshot_after_rotate_drag, "Screenshots are identical! The view did NOT rotate during drag in ROTATE mode."
 

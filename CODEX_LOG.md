@@ -214,6 +214,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Added a native ParaView/VTK fast path for surface-key box picking using `ExtractSurface` + `SelectSurfaceCells`.
   - Native path maps selected surface cells back to original point-id face keys and falls back to the previous geometric method
     only when native metadata is unavailable.
+- Fixed ParaView save behavior for legacy `.vtk` output.
+  - Active pipeline saves with `.vtk` now use `vtkDataSetWriter` on fetched VTK datasets instead of generic `SaveData`,
+    avoiding XML/extension mismatches that produced unreadable `.vtk` files.
+  - Added regression tests for legacy-writer path and fallback behavior.
 - Fixed surface-field application so the edited field is always visible in Surface mode.
   - Added `EditSession.apply_surface_field(...)` and shared scalar-field assignment logic.
   - Surface apply now materializes selected codim-1 entities, writes the expression only on selected

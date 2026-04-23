@@ -134,7 +134,7 @@ pytest tests/ --show-browser
 ```
 
 Test meshes used by the suite live in `test_data/` (for example
-`test_data/hyper_cube-2ref.vtk`) so tests do not depend on the regular `data/`
+`test_data/square.vtk`) so tests do not depend on the regular `data/`
 working directory.
 
 ## Inspecting VTU files

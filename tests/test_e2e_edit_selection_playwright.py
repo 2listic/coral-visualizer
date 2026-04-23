@@ -13,7 +13,7 @@ from paraview_backend import is_paraview_available
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = ROOT_DIR / "test_data"
-TEST_GRID = TEST_DATA_DIR / "hyper_cube-2ref.vtk"
+TEST_GRID = TEST_DATA_DIR / "square.vtk"
 
 
 def _free_tcp_port():
@@ -78,10 +78,12 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(
+            viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector(
+            "button:has-text('Enter Edit Mode')", timeout=40000)
 
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
@@ -166,16 +168,19 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(
+            viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector(
+            "button:has-text('Enter Edit Mode')", timeout=40000)
 
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
         time.sleep(1.0)
 
-        geometry_mode = page.locator("div.v-input:has(label:has-text('Geometry mode'))").first
+        geometry_mode = page.locator(
+            "div.v-input:has(label:has-text('Geometry mode'))").first
         geometry_mode.click()
         page.click("div.v-list-item__title:has-text('Surface')")
         time.sleep(0.4)
@@ -227,7 +232,8 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
                 break
 
         if selected_count == 0:
-            left_clicks = [(0.20, 0.50), (0.28, 0.46), (0.24, 0.58), (0.34, 0.52)]
+            left_clicks = [(0.20, 0.50), (0.28, 0.46),
+                           (0.24, 0.58), (0.34, 0.52)]
             for fx, fy in left_clicks:
                 page.click("button:has-text('Clear Selection')")
                 time.sleep(0.4)
@@ -249,7 +255,8 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
             output_name,
         )
         page.click("button:has-text('Save Edit Result')")
-        page.wait_for_selector(f"text=Saved edited dataset to {output_name}", timeout=40000)
+        page.wait_for_selector(
+            f"text=Saved edited dataset to {output_name}", timeout=40000)
 
         assert output_path.exists()
         assert output_path.stat().st_size > 0
@@ -295,10 +302,12 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(
+            viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector(
+            "button:has-text('Enter Edit Mode')", timeout=40000)
 
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
@@ -306,7 +315,8 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
         page.click("button:has-text('Pick')")
         time.sleep(0.2)
 
-        geometry_mode = page.locator("div.v-input:has(label:has-text('Geometry mode'))").first
+        geometry_mode = page.locator(
+            "div.v-input:has(label:has-text('Geometry mode'))").first
         geometry_mode.click()
         page.click("div.v-list-item__title:has-text('Surface')")
         time.sleep(0.4)
@@ -340,7 +350,8 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             page.mouse.click(x, y)
             time.sleep(0.9)
             count = _selection_count(page)
-            attempts.append({"kind": "click", "label": label, "fx": fx, "fy": fy, "count": count})
+            attempts.append({"kind": "click", "label": label,
+                            "fx": fx, "fy": fy, "count": count})
             return count or 0
 
         def _try_box(fx0, fy0, fx1, fy1, label):

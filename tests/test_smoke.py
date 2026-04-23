@@ -5,7 +5,7 @@ from mesh_edit import BoundaryEditState, setup_edit_state
 from paraview_backend import ParaViewBackend, is_paraview_available
 from vtk_pipeline import apply_coloring, build_visualization
 
-SIMPLE_VTK = str(DATA_DIR / "hyper_cube-2ref.vtk")
+SIMPLE_VTK = str(DATA_DIR / "square.vtk")
 
 
 def test_imports():

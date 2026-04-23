@@ -234,6 +234,38 @@ class FakeRenderer:
         return self.z_value
 
 
+class FakeSimpleCell:
+    def __init__(self, point_ids):
+        self._point_ids = list(point_ids)
+
+    def GetNumberOfPoints(self):
+        return len(self._point_ids)
+
+    def GetPointId(self, idx):
+        return self._point_ids[idx]
+
+
+class FakeSurfaceDataset:
+    def __init__(self, points, cells):
+        self._points = list(points)
+        self._cells = [FakeSimpleCell(cell) for cell in cells]
+
+    def GetNumberOfPoints(self):
+        return len(self._points)
+
+    def GetNumberOfCells(self):
+        return len(self._cells)
+
+    def GetCell(self, cell_id):
+        return self._cells[cell_id]
+
+    def GetPoint(self, point_id):
+        return self._points[point_id]
+
+    def GetPointData(self):
+        return SimpleNamespace(GetArray=lambda name: None)
+
+
 def make_backend():
     backend = ParaViewBackend.__new__(ParaViewBackend)
     renderer = FakeRenderer()
@@ -361,6 +393,67 @@ def test_apply_representation_and_apply_property_changes_render():
     assert source.updated == 1
     assert ("apply", source, [{"name": "A"}]) in backend.property_inspector.calls
     assert ("apply", display, [{"name": "B"}]) in backend.property_inspector.calls
+
+
+def test_save_active_data_uses_legacy_writer_for_vtk(tmp_path, monkeypatch):
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    class FakeVtkDataSet:
+        pass
+
+    monkeypatch.setattr(backend_module, "vtkDataSet", FakeVtkDataSet)
+
+    writes = []
+
+    class FakeWriter:
+        def SetFileName(self, name):
+            writes.append(("file", name))
+
+        def SetInputData(self, dataset):
+            writes.append(("data", dataset))
+
+        def Write(self):
+            writes.append(("write",))
+            return 1
+
+    monkeypatch.setattr(backend_module, "vtkDataSetWriter", lambda: FakeWriter())
+
+    dataset = FakeVtkDataSet()
+    backend.servermanager.Fetch = lambda _source: dataset
+    backend.simple.SaveData = lambda path, proxy=None: writes.append(("savedata", path, proxy))
+
+    output = tmp_path / "saved.vtk"
+    backend.save_active_data(str(output))
+
+    assert ("savedata", str(output), source) not in writes
+    assert ("file", str(output)) in writes
+    assert ("data", dataset) in writes
+    assert ("write",) in writes
+
+
+def test_save_active_data_falls_back_to_savedata_for_non_dataset_vtk(tmp_path, monkeypatch):
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    class FakeVtkDataSet:
+        pass
+
+    monkeypatch.setattr(backend_module, "vtkDataSet", FakeVtkDataSet)
+    backend.servermanager.Fetch = lambda _source: object()
+    calls = []
+    backend.simple.SaveData = lambda path, proxy=None: calls.append((path, proxy))
+
+    output = tmp_path / "saved.vtk"
+    backend.save_active_data(str(output))
+
+    assert calls == [(str(output), source)]
 
 
 def test_reset_view_updates_camera_from_bounds():
@@ -584,3 +677,21 @@ def test_pick_surface_keys_in_rect_skips_occluded_boundary_elements():
     picked = backend._pick_surface_keys_in_rect([0, 0, 30, 30], behavior="touch")
 
     assert picked == [(1, 2, 3)]
+
+
+def test_surface_keys_from_selected_dataset_falls_back_to_coordinate_mapping():
+    # selected surface polydata points are reindexed but coordinates match source dataset
+    selected = FakeSurfaceDataset(
+        points=[(1.0, 0.0, 0.0), (2.0, 0.0, 0.0), (3.0, 0.0, 0.0)],
+        cells=[(0, 1, 2)],
+    )
+    source = FakeSurfaceDataset(
+        points=[(0.0, 0.0, 0.0), (3.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)],
+        cells=[],
+    )
+
+    keys = ParaViewBackend._surface_keys_from_selected_dataset(
+        selected, source_dataset=source
+    )
+
+    assert keys == [(1, 2, 3)]

@@ -10,6 +10,8 @@ from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
 from edit_session import EditSession
 from paraview_filter_catalog import ParaViewFilterCatalog, SUPPORTED_FILTERS
 from paraview_property_inspector import ParaViewPropertyInspector
+from vtkmodules.vtkCommonDataModel import vtkDataSet
+from vtkmodules.vtkIOLegacy import vtkDataSetWriter
 
 
 def is_paraview_available():
@@ -178,7 +180,22 @@ class ParaViewBackend:
         if source is None:
             raise RuntimeError("No active pipeline item to save")
         source.UpdatePipeline()
-        self.simple.SaveData(output_path, proxy=source)
+        suffix = os.path.splitext(str(output_path))[1].lower()
+        if suffix == ".vtk":
+            dataset = self.servermanager.Fetch(source)
+            if isinstance(dataset, vtkDataSet):
+                writer = vtkDataSetWriter()
+                writer.SetFileName(str(output_path))
+                writer.SetInputData(dataset)
+                if writer.Write() != 1:
+                    raise RuntimeError(
+                        f"Failed to write legacy VTK dataset to {output_path}"
+                    )
+            else:
+                # Fallback for unsupported/non-dataset pipeline outputs.
+                self.simple.SaveData(output_path, proxy=source)
+        else:
+            self.simple.SaveData(output_path, proxy=source)
         return output_path
 
     def export_active_dataset_for_editing(self):
@@ -740,6 +757,13 @@ class ParaViewBackend:
             temp_source.UpdatePipeline()
 
             temp_display = self.simple.Show(temp_source, self.view)
+            # Keep the temporary selection helper uncolored to avoid LUT lookups/warnings.
+            try:
+                self._disable_scalar_coloring(
+                    temp_display, hide_unused_scalar_bars=False
+                )
+            except Exception:
+                pass
             if original_display is not None and original_visibility is not None:
                 original_display.Visibility = 0
 
@@ -750,7 +774,9 @@ class ParaViewBackend:
             extract = self.simple.ExtractSelection(Input=temp_source)
             extract.UpdatePipeline()
             selected_dataset = self.servermanager.Fetch(extract)
-            keys = self._surface_keys_from_selected_dataset(selected_dataset)
+            keys = self._surface_keys_from_selected_dataset(
+                selected_dataset, source_dataset=dataset
+            )
             if keys is None:
                 return None
 
@@ -799,7 +825,7 @@ class ParaViewBackend:
                 pass
 
     @staticmethod
-    def _surface_keys_from_selected_dataset(selected_dataset):
+    def _surface_keys_from_selected_dataset(selected_dataset, source_dataset=None):
         """Map selected ExtractSurface cells back to original source point-id keys."""
         if selected_dataset is None or selected_dataset.GetNumberOfCells() <= 0:
             return []
@@ -812,8 +838,21 @@ class ParaViewBackend:
                 original_point_array = array
                 break
 
+        coordinate_to_source_point_id = None
         if original_point_array is None:
-            return None
+            if source_dataset is None or not hasattr(source_dataset, "GetNumberOfPoints"):
+                return None
+            coordinate_to_source_point_id = {}
+            for source_point_id in range(source_dataset.GetNumberOfPoints()):
+                point = source_dataset.GetPoint(source_point_id)
+                if point is None:
+                    continue
+                key = (
+                    round(float(point[0]), 12),
+                    round(float(point[1]), 12),
+                    round(float(point[2]), 12),
+                )
+                coordinate_to_source_point_id[key] = int(source_point_id)
 
         keys = []
         for cell_id in range(selected_dataset.GetNumberOfCells()):
@@ -821,12 +860,31 @@ class ParaViewBackend:
             if cell is None or cell.GetNumberOfPoints() <= 0:
                 continue
             try:
-                key = tuple(
-                    sorted(
-                        int(original_point_array.GetTuple1(cell.GetPointId(point_idx)))
-                        for point_idx in range(cell.GetNumberOfPoints())
+                if original_point_array is not None:
+                    key = tuple(
+                        sorted(
+                            int(original_point_array.GetTuple1(cell.GetPointId(point_idx)))
+                            for point_idx in range(cell.GetNumberOfPoints())
+                        )
                     )
-                )
+                else:
+                    mapped = []
+                    for point_idx in range(cell.GetNumberOfPoints()):
+                        point = selected_dataset.GetPoint(cell.GetPointId(point_idx))
+                        if point is None:
+                            mapped = []
+                            break
+                        coord_key = (
+                            round(float(point[0]), 12),
+                            round(float(point[1]), 12),
+                            round(float(point[2]), 12),
+                        )
+                        point_id = coordinate_to_source_point_id.get(coord_key)
+                        if point_id is None:
+                            mapped = []
+                            break
+                        mapped.append(int(point_id))
+                    key = tuple(sorted(mapped))
             except Exception:
                 continue
             if key:
