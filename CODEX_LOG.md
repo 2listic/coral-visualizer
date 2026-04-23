@@ -210,6 +210,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Hardened dataset inspection tooling.
   - `tools/inspect_vtu.py` now supports both XML (`.vtu`) and legacy (`.vtk`) inputs with automatic reader selection.
   - Added robust handling for malformed/partial files with fallback metadata summaries.
+- Optimized large-mesh surface selection.
+  - Added a native ParaView/VTK fast path for surface-key box picking using `ExtractSurface` + `SelectSurfaceCells`.
+  - Native path maps selected surface cells back to original point-id face keys and falls back to the previous geometric method
+    only when native metadata is unavailable.
 - Fixed surface-field application so the edited field is always visible in Surface mode.
   - Added `EditSession.apply_surface_field(...)` and shared scalar-field assignment logic.
   - Surface apply now materializes selected codim-1 entities, writes the expression only on selected

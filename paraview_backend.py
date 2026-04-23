@@ -644,6 +644,12 @@ class ParaViewBackend:
         if self.view is None or source is None:
             return []
 
+        # Fast path: use native ParaView/VTK surface selection on an extracted
+        # boundary-surface representation and map selected cells back to source keys.
+        native_keys = self._pick_surface_keys_native(rect, behavior=behavior)
+        if native_keys is not None:
+            return native_keys
+
         try:
             dataset = self.servermanager.Fetch(source)
         except Exception:
@@ -676,6 +682,165 @@ class ParaViewBackend:
                 if self._polyline_intersects_rect(projected, rect):
                     picked.append(key)
         return picked
+
+    def _pick_surface_keys_native(self, rect, behavior="touch"):
+        """Native ParaView selection path for visible boundary faces (3D)."""
+        source = self.source
+        if self.view is None or source is None:
+            return None
+
+        try:
+            dataset = self.servermanager.Fetch(source)
+        except Exception:
+            return None
+        if dataset is None:
+            return None
+        if not hasattr(dataset, "GetNumberOfCells") or not hasattr(dataset, "GetCell"):
+            return None
+
+        top_dim = max(
+            (dataset.GetCell(cell_id).GetCellDimension() for cell_id in range(dataset.GetNumberOfCells())),
+            default=0,
+        )
+        # Keep old custom path for 2D/1D where ExtractSurface does not target boundary edges.
+        if top_dim != 3:
+            return None
+
+        # For "inside" behavior, use native touch selection first and refine with geometric check.
+        inside_only = behavior == "inside"
+        temp_source = None
+        temp_display = None
+        extract = None
+        selected_dataset = None
+        original_source = source
+        original_display = self.display
+        original_visibility = (
+            int(original_display.Visibility)
+            if original_display is not None and hasattr(original_display, "Visibility")
+            else None
+        )
+
+        try:
+            self.simple.SetActiveView(self.view)
+            self.simple.SetActiveSource(source)
+            self.simple.ClearSelection(source)
+
+            temp_source = self.simple.ExtractSurface(Input=source)
+            for prop_name, prop_value in (
+                ("PassThroughPointIds", 1),
+                ("PassThroughCellIds", 1),
+                ("PassThroughPointIdsArrayName", "vtkOriginalPointIds"),
+                ("PassThroughCellIdsArrayName", "vtkOriginalCellIds"),
+            ):
+                if hasattr(temp_source, prop_name):
+                    try:
+                        setattr(temp_source, prop_name, prop_value)
+                    except Exception:
+                        pass
+            temp_source.UpdatePipeline()
+
+            temp_display = self.simple.Show(temp_source, self.view)
+            if original_display is not None and original_visibility is not None:
+                original_display.Visibility = 0
+
+            self.simple.SetActiveSource(temp_source)
+            self.simple.ClearSelection(temp_source)
+            self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
+
+            extract = self.simple.ExtractSelection(Input=temp_source)
+            extract.UpdatePipeline()
+            selected_dataset = self.servermanager.Fetch(extract)
+            keys = self._surface_keys_from_selected_dataset(selected_dataset)
+            if keys is None:
+                return None
+
+            if inside_only and keys:
+                # Refine to inside-only using existing projected containment on this subset.
+                client_view = self.view.GetClientSideObject()
+                renderer = client_view.GetRenderer() if client_view is not None else None
+                if renderer is not None:
+                    inside_keys = []
+                    for key in keys:
+                        projected = self._project_points_to_display(dataset, key, renderer)
+                        if projected and all(self._point_in_rect(point, rect) for point in projected):
+                            inside_keys.append(key)
+                    keys = inside_keys
+            return keys
+        except Exception:
+            return None
+        finally:
+            try:
+                if original_display is not None and original_visibility is not None:
+                    original_display.Visibility = original_visibility
+            except Exception:
+                pass
+            try:
+                self.simple.SetActiveSource(original_source)
+            except Exception:
+                pass
+            try:
+                if temp_display is not None and temp_source is not None:
+                    self.simple.Hide(temp_source, self.view)
+            except Exception:
+                pass
+            try:
+                if extract is not None:
+                    self.simple.Delete(extract)
+            except Exception:
+                pass
+            try:
+                if temp_source is not None:
+                    self.simple.Delete(temp_source)
+            except Exception:
+                pass
+            try:
+                self.render()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _surface_keys_from_selected_dataset(selected_dataset):
+        """Map selected ExtractSurface cells back to original source point-id keys."""
+        if selected_dataset is None or selected_dataset.GetNumberOfCells() <= 0:
+            return []
+
+        point_data = selected_dataset.GetPointData()
+        original_point_array = None
+        for name in ("vtkOriginalPointIds", "OriginalPointIds", "vtkOriginalPointId", "vtkOriginalIds"):
+            array = point_data.GetArray(name) if point_data is not None else None
+            if array is not None:
+                original_point_array = array
+                break
+
+        if original_point_array is None:
+            return None
+
+        keys = []
+        for cell_id in range(selected_dataset.GetNumberOfCells()):
+            cell = selected_dataset.GetCell(cell_id)
+            if cell is None or cell.GetNumberOfPoints() <= 0:
+                continue
+            try:
+                key = tuple(
+                    sorted(
+                        int(original_point_array.GetTuple1(cell.GetPointId(point_idx)))
+                        for point_idx in range(cell.GetNumberOfPoints())
+                    )
+                )
+            except Exception:
+                continue
+            if key:
+                keys.append(key)
+
+        # Preserve deterministic order while deduplicating.
+        seen = set()
+        deduped = []
+        for key in keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+        return deduped
 
     @staticmethod
     def _boundary_codim_elements(dataset):
