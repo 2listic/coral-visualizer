@@ -513,7 +513,7 @@ class EditSession:
         return visited
 
     def _grow_surface_selection(self, seed_keys, angle_threshold=None):
-        """Expand a set of surface keys by one adjacency ring (non-transitive)."""
+        """Expand surface keys transitively while respecting neighbor-angle threshold."""
         seeds = {tuple(key) for key in (seed_keys or [])}
         if not seeds:
             return set()
@@ -521,14 +521,19 @@ class EditSession:
         adjacency = self._ensure_surface_adjacency()
         threshold = self._normalized_angle_threshold(angle_threshold)
         grown = set(seeds)
-        for key in seeds:
+        pending = list(seeds)
+
+        while pending:
+            key = pending.pop()
             for neighbor in adjacency.get(key, set()):
-                if threshold is None:
-                    grown.add(neighbor)
+                if neighbor in grown:
                     continue
-                angle = self._surface_neighbor_angle_degrees(key, neighbor)
-                if angle <= threshold:
-                    grown.add(neighbor)
+                if threshold is not None:
+                    angle = self._surface_neighbor_angle_degrees(key, neighbor)
+                    if angle > threshold:
+                        continue
+                grown.add(neighbor)
+                pending.append(neighbor)
         return grown
 
     def _top_dimension(self):

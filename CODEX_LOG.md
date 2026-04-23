@@ -192,6 +192,24 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
     (with default initialization for new tuples), preventing invalid files that load as empty datasets.
   - Added regressions in `tests/test_edit_session.py`, `tests/test_paraview_backend.py`,
     and `tests/test_paraview_controllers.py`.
+- Fixed Surface-mode field visibility and overwrite UX.
+  - Surface apply now writes default values on all non-selected cells and expression values on selected surface entities.
+  - Overwrite-confirmation dialog now appears consistently in both `Volume` and `Surface` modes.
+  - Removed the non-informative `Last selection event` textarea from the Edit panel.
+- Fixed and hardened Surface grow-selection behavior.
+  - Grow now uses angular threshold propagation (`angle_threshold`) through adjacent codim-1 entities.
+  - In 2D, grow with `angle_threshold = 0` now propagates along the whole collinear boundary chain.
+  - Added regressions in unit tests and a dedicated Playwright E2E scenario for left-edge grow.
+- Fixed selection/rotation mode switching in ParaView Edit mode.
+  - Replaced client-only `pick_mode` assignments with explicit server handlers (`pv_set_pick_mode` / `pv_set_rotate_mode`)
+    to keep interaction mode, box selection gating, and camera rotation synchronized.
+  - Added controller regression coverage and validated browser-driven rotation lock/unlock E2E paths.
+- Improved Edit Tools responsiveness.
+  - `Select All` / `Clear Selection` buttons now wrap correctly on narrow panels and no longer overflow.
+  - `Grow angle` now shows the live numeric value next to the slider.
+- Hardened dataset inspection tooling.
+  - `tools/inspect_vtu.py` now supports both XML (`.vtu`) and legacy (`.vtk`) inputs with automatic reader selection.
+  - Added robust handling for malformed/partial files with fallback metadata summaries.
 - Fixed surface-field application so the edited field is always visible in Surface mode.
   - Added `EditSession.apply_surface_field(...)` and shared scalar-field assignment logic.
   - Surface apply now materializes selected codim-1 entities, writes the expression only on selected

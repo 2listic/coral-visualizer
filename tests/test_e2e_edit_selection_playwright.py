@@ -263,3 +263,142 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
                 proc.kill()
         if output_path.exists():
             output_path.unlink()
+
+
+def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
+    if not is_paraview_available():
+        pytest.skip("ParaView backend is not available in this environment")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--no-browser",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_GRID),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
+
+        page.click("button:has-text('Enter Edit Mode')")
+        page.wait_for_selector("text=Edit Tools", timeout=40000)
+        time.sleep(1.0)
+        page.click("button:has-text('Pick')")
+        time.sleep(0.2)
+
+        geometry_mode = page.locator("div.v-input:has(label:has-text('Geometry mode'))").first
+        geometry_mode.click()
+        page.click("div.v-list-item__title:has-text('Surface')")
+        time.sleep(0.4)
+
+        # Enable grow and force angle threshold to 0° through the slider.
+        page.click("label:has-text('Grow selection')")
+        time.sleep(0.2)
+        slider = page.locator(
+            "xpath=//div[contains(@class,'v-list-item__content')][.//div[contains(normalize-space(.),'Grow angle')]]//div[contains(@class,'v-slider')]"
+        ).first
+        slider.wait_for(state="visible", timeout=40000)
+        slider_box = slider.bounding_box()
+        assert slider_box is not None and slider_box["width"] > 0
+        page.mouse.click(
+            slider_box["x"] + 2,
+            slider_box["y"] + slider_box["height"] * 0.5,
+        )
+        time.sleep(0.3)
+
+        view = page.locator('[style*="cursor: crosshair"]').first
+        box = view.bounding_box()
+        assert box is not None and box["width"] > 0 and box["height"] > 0
+
+        attempts = []
+
+        def _try_click(fx, fy, label):
+            page.click("button:has-text('Clear Selection')")
+            time.sleep(0.35)
+            x = box["x"] + box["width"] * fx
+            y = box["y"] + box["height"] * fy
+            page.mouse.click(x, y)
+            time.sleep(0.9)
+            count = _selection_count(page)
+            attempts.append({"kind": "click", "label": label, "fx": fx, "fy": fy, "count": count})
+            return count or 0
+
+        def _try_box(fx0, fy0, fx1, fy1, label):
+            page.click("button:has-text('Clear Selection')")
+            time.sleep(0.35)
+            x0 = box["x"] + box["width"] * fx0
+            y0 = box["y"] + box["height"] * fy0
+            x1 = box["x"] + box["width"] * fx1
+            y1 = box["y"] + box["height"] * fy1
+            page.mouse.move(x0, y0)
+            page.mouse.down()
+            page.mouse.move(x1, y1, steps=10)
+            page.mouse.up()
+            time.sleep(0.9)
+            count = _selection_count(page)
+            attempts.append(
+                {
+                    "kind": "box",
+                    "label": label,
+                    "fx0": fx0,
+                    "fy0": fy0,
+                    "fx1": fx1,
+                    "fy1": fy1,
+                    "count": count,
+                }
+            )
+            return count or 0
+
+        selected = 0
+        # Prefer thin left-side boxes to hit exactly one left boundary element and let grow propagate.
+        left_boxes = [
+            (0.05, 0.20, 0.22, 0.85, "left-thin-1"),
+            (0.08, 0.25, 0.26, 0.78, "left-thin-2"),
+            (0.12, 0.30, 0.30, 0.70, "left-thin-3"),
+        ]
+        for fx0, fy0, fx1, fy1, label in left_boxes:
+            selected = _try_box(fx0, fy0, fx1, fy1, label)
+            if selected >= 4:
+                break
+
+        if selected < 4:
+            left_clicks = [
+                (0.18, 0.50, "left-click-1"),
+                (0.24, 0.46, "left-click-2"),
+                (0.22, 0.58, "left-click-3"),
+                (0.30, 0.52, "left-click-4"),
+            ]
+            for fx, fy, label in left_clicks:
+                selected = _try_click(fx, fy, label)
+                if selected >= 4:
+                    break
+
+        assert selected >= 4, f"Expected grow selection >=4, got {selected}. Attempts: {attempts}"
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()

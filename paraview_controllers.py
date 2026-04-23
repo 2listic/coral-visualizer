@@ -450,6 +450,24 @@ def register_paraview_controllers(
 
         _apply_selection_ids(picked_ids, "click selection")
 
+    @ctrl.add("pv_set_pick_mode")
+    def pv_set_pick_mode():
+        """Switch edit interaction to picking mode."""
+        if not is_paraview_backend() or not edit_session.active:
+            return
+        state.pick_mode = True
+        sync_edit_session_state()
+        call_view_update()
+
+    @ctrl.add("pv_set_rotate_mode")
+    def pv_set_rotate_mode():
+        """Switch edit interaction to rotation/navigation mode."""
+        if not is_paraview_backend() or not edit_session.active:
+            return
+        state.pick_mode = False
+        sync_edit_session_state()
+        call_view_update()
+
     @ctrl.add("pv_edit_box_selection")
     def pv_edit_box_selection(event):
         """Capture native local-view box-selection events."""

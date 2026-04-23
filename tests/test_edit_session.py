@@ -139,7 +139,7 @@ def test_surface_mode_grow_selection_respects_angle_threshold():
     assert session.replace_selection([(0, 1, 2)], grow=True, angle_threshold=180) == 4
 
 
-def test_surface_mode_grow_selection_is_one_ring_not_transitive():
+def test_surface_mode_grow_selection_is_transitive_when_angles_allow():
     session = EditSession()
     session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
     session.geometry_mode = "surface"
@@ -148,9 +148,10 @@ def test_surface_mode_grow_selection_is_one_ring_not_transitive():
         ("B",): {("A",), ("C",)},
         ("C",): {("B",)},
     }
+    session._surface_neighbor_angle_degrees = lambda a, b: 0.0
 
-    grown = session._grow_surface_selection({("A",)})
-    assert grown == {("A",), ("B",)}
+    grown = session._grow_surface_selection({("A",)}, angle_threshold=0)
+    assert grown == {("A",), ("B",), ("C",)}
 
 
 def test_surface_mode_save_keeps_cell_data_lengths_consistent(tmp_path):

@@ -829,7 +829,7 @@ def _build_paraview_inspector_panel(ctrl):
                                             block=True,
                                             color=("pick_mode ? 'primary' : ''",),
                                             outlined=("!pick_mode",),
-                                            click="pick_mode = true",
+                                            click=ctrl.pv_set_pick_mode,
                                         )
                                     with vuetify.VCol(cols=6):
                                         vuetify.VBtn(
@@ -838,7 +838,7 @@ def _build_paraview_inspector_panel(ctrl):
                                             block=True,
                                             color=("!pick_mode ? 'primary' : ''",),
                                             outlined=("pick_mode",),
-                                            click="pick_mode = false",
+                                            click=ctrl.pv_set_rotate_mode,
                                         )
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
@@ -872,9 +872,24 @@ def _build_paraview_inspector_panel(ctrl):
                                 )
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
+                                with vuetify.VRow(
+                                    dense=True,
+                                    align="center",
+                                    no_gutters=True,
+                                    classes="mb-1",
+                                ):
+                                    with vuetify.VCol(cols=8):
+                                        vuetify.VListItemTitle("Grow angle")
+                                    with vuetify.VCol(cols=4, classes="text-right"):
+                                        vuetify.VChip(
+                                            "{{ angle_threshold }}°",
+                                            small=True,
+                                            outlined=True,
+                                            label=True,
+                                        )
                                 vuetify.VSlider(
                                     v_model=("angle_threshold",),
-                                    label="Grow angle",
+                                    label="",
                                     min=0,
                                     max=90,
                                     step=1,
@@ -888,8 +903,12 @@ def _build_paraview_inspector_panel(ctrl):
                                 vuetify.VListItemSubtitle("{{ edit_selection_mode }} mode")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                with vuetify.VRow(dense=True):
-                                    with vuetify.VCol(cols=6):
+                                with vuetify.VRow(
+                                    dense=True,
+                                    no_gutters=True,
+                                    classes="mx-0",
+                                ):
+                                    with vuetify.VCol(cols=12, sm=6, classes="pa-1"):
                                         vuetify.VBtn(
                                             "Select All",
                                             small=True,
@@ -897,7 +916,7 @@ def _build_paraview_inspector_panel(ctrl):
                                             outlined=True,
                                             click=ctrl.pv_select_all_edit_cells,
                                         )
-                                    with vuetify.VCol(cols=6):
+                                    with vuetify.VCol(cols=12, sm=6, classes="pa-1"):
                                         vuetify.VBtn(
                                             "Clear Selection",
                                             small=True,
