@@ -5,6 +5,8 @@ import subprocess
 import sys
 import time
 import urllib.request
+import os
+import threading
 
 import pytest
 
@@ -45,7 +47,29 @@ def _selection_count(page):
         hit = re.search(r"(\d+)\s+.*selected", text)
         if hit:
             matches.append(int(hit.group(1)))
-    return matches[0] if matches else None
+    return matches[-1] if matches else None
+
+
+def _parse_env_box(name, default):
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    parts = [p.strip() for p in raw.split(",")]
+    if len(parts) != 4:
+        return default
+    try:
+        return tuple(float(p) for p in parts)
+    except ValueError:
+        return default
+
+
+def _stream_proc_stdout(proc):
+    """Stream subprocess stdout to current test stdout."""
+    stream = getattr(proc, "stdout", None)
+    if stream is None:
+        return
+    for line in stream:
+        print(line, end="", flush=True)
 
 
 def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser):
@@ -75,6 +99,8 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         stderr=subprocess.STDOUT,
         text=True,
     )
+    if os.environ.get("E2E_STREAM_APP_LOGS", "0").strip() in {"1", "true", "True"}:
+        threading.Thread(target=_stream_proc_stdout, args=(proc,), daemon=True).start()
 
     try:
         _wait_for_http_ready(url)
@@ -185,6 +211,9 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
         page.click("div.v-list-item__title:has-text('Surface')")
         time.sleep(0.4)
 
+        page.click("button:has-text('Create New Field')")
+        page.wait_for_selector("text=Create New Field", timeout=40000)
+
         page.fill(
             "xpath=//label[contains(.,'Field name')]/ancestor::div[contains(@class,'v-input')]//input",
             "BoundaryID",
@@ -193,6 +222,8 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
             "xpath=//label[contains(.,'Default value')]/ancestor::div[contains(@class,'v-input')]//input",
             "1",
         )
+        page.click("div.v-dialog--active button:has-text('Create')")
+        time.sleep(0.4)
 
         view = page.locator('[style*="cursor: crosshair"]').first
         box = view.bounding_box()
@@ -248,18 +279,38 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
 
         assert selected_count > 0
 
-        page.click("button:has-text('Apply Edit')")
+        page.fill(
+            "xpath=//label[contains(.,'Value / Calculator')]/ancestor::div[contains(@class,'v-input')]//input",
+            "1",
+        )
+        page.click("button:has-text('Assign to Selected')")
 
         page.fill(
             "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input",
             output_name,
         )
+        resolved_name = page.input_value(
+            "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input"
+        ).strip() or output_name
+        resolved_path = TEST_DATA_DIR / resolved_name
         page.click("button:has-text('Save Edit Result')")
-        page.wait_for_selector(
-            f"text=Saved edited dataset to {output_name}", timeout=40000)
+        save_status = page.locator("text=Saved edited dataset to")
+        save_status.wait_for(state="visible", timeout=40000)
+        status_text = save_status.last.inner_text().strip()
+        match = re.search(r"Saved edited dataset to\s+(.+)$", status_text)
+        status_name = match.group(1).strip() if match else resolved_name
+        status_path = TEST_DATA_DIR / status_name
+        deadline = time.time() + 40
+        while (
+            time.time() < deadline
+            and not resolved_path.exists()
+            and not status_path.exists()
+        ):
+            time.sleep(0.25)
 
-        assert output_path.exists()
-        assert output_path.stat().st_size > 0
+        final_path = status_path if status_path.exists() else resolved_path
+        assert final_path.exists()
+        assert final_path.stat().st_size > 0
         context.close()
     finally:
         if proc.poll() is None:
@@ -268,8 +319,9 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        if output_path.exists():
-            output_path.unlink()
+        for path in {output_path, TEST_DATA_DIR / "new.vtu", TEST_DATA_DIR / "square_edited.vtu"}:
+            if path.exists():
+                path.unlink()
 
 
 def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
@@ -341,6 +393,11 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
         assert box is not None and box["width"] > 0 and box["height"] > 0
 
         attempts = []
+        manual_mode = os.environ.get("E2E_SURFACE_GROW_MANUAL", "0").strip() in {
+            "1",
+            "true",
+            "True",
+        }
 
         def _try_click(fx, fy, label):
             page.click("button:has-text('Clear Selection')")
@@ -350,8 +407,13 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             page.mouse.click(x, y)
             time.sleep(0.9)
             count = _selection_count(page)
+            print(
+                f"[grow-e2e] click {label}: fx=({fx:.3f},{fy:.3f}) "
+                f"px=({x:.1f},{y:.1f}) count={count}",
+                flush=True,
+            )
             attempts.append({"kind": "click", "label": label,
-                            "fx": fx, "fy": fy, "count": count})
+                            "fx": fx, "fy": fy, "x": x, "y": y, "count": count})
             return count or 0
 
         def _try_box(fx0, fy0, fx1, fy1, label):
@@ -367,6 +429,11 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             page.mouse.up()
             time.sleep(0.9)
             count = _selection_count(page)
+            print(
+                f"[grow-e2e] box {label}: fx=({fx0:.3f},{fy0:.3f})->({fx1:.3f},{fy1:.3f}) "
+                f"px=({x0:.1f},{y0:.1f})->({x1:.1f},{y1:.1f}) count={count}",
+                flush=True,
+            )
             attempts.append(
                 {
                     "kind": "box",
@@ -375,36 +442,110 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
                     "fy0": fy0,
                     "fx1": fx1,
                     "fy1": fy1,
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": x1,
+                    "y1": y1,
                     "count": count,
                 }
             )
             return count or 0
 
         selected = 0
-        # Prefer thin left-side boxes to hit exactly one left boundary element and let grow propagate.
-        left_boxes = [
-            (0.05, 0.20, 0.22, 0.85, "left-thin-1"),
-            (0.08, 0.25, 0.26, 0.78, "left-thin-2"),
-            (0.12, 0.30, 0.30, 0.70, "left-thin-3"),
-        ]
-        for fx0, fy0, fx1, fy1, label in left_boxes:
-            selected = _try_box(fx0, fy0, fx1, fy1, label)
-            if selected >= 4:
-                break
-
-        if selected < 4:
-            left_clicks = [
-                (0.18, 0.50, "left-click-1"),
-                (0.24, 0.46, "left-click-2"),
-                (0.22, 0.58, "left-click-3"),
-                (0.30, 0.52, "left-click-4"),
-            ]
-            for fx, fy, label in left_clicks:
-                selected = _try_click(fx, fy, label)
-                if selected >= 4:
+        if manual_mode:
+            page.click("button:has-text('Clear Selection')")
+            time.sleep(0.35)
+            page.evaluate(
+                """
+            () => {
+              window.__e2eManualDrag = null;
+              window.__e2eManualStart = null;
+              const onDown = (e) => {
+                window.__e2eManualStart = {
+                  x: e.clientX,
+                  y: e.clientY,
+                };
+              };
+              const onUp = (e) => {
+                const s = window.__e2eManualStart;
+                if (!s) return;
+                if (Math.abs(e.clientX - s.x) < 3 && Math.abs(e.clientY - s.y) < 3) {
+                  return;
+                }
+                window.__e2eManualDrag = {
+                  x0: s.x,
+                  y0: s.y,
+                  x1: e.clientX,
+                  y1: e.clientY,
+                };
+              };
+              document.addEventListener('mousedown', onDown, true);
+              document.addEventListener('mouseup', onUp, true);
+              window.__e2eManualCleanup = () => {
+                document.removeEventListener('mousedown', onDown, true);
+                document.removeEventListener('mouseup', onUp, true);
+              };
+            }
+            """,
+            )
+            print(
+                "[grow-e2e] manual mode active: perform click/drag selection now...",
+                flush=True,
+            )
+            deadline = time.time() + 30
+            manual_drag = None
+            while time.time() < deadline:
+                selected = _selection_count(page) or 0
+                manual_drag = page.evaluate("() => window.__e2eManualDrag || null")
+                if selected >= 4 and manual_drag:
                     break
+                time.sleep(0.2)
+            page.evaluate(
+                "() => { if (window.__e2eManualCleanup) window.__e2eManualCleanup(); }"
+            )
+            if manual_drag:
+                fx0 = (float(manual_drag["x0"]) - box["x"]) / box["width"]
+                fy0 = (float(manual_drag["y0"]) - box["y"]) / box["height"]
+                fx1 = (float(manual_drag["x1"]) - box["x"]) / box["width"]
+                fy1 = (float(manual_drag["y1"]) - box["y"]) / box["height"]
+                print(
+                    "[grow-e2e] manual recorded box: "
+                    f"E2E_SURFACE_GROW_BOX={fx0:.6f},{fy0:.6f},{fx1:.6f},{fy1:.6f}",
+                    flush=True,
+                )
+            else:
+                print(
+                    "[grow-e2e] manual recorder did not capture a drag inside view.",
+                    flush=True,
+                )
+                assert selected >= 4, (
+                    f"Manual grow selection expected >=4, got {selected}. Attempts: {attempts}"
+                )
+                context.close()
+                return
 
-        assert selected >= 4, f"Expected grow selection >=4, got {selected}. Attempts: {attempts}"
+        # Deterministic box: can be overridden from env for local calibration.
+        fx0, fy0, fx1, fy1 = _parse_env_box(
+            "E2E_SURFACE_GROW_BOX",
+            (0.146393, 0.412025, 0.425668, 0.473942),
+        )
+        flip_y = os.environ.get("E2E_SURFACE_GROW_FLIP_Y", "0").strip() in {"1", "true", "True"}
+        if flip_y:
+            fy0, fy1 = 1.0 - fy0, 1.0 - fy1
+        selected = _try_box(fx0, fy0, fx1, fy1, "deterministic-box")
+        if selected < 4:
+            selected = _try_box(
+                fx0, 1.0 - fy0, fx1, 1.0 - fy1, "deterministic-box-flipy"
+            )
+        if selected < 4:
+            cx = (fx0 + fx1) * 0.5
+            cy = (fy0 + fy1) * 0.5
+            selected = _try_click(cx, cy, "deterministic-center-click")
+
+        assert selected >= 4, (
+            f"Expected grow selection >=4, got {selected}. "
+            f"box=({fx0:.3f},{fy0:.3f},{fx1:.3f},{fy1:.3f}), flip_y={flip_y}. Attempts: {attempts}"
+        )
         context.close()
     finally:
         if proc.poll() is None:

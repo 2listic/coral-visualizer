@@ -588,6 +588,55 @@ class ParaViewBackend:
             return picked
         return self._filter_cell_ids_inside_rect(source, picked, rect)
 
+    def pick_visible_point_ids(self, x, y, radius=1):
+        """Return selected visible point ids around a display-space click."""
+        source = self.source
+        if self.view is None or source is None:
+            return []
+        try:
+            x = int(round(float(x)))
+            y = int(round(float(y)))
+        except (TypeError, ValueError):
+            return []
+
+        candidates = self._candidate_pick_positions(x, y)
+        self.simple.SetActiveView(self.view)
+        self.simple.SetActiveSource(source)
+        picked_result = []
+        for px, py in candidates:
+            self.simple.ClearSelection(source)
+            rect = [px - radius, py - radius, px + radius, py + radius]
+            self.simple.SelectSurfacePoints(Rectangle=rect, View=self.view, Modifier=None)
+            picked_result = self._fetch_selected_original_point_ids(source)
+            if picked_result:
+                break
+        self.simple.ClearSelection(source)
+        self.render()
+        return picked_result
+
+    def pick_visible_point_ids_in_rect(self, x0, y0, x1, y1, behavior="touch"):
+        """Return selected visible point ids inside a display-space rectangle."""
+        source = self.source
+        if self.view is None or source is None:
+            return []
+        try:
+            x0 = int(round(float(x0)))
+            y0 = int(round(float(y0)))
+            x1 = int(round(float(x1)))
+            y1 = int(round(float(y1)))
+        except (TypeError, ValueError):
+            return []
+
+        rect = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+        self.simple.SetActiveView(self.view)
+        self.simple.SetActiveSource(source)
+        self.simple.ClearSelection(source)
+        self.simple.SelectSurfacePoints(Rectangle=rect, View=self.view, Modifier=None)
+        picked = self._fetch_selected_original_point_ids(source)
+        self.simple.ClearSelection(source)
+        self.render()
+        return picked
+
     def pick_visible_surface_keys(self, x, y, radius=2):
         """Return boundary face/edge keys touched by a display-space click."""
         try:
@@ -1228,6 +1277,41 @@ class ParaViewBackend:
         selected_ids = []
         for name in candidate_names:
             array = cell_data.GetArray(name)
+            if array is not None:
+                selected_ids = [
+                    int(array.GetTuple1(i)) for i in range(array.GetNumberOfTuples())
+                ]
+                break
+
+        try:
+            self.simple.Delete(extract)
+        except Exception:
+            pass
+
+        return selected_ids
+
+    def _fetch_selected_original_point_ids(self, source):
+        """Extract selected original point ids from the source selection."""
+        try:
+            extract = self.simple.ExtractSelection(Input=source)
+            extract.UpdatePipeline()
+            dataset = self.servermanager.Fetch(extract)
+        except Exception:
+            return []
+
+        if dataset is None:
+            return []
+
+        point_data = dataset.GetPointData()
+        candidate_names = [
+            "vtkOriginalPointIds",
+            "originalPointIds",
+            "OriginalPointIds",
+        ]
+
+        selected_ids = []
+        for name in candidate_names:
+            array = point_data.GetArray(name)
             if array is not None:
                 selected_ids = [
                     int(array.GetTuple1(i)) for i in range(array.GetNumberOfTuples())

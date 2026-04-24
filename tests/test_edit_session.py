@@ -159,6 +159,7 @@ def test_surface_mode_save_keeps_cell_data_lengths_consistent(tmp_path):
     session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
     session.geometry_mode = "surface"
     session.apply_volume_field("BoundaryID", "", "1", overwrite=True)
+    session.geometry_mode = "surface"
     session.replace_selection([0])
     assert session.materialize_surface_selection() == 4
 

@@ -69,7 +69,66 @@ class ParaViewRuntime:
         self.state.edit_field_name = self.edit_session.field_name
         self.state.edit_expression = self.edit_session.expression
         self.state.edit_default_value = self.edit_session.default_value
-        self.state.edit_available_variables = self.edit_session.available_cell_variables()
+        available_fields = []
+        fields_getter = getattr(self.edit_session, "available_fields", None)
+        if callable(fields_getter):
+            available_fields = list(fields_getter() or [])
+        create_option = {"text": "Create new...", "value": "__create_new__"}
+        self.state.edit_field_options = available_fields + [create_option]
+        available_values = {
+            item.get("value")
+            for item in self.state.edit_field_options
+            if isinstance(item, dict) and item.get("value")
+        }
+        selected_choice = ""
+        if self.edit_session.field_name:
+            association = "cell"
+            infer = getattr(self.edit_session, "infer_field_association", None)
+            if callable(infer):
+                association = infer(self.edit_session.field_name) or association
+            selected_choice = f"{association}:{self.edit_session.field_name}"
+        elif (
+            isinstance(getattr(self.state, "edit_field_choice", ""), str)
+            and self.state.edit_field_choice in available_values
+            and self.state.edit_field_choice != "__create_new__"
+        ):
+            selected_choice = self.state.edit_field_choice
+        self.state.edit_field_choice = selected_choice
+        self.state.edit_field_association = (
+            "point"
+            if isinstance(selected_choice, str) and selected_choice.startswith("point:")
+            else "cell"
+        )
+        if self.state.edit_field_association == "point":
+            getter = getattr(self.edit_session, "available_point_variables", None)
+            self.state.edit_available_variables = getter() if callable(getter) else []
+        else:
+            self.state.edit_available_variables = self.edit_session.available_cell_variables()
+        if self.state.edit_field_association == "point":
+            self.state.edit_geometry_mode_options = list(
+                getattr(
+                    self.state,
+                    "edit_point_geometry_mode_options",
+                    [{"text": "Point", "value": "point"}],
+                )
+            )
+            self.state.edit_geometry_mode = "point"
+            self.edit_session.geometry_mode = "point"
+        else:
+            self.state.edit_geometry_mode_options = list(
+                getattr(
+                    self.state,
+                    "edit_cell_geometry_mode_options",
+                    [
+                        {"text": "Volume", "value": "volume"},
+                        {"text": "Surface", "value": "surface"},
+                        {"text": "Edge", "value": "edge"},
+                    ],
+                )
+            )
+            if self.state.edit_geometry_mode not in {"volume", "surface", "edge"}:
+                self.state.edit_geometry_mode = "volume"
+                self.edit_session.geometry_mode = "volume"
         self.state.selection_count = self.edit_session.selected_count()
         self.state.edit_enable_picking = bool(
             self.edit_session.active and self.state.pick_mode

@@ -58,6 +58,21 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Extended ParaView-side saving so the same `Save Result` flow now saves either:
   - the active pipeline result, or
   - the current `EditSession` working dataset
+- Reworked ParaView edit-field workflow in edit mode:
+  - replaced free-text `Field name` with field selection (`cell:*`, `point:*`) plus `Create new...`
+  - added `Create New Field` dialog with array type (`cell`/`point`) and default value on creation
+  - renamed apply action to `Assign to Selected` and switched assignment semantics to selected entities only
+  - linked geometry mode options to selected field association (`point` => `point` mode only, `cell` => `volume/surface/edge`)
+- Added point-selection plumbing for ParaView edit sessions:
+  - point selection state and selection ops in `EditSession`
+  - point picking paths in `paraview_backend.py` and controller routing
+- Fixed assignment errors when target arrays are integer-typed by updating scalar tuples with `SetComponent` instead of `SetValue`.
+- Improved edit-state sync stability so selected field choice is preserved across UI sync when still valid.
+- Hardened grow-selection e2e coverage and diagnostics:
+  - deterministic grow-box defaults and optional env override (`E2E_SURFACE_GROW_BOX`)
+  - manual mode for interactive confirmation (`E2E_SURFACE_GROW_MANUAL=1`)
+  - richer attempt logging (`[grow-e2e] ...`) and optional app log streaming (`E2E_STREAM_APP_LOGS=1`)
+  - backend selection-coordinate logging via `[selection-record] ...` for click/box inputs
 - Added initial `EditSession` scaffolding for the ParaView backend:
   - fetch active pipeline output as local VTK data
   - start/discard an edit session from the `Source` panel

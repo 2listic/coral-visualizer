@@ -4,7 +4,7 @@ from pathlib import Path
 from math import acos, degrees, sqrt
 
 from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIdList
-from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
+from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid, vtkVertex
 from vtkmodules.vtkFiltersCore import vtkArrayCalculator, vtkCellCenters, vtkExtractCells
 from vtkmodules.vtkIOLegacy import vtkUnstructuredGridWriter
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
@@ -26,6 +26,7 @@ class EditSession:
         self.default_value = "0"
         self.selected_cell_ids = set()
         self.selected_surface_keys = set()
+        self.selected_point_ids = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
         self._surface_adjacency = None
@@ -45,6 +46,7 @@ class EditSession:
         self.default_value = "0"
         self.selected_cell_ids = set()
         self.selected_surface_keys = set()
+        self.selected_point_ids = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
         self._surface_adjacency = None
@@ -67,11 +69,12 @@ class EditSession:
         self.working_dataset = working_copy
         self.dirty = False
         self.geometry_mode = "volume"
-        self.field_name = "field_1"
+        self.field_name = ""
         self.expression = ""
         self.default_value = "0"
         self.selected_cell_ids = set()
         self.selected_surface_keys = set()
+        self.selected_point_ids = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
         self._surface_adjacency = None
@@ -126,6 +129,27 @@ class EditSession:
             if cell_data.GetArrayName(i)
         ]
 
+    def available_point_variables(self):
+        """Return point-data variable names available to the edit calculator."""
+        if not self.active or self.working_dataset is None:
+            return []
+        point_data = self.working_dataset.GetPointData()
+        return [
+            point_data.GetArrayName(i)
+            for i in range(point_data.GetNumberOfArrays())
+            if point_data.GetArrayName(i)
+        ]
+
+    def available_fields(self):
+        """Return both point and cell scalar/vector arrays for field selection."""
+        fields = []
+        for name in self.available_cell_variables():
+            fields.append({"text": f"{name} (Cell)", "value": f"cell:{name}"})
+        for name in self.available_point_variables():
+            fields.append({"text": f"{name} (Point)", "value": f"point:{name}"})
+        fields.sort(key=lambda item: item["text"].lower())
+        return fields
+
     def has_cell_field(self, field_name):
         """Return True when a cell-data field with ``field_name`` already exists."""
         if not self.active or self.working_dataset is None:
@@ -135,21 +159,43 @@ class EditSession:
             return False
         return self.working_dataset.GetCellData().GetArray(name) is not None
 
+    def has_field(self, field_name, association):
+        """Return True when the requested data array already exists."""
+        array = self._get_data_array((field_name or "").strip(), association)
+        return array is not None
+
+    def infer_field_association(self, field_name):
+        """Best-effort association lookup for an existing field name."""
+        name = (field_name or "").strip()
+        if not name or not self.active or self.working_dataset is None:
+            return None
+        if self.working_dataset.GetCellData().GetArray(name) is not None:
+            return "cell"
+        if self.working_dataset.GetPointData().GetArray(name) is not None:
+            return "point"
+        return None
+
     def selected_count(self):
         """Return the number of currently selected cells."""
         if self.geometry_mode == "surface":
             return len(self.selected_surface_keys)
+        if self.geometry_mode == "point":
+            return len(self.selected_point_ids)
         return len(self.selected_cell_ids)
 
     def clear_selection(self):
         """Drop the current volume-cell selection."""
         self.selected_cell_ids.clear()
         self.selected_surface_keys.clear()
+        self.selected_point_ids.clear()
 
     def select_all_cells(self):
         """Select every cell in the working dataset."""
         if not self.active or self.working_dataset is None:
             return 0
+        if self.geometry_mode == "point":
+            self.selected_point_ids = set(range(self.working_dataset.GetNumberOfPoints()))
+            return len(self.selected_point_ids)
         if self.geometry_mode == "surface":
             self.selected_surface_keys = set(self._surface_boundary_map_for_top_cells())
             return len(self.selected_surface_keys)
@@ -160,6 +206,19 @@ class EditSession:
         """Toggle a single picked cell, optionally growing by adjacency."""
         if not self.active or self.working_dataset is None:
             return 0
+
+        if self.geometry_mode == "point":
+            try:
+                point_id = int(cell_id)
+            except (TypeError, ValueError):
+                return len(self.selected_point_ids)
+            if point_id < 0 or point_id >= self.working_dataset.GetNumberOfPoints():
+                return len(self.selected_point_ids)
+            if point_id in self.selected_point_ids:
+                self.selected_point_ids.discard(point_id)
+            else:
+                self.selected_point_ids.add(point_id)
+            return len(self.selected_point_ids)
 
         if self.geometry_mode == "surface":
             surface_keys = self._surface_keys_from_top_cells([cell_id])
@@ -201,6 +260,15 @@ class EditSession:
         if not self.active or self.working_dataset is None:
             return 0
 
+        if self.geometry_mode == "point":
+            point_count = self.working_dataset.GetNumberOfPoints()
+            self.selected_point_ids = {
+                int(point_id)
+                for point_id in (cell_ids or [])
+                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+            }
+            return len(self.selected_point_ids)
+
         if self.geometry_mode == "surface":
             selected = self._surface_keys_from_top_cells(cell_ids)
             if grow:
@@ -224,6 +292,16 @@ class EditSession:
         """Union the provided cell IDs into the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
+
+        if self.geometry_mode == "point":
+            point_count = self.working_dataset.GetNumberOfPoints()
+            selected = {
+                int(point_id)
+                for point_id in (cell_ids or [])
+                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+            }
+            self.selected_point_ids |= selected
+            return len(self.selected_point_ids)
 
         if self.geometry_mode == "surface":
             selected = self._surface_keys_from_top_cells(cell_ids)
@@ -249,6 +327,16 @@ class EditSession:
         if not self.active or self.working_dataset is None:
             return 0
 
+        if self.geometry_mode == "point":
+            point_count = self.working_dataset.GetNumberOfPoints()
+            selected = {
+                int(point_id)
+                for point_id in (cell_ids or [])
+                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+            }
+            self.selected_point_ids -= selected
+            return len(self.selected_point_ids)
+
         if self.geometry_mode == "surface":
             selected = self._surface_keys_from_top_cells(cell_ids)
             if grow:
@@ -273,6 +361,20 @@ class EditSession:
         """Toggle the provided cell IDs against the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
+
+        if self.geometry_mode == "point":
+            point_count = self.working_dataset.GetNumberOfPoints()
+            normalized = {
+                int(point_id)
+                for point_id in (cell_ids or [])
+                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+            }
+            for point_id in normalized:
+                if point_id in self.selected_point_ids:
+                    self.selected_point_ids.discard(point_id)
+                else:
+                    self.selected_point_ids.add(point_id)
+            return len(self.selected_point_ids)
 
         if self.geometry_mode == "surface":
             selected = self._surface_keys_from_top_cells(cell_ids)
@@ -303,124 +405,161 @@ class EditSession:
                 self.selected_cell_ids.add(cell_id)
         return len(self.selected_cell_ids)
 
-    def apply_volume_field(self, field_name, expression, default_value, overwrite=False):
-        """Create or update a scalar cell-data field on selected volume cells."""
-        if not self.active or self.working_dataset is None:
-            raise RuntimeError("No active edit session")
-        selected_ids = (
-            sorted(self.selected_cell_ids)
-            if self.selected_cell_ids
-            else list(range(self.working_dataset.GetNumberOfCells()))
-        )
-        return self._apply_scalar_field(
-            field_name,
-            expression,
-            default_value,
-            selected_cell_ids=selected_ids,
-            overwrite=overwrite,
-        )
-
-    def apply_surface_field(self, field_name, expression, default_value, overwrite=False):
-        """Create/update a scalar cell-data field using selected surface entities only."""
-        if not self.active or self.working_dataset is None:
-            raise RuntimeError("No active edit session")
-
-        self.materialize_surface_selection()
-        selected_ids = sorted(self._selected_surface_cell_ids())
-        return self._apply_scalar_field(
-            field_name,
-            expression,
-            default_value,
-            selected_cell_ids=selected_ids,
-            overwrite=overwrite,
-        )
-
-    def _apply_scalar_field(
-        self, field_name, expression, default_value, *, selected_cell_ids, overwrite=False
-    ):
-        """Shared implementation for scalar field assignment on selected cell ids."""
+    def create_field(self, field_name, association, default_value, overwrite=False):
+        """Create a scalar field across all tuples in the chosen association."""
         if not self.active or self.working_dataset is None:
             raise RuntimeError("No active edit session")
 
         field_name = (field_name or "").strip()
         if not field_name:
             raise ValueError("Field name is required")
+        association = self._normalize_association(association)
+        target_data = self._dataset_data_for_association(association)
+        tuple_count = self._tuple_count_for_association(association)
+        if tuple_count <= 0:
+            raise RuntimeError("The working dataset has no editable tuples")
 
         default_numeric = float(default_value)
-        expression = (expression or "").strip()
-
-        dataset = self.working_dataset
-        self._ensure_cell_centers_array()
-        cell_count = dataset.GetNumberOfCells()
-        if cell_count == 0:
-            raise RuntimeError("The working dataset has no cells")
-
-        selected_ids = [
-            int(cell_id)
-            for cell_id in (selected_cell_ids or [])
-            if 0 <= int(cell_id) < cell_count
-        ]
-        result_values = [default_numeric] * cell_count
-        if expression:
-            calculator = vtkArrayCalculator()
-            calculator.SetInputData(dataset)
-            calculator.SetAttributeTypeToCellData()
-            calculator.SetResultArrayName("__edit_result__")
-
-            cell_data = dataset.GetCellData()
-            for index in range(cell_data.GetNumberOfArrays()):
-                array = cell_data.GetArray(index)
-                name = cell_data.GetArrayName(index)
-                if array is None or not name:
-                    continue
-                num_components = array.GetNumberOfComponents()
-                if num_components == 1:
-                    calculator.AddScalarArrayName(name)
-                elif num_components == 3:
-                    calculator.AddVectorArrayName(name)
-
-            calculator.SetFunction(expression)
-            calculator.Update()
-            output = calculator.GetOutput()
-            result_array = output.GetCellData().GetArray("__edit_result__")
-            if result_array is None:
-                raise RuntimeError(
-                    "Calculator did not produce a result array for the current expression."
-                )
-            if result_array.GetNumberOfComponents() != 1:
-                raise RuntimeError(
-                    "Only scalar edit fields are supported in Volume mode right now."
-                )
-            calculated = [result_array.GetTuple1(i) for i in range(cell_count)]
-            for cell_id in selected_ids:
-                result_values[cell_id] = calculated[cell_id]
-
-        cell_data = dataset.GetCellData()
-        existing = cell_data.GetArray(field_name)
+        existing = target_data.GetArray(field_name)
         if existing is not None and not overwrite:
             raise RuntimeError(
                 f"Field '{field_name}' already exists. Confirm overwrite to replace it."
             )
-
         if existing is not None:
-            cell_data.RemoveArray(field_name)
+            target_data.RemoveArray(field_name)
 
         target = vtkDoubleArray()
         target.SetName(field_name)
         target.SetNumberOfComponents(1)
-        target.SetNumberOfTuples(cell_count)
-        cell_data.AddArray(target)
-
-        for cell_id, value in enumerate(result_values):
-            target.SetValue(cell_id, value)
-
-        dataset.GetCellData().SetActiveScalars(field_name)
-        dataset.Modified()
+        target.SetNumberOfTuples(tuple_count)
+        for idx in range(tuple_count):
+            target.SetValue(idx, default_numeric)
+        target_data.AddArray(target)
+        target_data.SetActiveScalars(field_name)
+        self.working_dataset.Modified()
         self.field_name = field_name
-        self.expression = expression
         self.default_value = str(default_value)
         self.dirty = True
         return field_name
+
+    def assign_to_selected(self, field_name, association, expression):
+        """Assign the expression value to selected entities in the target field."""
+        if not self.active or self.working_dataset is None:
+            raise RuntimeError("No active edit session")
+        field_name = (field_name or "").strip()
+        if not field_name:
+            raise ValueError("Field name is required")
+        expression = (expression or "").strip()
+        if not expression:
+            raise ValueError("A value or calculator expression is required")
+        association = self._normalize_association(association)
+
+        target_data = self._dataset_data_for_association(association)
+        existing = target_data.GetArray(field_name)
+        if existing is None:
+            raise RuntimeError(
+                f"Field '{field_name}' does not exist. Create it first."
+            )
+        if existing.GetNumberOfComponents() != 1:
+            raise RuntimeError("Only scalar fields can be assigned in edit mode.")
+
+        selected_ids = self._selected_ids_for_association(association)
+        if not selected_ids:
+            raise RuntimeError("No selected entities to assign.")
+
+        computed = self._evaluate_expression(association, expression)
+        tuple_count = self._tuple_count_for_association(association)
+        for idx in selected_ids:
+            if 0 <= idx < tuple_count:
+                existing.SetComponent(int(idx), 0, float(computed[int(idx)]))
+
+        target_data.SetActiveScalars(field_name)
+        self.working_dataset.Modified()
+        self.field_name = field_name
+        self.expression = expression
+        self.dirty = True
+        return field_name
+
+    # Legacy wrappers kept for compatibility with older tests/callers.
+    def apply_volume_field(self, field_name, expression, default_value, overwrite=False):
+        exists = self.has_field(field_name, "cell")
+        if exists and not overwrite:
+            raise RuntimeError(
+                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
+            )
+        if overwrite:
+            self.create_field(field_name, "cell", default_value, overwrite=True)
+        elif not exists:
+            self.create_field(field_name, "cell", default_value, overwrite=False)
+        if not expression:
+            expression = str(default_value)
+        self.geometry_mode = "volume"
+        if not self.selected_cell_ids:
+            self.selected_cell_ids = set(range(self.working_dataset.GetNumberOfCells()))
+        return self.assign_to_selected(field_name, "cell", expression)
+
+    def apply_surface_field(self, field_name, expression, default_value, overwrite=False):
+        exists = self.has_field(field_name, "cell")
+        if exists and not overwrite:
+            raise RuntimeError(
+                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
+            )
+        if overwrite:
+            self.create_field(field_name, "cell", default_value, overwrite=True)
+        elif not exists:
+            self.create_field(field_name, "cell", default_value, overwrite=False)
+        if not expression:
+            expression = str(default_value)
+        self.geometry_mode = "surface"
+        if not self.selected_surface_keys:
+            self.selected_surface_keys = set(self._surface_boundary_map_for_top_cells())
+        return self.assign_to_selected(field_name, "cell", expression)
+
+    def _evaluate_expression(self, association, expression):
+        """Evaluate expression and return one scalar value per tuple."""
+        association = self._normalize_association(association)
+        dataset = self.working_dataset
+        tuple_count = self._tuple_count_for_association(association)
+        values = [0.0] * tuple_count
+
+        calculator = vtkArrayCalculator()
+        calculator.SetInputData(dataset)
+        if association == "point":
+            calculator.SetAttributeTypeToPointData()
+            source_data = dataset.GetPointData()
+        else:
+            self._ensure_cell_centers_array()
+            calculator.SetAttributeTypeToCellData()
+            source_data = dataset.GetCellData()
+
+        calculator.SetResultArrayName("__edit_result__")
+        for index in range(source_data.GetNumberOfArrays()):
+            array = source_data.GetArray(index)
+            name = source_data.GetArrayName(index)
+            if array is None or not name:
+                continue
+            num_components = array.GetNumberOfComponents()
+            if num_components == 1:
+                calculator.AddScalarArrayName(name)
+            elif num_components == 3:
+                calculator.AddVectorArrayName(name)
+
+        calculator.SetFunction(expression)
+        calculator.Update()
+        output = calculator.GetOutput()
+        if association == "point":
+            result_array = output.GetPointData().GetArray("__edit_result__")
+        else:
+            result_array = output.GetCellData().GetArray("__edit_result__")
+        if result_array is None:
+            raise RuntimeError(
+                "Calculator did not produce a result array for the current expression."
+            )
+        if result_array.GetNumberOfComponents() != 1:
+            raise RuntimeError("Only scalar edit fields are supported.")
+        for idx in range(tuple_count):
+            values[idx] = float(result_array.GetTuple1(idx))
+        return values
 
     def build_selected_volume_dataset(self):
         """Return a lightweight dataset containing the currently selected cells."""
@@ -438,6 +577,17 @@ class EditSession:
             if not self.selected_surface_keys:
                 return None
             return self._build_surface_dataset(self.selected_surface_keys)
+
+        if self.geometry_mode == "point":
+            if not self.selected_point_ids:
+                return None
+            output = vtkUnstructuredGrid()
+            output.SetPoints(self.working_dataset.GetPoints())
+            for point_id in sorted(self.selected_point_ids):
+                vertex = vtkVertex()
+                vertex.GetPointIds().SetId(0, int(point_id))
+                output.InsertNextCell(vertex.GetCellType(), vertex.GetPointIds())
+            return output
 
         if not self.selected_cell_ids:
             return None
@@ -491,6 +641,46 @@ class EditSession:
         self.dirty = True
         self._invalidate_geometry_caches()
         return len(missing_keys)
+
+    @staticmethod
+    def _normalize_association(association):
+        value = (association or "cell").strip().lower()
+        if value not in {"cell", "point"}:
+            raise ValueError("Field association must be 'cell' or 'point'")
+        return value
+
+    def _dataset_data_for_association(self, association):
+        association = self._normalize_association(association)
+        return (
+            self.working_dataset.GetPointData()
+            if association == "point"
+            else self.working_dataset.GetCellData()
+        )
+
+    def _tuple_count_for_association(self, association):
+        association = self._normalize_association(association)
+        if association == "point":
+            return self.working_dataset.GetNumberOfPoints()
+        return self.working_dataset.GetNumberOfCells()
+
+    def _get_data_array(self, field_name, association):
+        if not self.active or self.working_dataset is None:
+            return None
+        name = (field_name or "").strip()
+        if not name:
+            return None
+        target_data = self._dataset_data_for_association(association)
+        return target_data.GetArray(name)
+
+    def _selected_ids_for_association(self, association):
+        association = self._normalize_association(association)
+        if association == "point":
+            return sorted(int(point_id) for point_id in self.selected_point_ids)
+
+        if self.geometry_mode == "surface":
+            self.materialize_surface_selection()
+            return sorted(self._selected_surface_cell_ids())
+        return sorted(int(cell_id) for cell_id in self.selected_cell_ids)
 
     def _grow_volume_selection(self, seed_ids):
         """Expand a set of cells by shared-face/shared-edge adjacency."""

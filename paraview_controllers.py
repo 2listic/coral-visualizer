@@ -34,70 +34,68 @@ def register_paraview_controllers(
         edit_session.geometry_mode = mode
         return mode
 
-    def _apply_edit_field(*, overwrite):
-        mode = _sync_edit_mode_from_state()
-        field_name = (state.edit_field_name or "").strip()
-        edit_session.field_name = field_name
-        edit_session.expression = (state.edit_expression or "").strip()
-        edit_session.default_value = (state.edit_default_value or "0").strip()
+    def _parse_field_choice():
+        choice = (getattr(state, "edit_field_choice", "") or "").strip()
+        if not choice:
+            return "", ""
+        if ":" not in choice:
+            return "", ""
+        association, name = choice.split(":", 1)
+        association = association.strip().lower()
+        name = name.strip()
+        if association not in {"cell", "point"} or not name:
+            return "", ""
+        return association, name
 
-        has_cell_field = getattr(edit_session, "has_cell_field", None)
-        if (
-            not overwrite
-            and field_name
-            and callable(has_cell_field)
-            and has_cell_field(field_name)
-        ):
-            state.edit_overwrite_field_name = field_name
-            state.edit_overwrite_dialog = True
-            state.edit_apply_status = (
-                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
+    def _apply_geometry_options_for_association(association):
+        if association == "point":
+            state.edit_geometry_mode_options = list(
+                getattr(
+                    state,
+                    "edit_point_geometry_mode_options",
+                    [{"text": "Point", "value": "point"}],
+                )
             )
-            state.edit_apply_status_type = "warning"
-            sync_edit_session_state()
-            return
-
-        if mode != "volume":
-            if mode == "surface":
-                field_name = edit_session.apply_surface_field(
-                    state.edit_field_name,
-                    state.edit_expression,
-                    state.edit_default_value,
-                    overwrite=overwrite,
-                )
-                sync_edit_session_state()
-                target_scope = (
-                    f"{edit_session.selected_count()} selected surface element(s)"
-                    if edit_session.selected_count()
-                    else "all cells"
-                )
-                state.edit_apply_status = (
-                    f"Updated cell field '{field_name}' on {target_scope}."
-                )
-                state.edit_apply_status_type = "success"
-                return
-            state.edit_apply_status = (
-                f"{mode.capitalize()} mode is visible in the UI but not implemented yet. "
-                "Volume and Surface modes are currently supported."
+            state.edit_geometry_mode = "point"
+            edit_session.geometry_mode = "point"
+            return "point"
+        state.edit_geometry_mode_options = list(
+            getattr(
+                state,
+                "edit_cell_geometry_mode_options",
+                [
+                    {"text": "Volume", "value": "volume"},
+                    {"text": "Surface", "value": "surface"},
+                    {"text": "Edge", "value": "edge"},
+                ],
             )
-            state.edit_apply_status_type = "info"
-            sync_edit_session_state()
-            return
-
-        field_name = edit_session.apply_volume_field(
-            state.edit_field_name,
-            state.edit_expression,
-            state.edit_default_value,
-            overwrite=overwrite,
         )
+        mode = (getattr(state, "edit_geometry_mode", "") or "").strip().lower()
+        if mode not in {"volume", "surface", "edge"}:
+            mode = "volume"
+            state.edit_geometry_mode = mode
+        edit_session.geometry_mode = mode
+        return mode
+
+    def _apply_edit_field():
+        association, field_name = _parse_field_choice()
+        if not association or not field_name:
+            raise RuntimeError("Select a field before assigning values.")
+
+        mode = _apply_geometry_options_for_association(association)
+        expression = (state.edit_expression or "").strip()
+        field_name = edit_session.assign_to_selected(
+            field_name, association, expression)
         sync_edit_session_state()
-        target_scope = (
-            f"{edit_session.selected_count()} selected cells"
-            if edit_session.selected_count()
-            else "all cells"
-        )
+
+        if mode == "surface":
+            scope = "surface element(s)"
+        elif mode == "point":
+            scope = "point(s)"
+        else:
+            scope = "cell(s)"
         state.edit_apply_status = (
-            f"Updated cell field '{field_name}' on {target_scope} of the edit-session dataset."
+            f"Assigned '{field_name}' on {edit_session.selected_count()} selected {scope}."
         )
         state.edit_apply_status_type = "success"
 
@@ -148,12 +146,61 @@ def register_paraview_controllers(
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         state.selection_count = count
-        entity_label = "surface element(s)" if mode == "surface" else "cell(s)"
+        if mode == "surface":
+            entity_label = "surface element(s)"
+        elif mode == "point":
+            entity_label = "point(s)"
+        else:
+            entity_label = "cell(s)"
         state.edit_selection_status = (
             f"{action} {len(picked_ids)} {entity_label} with {source_label}. {count} selected total."
         )
         state.edit_selection_status_type = "success"
         render_and_push()
+
+    def _log_selection_coordinates(kind, *, x0=None, y0=None, x1=None, y1=None, x=None, y=None):
+        """Emit debug logs with raw and normalized selection coordinates."""
+        payload = {"kind": kind}
+        view = getattr(pv_backend, "view", None)
+        view_width = view_height = None
+        if view is not None and hasattr(view, "ViewSize"):
+            try:
+                vw, vh = view.ViewSize
+                view_width = float(vw)
+                view_height = float(vh)
+            except (TypeError, ValueError):
+                view_width = view_height = None
+
+        if x is not None and y is not None:
+            payload["pixel"] = (round(float(x), 3), round(float(y), 3))
+            if view_width and view_height:
+                payload["normalized"] = (
+                    round(float(x) / view_width, 6),
+                    round(float(y) / view_height, 6),
+                )
+
+        if None not in (x0, y0, x1, y1):
+            rx0, ry0 = float(x0), float(y0)
+            rx1, ry1 = float(x1), float(y1)
+            payload["pixel_rect"] = (
+                round(rx0, 3),
+                round(ry0, 3),
+                round(rx1, 3),
+                round(ry1, 3),
+            )
+            if view_width and view_height:
+                payload["normalized_rect"] = (
+                    round(rx0 / view_width, 6),
+                    round(ry0 / view_height, 6),
+                    round(rx1 / view_width, 6),
+                    round(ry1 / view_height, 6),
+                )
+
+        debug_view("edit.selection.coords", **payload)
+        try:
+            print(f"[selection-record] {payload}", flush=True)
+        except Exception:
+            pass
 
     @ctrl.add("pv_update_property")
     def pv_update_property(scope, name, value):
@@ -210,7 +257,8 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not state.active_pipeline_item:
             return
 
-        pv_backend.set_visibility(state.active_pipeline_item, not state.active_visibility)
+        pv_backend.set_visibility(
+            state.active_pipeline_item, not state.active_visibility)
         update_paraview_ui_state()
         render_and_push()
 
@@ -310,7 +358,7 @@ def register_paraview_controllers(
             debug_view("pv_begin_edit_session.end", mode=state.mainViewMode)
             state.edit_status = (
                 f"Edit session initialized for {exported['label']}. "
-                "Volume-mode picking and field authoring are available."
+                ""
             )
             state.edit_status_type = "info"
         except Exception as exc:
@@ -374,6 +422,86 @@ def register_paraview_controllers(
             state.edit_status = f"Could not add edited result to pipeline: {exc}"
             state.edit_status_type = "error"
 
+    @ctrl.add("pv_on_edit_field_choice")
+    def pv_on_edit_field_choice():
+        """React to field selection changes (existing field or create new)."""
+        if not is_paraview_backend() or not edit_session.active:
+            return
+
+        choice = (getattr(state, "edit_field_choice", "") or "").strip()
+        if choice == "__create_new__":
+            state.edit_create_field_dialog = True
+            return
+
+        if ":" not in choice:
+            return
+        association, field_name = choice.split(":", 1)
+        association = association.strip().lower()
+        field_name = field_name.strip()
+        if association not in {"cell", "point"} or not field_name:
+            return
+
+        state.edit_field_association = association
+        edit_session.field_name = field_name
+        _apply_geometry_options_for_association(association)
+        sync_edit_session_state()
+
+    @ctrl.add("pv_open_create_edit_field_dialog")
+    def pv_open_create_edit_field_dialog():
+        state.edit_create_field_dialog = True
+        state.edit_field_choice = "__create_new__"
+
+    @ctrl.add("pv_cancel_create_edit_field")
+    def pv_cancel_create_edit_field():
+        state.edit_create_field_dialog = False
+        if state.edit_field_options:
+            fallback = next(
+                (
+                    item.get("value")
+                    for item in state.edit_field_options
+                    if isinstance(item, dict)
+                    and item.get("value")
+                    and item.get("value") != "__create_new__"
+                ),
+                "",
+            )
+            state.edit_field_choice = fallback
+
+    @ctrl.add("pv_create_edit_field")
+    def pv_create_edit_field():
+        """Create a new edit field and select it."""
+        if not is_paraview_backend() or not edit_session.active:
+            return
+        try:
+            association = (
+                state.edit_new_field_association or "cell").strip().lower()
+            field_name = (state.edit_new_field_name or "").strip()
+            default_value = (state.edit_new_field_default_value or "0").strip()
+            has_field = getattr(edit_session, "has_field", None)
+            if callable(has_field) and has_field(field_name, association):
+                state.edit_overwrite_field_name = field_name
+                state.edit_overwrite_dialog = True
+                state.edit_apply_status = (
+                    f"Field '{field_name}' already exists. Confirm overwrite to replace it."
+                )
+                state.edit_apply_status_type = "warning"
+                sync_edit_session_state()
+                return
+            edit_session.create_field(
+                field_name, association, default_value, overwrite=False)
+            state.edit_field_choice = f"{association}:{field_name}"
+            state.edit_create_field_dialog = False
+            state.edit_new_field_name = ""
+            state.edit_field_association = association
+            _apply_geometry_options_for_association(association)
+            sync_edit_session_state()
+            state.edit_apply_status = f"Created {association} field '{field_name}'."
+            state.edit_apply_status_type = "success"
+        except Exception as exc:
+            sync_edit_session_state()
+            state.edit_apply_status = f"Create field failed: {exc}"
+            state.edit_apply_status_type = "error"
+
     @ctrl.add("pv_apply_edit_field")
     def pv_apply_edit_field():
         """Apply the current edit-session field operation."""
@@ -381,7 +509,7 @@ def register_paraview_controllers(
             return
 
         try:
-            _apply_edit_field(overwrite=False)
+            _apply_edit_field()
         except Exception as exc:
             sync_edit_session_state()
             state.edit_apply_status = f"Edit apply failed: {exc}"
@@ -389,17 +517,30 @@ def register_paraview_controllers(
 
     @ctrl.add("pv_confirm_overwrite_edit_field")
     def pv_confirm_overwrite_edit_field():
-        """Confirm overwrite of an existing edit field and apply the operation."""
+        """Confirm overwrite for create-field dialog and create the new field."""
         if not is_paraview_backend() or not edit_session.active:
             return
 
         try:
+            association = (
+                state.edit_new_field_association or "cell").strip().lower()
+            field_name = (state.edit_new_field_name or "").strip()
+            default_value = (state.edit_new_field_default_value or "0").strip()
             state.edit_overwrite_dialog = False
             state.edit_overwrite_field_name = ""
-            _apply_edit_field(overwrite=True)
+            edit_session.create_field(
+                field_name, association, default_value, overwrite=True)
+            state.edit_field_choice = f"{association}:{field_name}"
+            state.edit_create_field_dialog = False
+            state.edit_new_field_name = ""
+            state.edit_field_association = association
+            _apply_geometry_options_for_association(association)
+            sync_edit_session_state()
+            state.edit_apply_status = f"Created {association} field '{field_name}'."
+            state.edit_apply_status_type = "success"
         except Exception as exc:
             sync_edit_session_state()
-            state.edit_apply_status = f"Edit apply failed: {exc}"
+            state.edit_apply_status = f"Create field failed: {exc}"
             state.edit_apply_status_type = "error"
 
     @ctrl.add("pv_cancel_overwrite_edit_field")
@@ -430,20 +571,31 @@ def register_paraview_controllers(
         )
         mode = _sync_edit_mode_from_state()
         if coords is not None:
+            _log_selection_coordinates("click", x=coords[0], y=coords[1])
             if mode == "surface":
                 picker = getattr(pv_backend, "pick_visible_surface_keys", None)
                 if callable(picker):
                     picked_ids = picker(coords[0], coords[1])
+                if not picked_ids:
+                    picked_ids = pv_backend.pick_visible_cell_ids(
+                        coords[0], coords[1])
+            elif mode == "point":
+                picker = getattr(pv_backend, "pick_visible_point_ids", None)
+                if callable(picker):
+                    picked_ids = picker(coords[0], coords[1])
                 else:
-                    picked_ids = pv_backend.pick_visible_cell_ids(coords[0], coords[1])
+                    picked_ids = pv_backend.pick_visible_cell_ids(
+                        coords[0], coords[1])
             else:
-                picked_ids = pv_backend.pick_visible_cell_ids(coords[0], coords[1])
+                picked_ids = pv_backend.pick_visible_cell_ids(
+                    coords[0], coords[1])
         else:
             picked_ids = [item for item in normalized if isinstance(item, int)]
 
         if not picked_ids:
+            entity_label = "points" if mode == "point" else "cells"
             state.edit_selection_status = (
-                "Click selection did not resolve any editable cells."
+                f"Click selection did not resolve any editable {entity_label}."
             )
             state.edit_selection_status_type = "info"
             return
@@ -482,9 +634,31 @@ def register_paraview_controllers(
             return
 
         x0, x1, y0, y1 = selection
+        _log_selection_coordinates("box", x0=x0, y0=y0, x1=x1, y1=y1)
         mode = _sync_edit_mode_from_state()
+        picked_ids = []
         if mode == "surface":
-            picker = getattr(pv_backend, "pick_visible_surface_keys_in_rect", None)
+            picker = getattr(
+                pv_backend, "pick_visible_surface_keys_in_rect", None)
+            if callable(picker):
+                picked_ids = picker(
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    behavior=(state.selection_behavior or "touch"),
+                )
+            if not picked_ids:
+                picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    behavior=(state.selection_behavior or "touch"),
+                )
+        elif mode == "point":
+            picker = getattr(
+                pv_backend, "pick_visible_point_ids_in_rect", None)
             if callable(picker):
                 picked_ids = picker(
                     x0,
@@ -510,7 +684,10 @@ def register_paraview_controllers(
                 behavior=(state.selection_behavior or "touch"),
             )
         if not picked_ids:
-            state.edit_selection_status = "Box selection did not resolve any editable cells."
+            entity_label = "points" if mode == "point" else "cells"
+            state.edit_selection_status = (
+                f"Box selection did not resolve any editable {entity_label}."
+            )
             state.edit_selection_status_type = "info"
             return
 
@@ -542,7 +719,12 @@ def register_paraview_controllers(
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         state.selection_count = count
-        entity_label = "surface element(s)" if mode == "surface" else "cell(s)"
+        if mode == "surface":
+            entity_label = "surface element(s)"
+        elif mode == "point":
+            entity_label = "point(s)"
+        else:
+            entity_label = "cell(s)"
         state.edit_selection_status = (
             f"Selected all {count} {entity_label} in the edit-session dataset."
         )

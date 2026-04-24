@@ -94,10 +94,29 @@ def initialize_state(
         {"text": "Edge", "value": "edge"},
         {"text": "Point", "value": "point"},
     ]
+    state.edit_cell_geometry_mode_options = [
+        {"text": "Volume", "value": "volume"},
+        {"text": "Surface", "value": "surface"},
+        {"text": "Edge", "value": "edge"},
+    ]
+    state.edit_point_geometry_mode_options = [
+        {"text": "Point", "value": "point"},
+    ]
+    state.edit_field_association = "cell"
+    state.edit_field_choice = ""
+    state.edit_field_options = []
     state.edit_field_name = ""
     state.edit_expression = ""
     state.edit_default_value = "0"
     state.edit_available_variables = []
+    state.edit_create_field_dialog = False
+    state.edit_new_field_name = ""
+    state.edit_new_field_default_value = "0"
+    state.edit_new_field_association = "cell"
+    state.edit_new_field_association_options = [
+        {"text": "Cell data array", "value": "cell"},
+        {"text": "Point data array", "value": "point"},
+    ]
     state.edit_vector_syntax = "Use arrayName[0], arrayName[1], arrayName[2]"
     state.edit_apply_status = ""
     state.edit_apply_status_type = "info"

@@ -525,30 +525,34 @@ def _build_paraview_pipeline_panel(ctrl):
                             hide_details=True,
                             classes="mt-2 mb-2",
                         )
-                        vuetify.VTextField(
-                            v_model=("edit_field_name",),
-                            label="Field name",
+                        vuetify.VSelect(
+                            v_model=("edit_field_choice",),
+                            items=("edit_field_options",),
+                            item_text="text",
+                            item_value="value",
+                            label="Select field",
                             dense=True,
                             outlined=True,
                             hide_details=True,
+                            classes="mb-2",
+                            change=ctrl.pv_on_edit_field_choice,
+                        )
+                        vuetify.VBtn(
+                            "Create New Field",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click=ctrl.pv_open_create_edit_field_dialog,
                             classes="mb-2",
                         )
                         vuetify.VTextField(
                             v_model=("edit_expression",),
-                            label="Calculator",
+                            label="Value / Calculator",
                             dense=True,
                             outlined=True,
                             hide_details=True,
-                            hint="Leave empty to write the default value everywhere",
+                            hint="Use a scalar expression like 1, A, or A*2",
                             persistent_hint=True,
-                            classes="mb-2",
-                        )
-                        vuetify.VTextField(
-                            v_model=("edit_default_value",),
-                            label="Default value",
-                            dense=True,
-                            outlined=True,
-                            hide_details=True,
                             classes="mb-2",
                         )
                         with vuetify.VList(
@@ -575,7 +579,7 @@ def _build_paraview_pipeline_panel(ctrl):
                                     vuetify.VListItemSubtitle("Vector component syntax")
                                     vuetify.VListItemTitle("{{ edit_vector_syntax }}")
                         vuetify.VBtn(
-                            "Apply Edit",
+                            "Assign to Selected",
                             small=True,
                             block=True,
                             color="primary",
@@ -583,6 +587,53 @@ def _build_paraview_pipeline_panel(ctrl):
                             click=ctrl.pv_apply_edit_field,
                             classes="mb-2",
                         )
+                        with vuetify.VDialog(
+                            v_model=("edit_create_field_dialog",),
+                            max_width="560",
+                        ):
+                            with vuetify.VCard():
+                                vuetify.VCardTitle("Create New Field")
+                                with vuetify.VCardText():
+                                    vuetify.VSelect(
+                                        v_model=("edit_new_field_association",),
+                                        items=("edit_new_field_association_options",),
+                                        item_text="text",
+                                        item_value="value",
+                                        label="Array type",
+                                        dense=True,
+                                        outlined=True,
+                                        hide_details=True,
+                                        classes="mb-2",
+                                    )
+                                    vuetify.VTextField(
+                                        v_model=("edit_new_field_name",),
+                                        label="Field name",
+                                        dense=True,
+                                        outlined=True,
+                                        hide_details=True,
+                                        classes="mb-2",
+                                    )
+                                    vuetify.VTextField(
+                                        v_model=("edit_new_field_default_value",),
+                                        label="Default value",
+                                        dense=True,
+                                        outlined=True,
+                                        hide_details=True,
+                                        classes="mb-2",
+                                    )
+                                with vuetify.VCardActions():
+                                    vuetify.VSpacer()
+                                    vuetify.VBtn(
+                                        "Cancel",
+                                        text=True,
+                                        click=ctrl.pv_cancel_create_edit_field,
+                                    )
+                                    vuetify.VBtn(
+                                        "Create",
+                                        color="primary",
+                                        text=True,
+                                        click=ctrl.pv_create_edit_field,
+                                    )
                         with vuetify.VDialog(
                             v_model=("edit_overwrite_dialog",),
                             max_width="560",

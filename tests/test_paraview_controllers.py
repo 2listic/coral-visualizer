@@ -252,13 +252,12 @@ def test_pv_add_filter_success_and_failure_paths():
     assert state.error_message == "Error adding filter: bad filter"
 
 
-def test_pv_apply_edit_field_existing_name_opens_overwrite_dialog():
+def test_pv_apply_edit_field_requires_field_choice():
     ctrl = FakeCtrl()
     state = SimpleNamespace(
         edit_geometry_mode="volume",
-        edit_field_name="A field",
+        edit_field_choice="",
         edit_expression="",
-        edit_default_value="1.5",
         edit_apply_status="",
         edit_apply_status_type="info",
         edit_overwrite_dialog=False,
@@ -270,9 +269,8 @@ def test_pv_apply_edit_field_existing_name_opens_overwrite_dialog():
         field_name="",
         expression="",
         default_value="",
-        has_cell_field=lambda name: name == "A field",
-        apply_volume_field=lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("apply_volume_field should not run before overwrite confirm")
+        assign_to_selected=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("assign_to_selected should not run without field choice")
         ),
         selected_count=lambda: 0,
     )
@@ -300,40 +298,90 @@ def test_pv_apply_edit_field_existing_name_opens_overwrite_dialog():
 
     ctrl.handlers["pv_apply_edit_field"]()
 
-    assert state.edit_overwrite_dialog is True
-    assert state.edit_overwrite_field_name == "A field"
-    assert state.edit_apply_status_type == "warning"
-    assert "already exists" in state.edit_apply_status
+    assert state.edit_apply_status_type == "error"
+    assert "Select a field" in state.edit_apply_status
     assert sync_calls == ["sync"]
 
 
-def test_pv_confirm_overwrite_edit_field_applies_with_overwrite_true():
+def test_pv_create_edit_field_existing_name_opens_overwrite_dialog():
     ctrl = FakeCtrl()
     state = SimpleNamespace(
         edit_geometry_mode="volume",
-        edit_field_name="A field",
-        edit_expression="",
-        edit_default_value="2.5",
+        edit_field_options=[],
+        edit_field_choice="__create_new__",
+        edit_create_field_dialog=True,
+        edit_new_field_association="cell",
+        edit_new_field_name="A field",
+        edit_new_field_default_value="2.5",
         edit_apply_status="",
         edit_apply_status_type="info",
-        edit_overwrite_dialog=True,
-        edit_overwrite_field_name="A field",
+        edit_overwrite_dialog=False,
+        edit_overwrite_field_name="",
     )
-    calls = []
-
-    def apply_volume_field(field_name, expression, default_value, overwrite=False):
-        calls.append((field_name, expression, default_value, overwrite))
-        return field_name
 
     edit_session = SimpleNamespace(
         active=True,
         geometry_mode="",
-        field_name="",
-        expression="",
-        default_value="",
-        has_cell_field=lambda name: True,
-        apply_volume_field=apply_volume_field,
+        has_field=lambda name, association: True,
+        create_field=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("create_field should not run before overwrite confirm")
+        ),
         selected_count=lambda: 3,
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_create_edit_field"]()
+
+    assert state.edit_overwrite_dialog is True
+    assert state.edit_overwrite_field_name == "A field"
+    assert state.edit_apply_status_type == "warning"
+    assert "already exists" in state.edit_apply_status
+
+
+def test_pv_confirm_overwrite_edit_field_creates_with_overwrite_true():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        edit_geometry_mode="volume",
+        edit_geometry_mode_options=[],
+        edit_field_choice="__create_new__",
+        edit_create_field_dialog=True,
+        edit_new_field_association="cell",
+        edit_new_field_name="A field",
+        edit_new_field_default_value="2.5",
+        edit_apply_status="",
+        edit_apply_status_type="info",
+        edit_overwrite_dialog=True,
+        edit_overwrite_field_name="A field",
+        edit_cell_geometry_mode_options=[{"text": "Volume", "value": "volume"}],
+        edit_point_geometry_mode_options=[{"text": "Point", "value": "point"}],
+    )
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="",
+        create_field=lambda field, association, default, overwrite=False: calls.append(
+            (field, association, default, overwrite)
+        ) or field,
+        selected_count=lambda: 4,
     )
 
     register_paraview_controllers(
@@ -358,90 +406,31 @@ def test_pv_confirm_overwrite_edit_field_applies_with_overwrite_true():
 
     ctrl.handlers["pv_confirm_overwrite_edit_field"]()
 
-    assert calls == [("A field", "", "2.5", True)]
-    assert state.edit_overwrite_dialog is False
-    assert state.edit_overwrite_field_name == ""
+    assert calls == [("A field", "cell", "2.5", True)]
     assert state.edit_apply_status_type == "success"
-    assert "Updated cell field 'A field'" in state.edit_apply_status
+    assert "Created cell field 'A field'" in state.edit_apply_status
 
 
-def test_pv_apply_edit_field_surface_mode_materializes_selection():
+def test_pv_apply_edit_field_surface_mode_assigns_to_selected():
     ctrl = FakeCtrl()
-    calls = []
     state = SimpleNamespace(
         edit_geometry_mode="surface",
-        edit_field_name="BoundaryID",
-        edit_expression="",
-        edit_default_value="0",
+        edit_geometry_mode_options=[],
+        edit_field_choice="cell:BoundaryID",
+        edit_field_association="cell",
+        edit_expression="1",
         edit_apply_status="",
         edit_apply_status_type="info",
         edit_overwrite_dialog=False,
         edit_overwrite_field_name="",
+        edit_cell_geometry_mode_options=[{"text": "Surface", "value": "surface"}],
+        edit_point_geometry_mode_options=[{"text": "Point", "value": "point"}],
     )
     edit_session = SimpleNamespace(
         active=True,
         geometry_mode="",
-        field_name="",
-        expression="",
-        default_value="",
-        apply_surface_field=lambda field, expr, default, overwrite=False: calls.append(
-            (field, expr, default, overwrite)
-        )
-        or field,
+        assign_to_selected=lambda field, association, expression: field,
         selected_count=lambda: 4,
-    )
-
-    register_paraview_controllers(
-        ctrl,
-        state,
-        is_paraview_backend=lambda: True,
-        pv_backend=SimpleNamespace(),
-        edit_session=edit_session,
-        refresh_runtime_message=lambda **kwargs: None,
-        update_paraview_ui_state=lambda: None,
-        render_and_push=lambda: None,
-        save_paraview_output=lambda: None,
-        debug_view=lambda *args, **kwargs: None,
-        call_view_update_geometry=lambda **kwargs: None,
-        call_view_set_remote_rendering=lambda enabled: None,
-        call_view_update=lambda **kwargs: None,
-        sync_edit_session_state=lambda: None,
-        sync_paraview_edit_selection_overlay=lambda: None,
-        summarize_edit_event=lambda event: "",
-        normalize_edit_selection_ids=lambda ids: ids,
-    )
-
-    ctrl.handlers["pv_apply_edit_field"]()
-
-    assert edit_session.geometry_mode == "surface"
-    assert calls == [("BoundaryID", "", "0", False)]
-    assert state.edit_apply_status_type == "success"
-    assert "Updated cell field 'BoundaryID' on 4 selected surface element(s)." == state.edit_apply_status
-
-
-def test_pv_apply_edit_field_surface_existing_name_opens_overwrite_dialog():
-    ctrl = FakeCtrl()
-    state = SimpleNamespace(
-        edit_geometry_mode="surface",
-        edit_field_name="BoundaryID",
-        edit_expression="",
-        edit_default_value="0",
-        edit_apply_status="",
-        edit_apply_status_type="info",
-        edit_overwrite_dialog=False,
-        edit_overwrite_field_name="",
-    )
-    edit_session = SimpleNamespace(
-        active=True,
-        geometry_mode="",
-        field_name="",
-        expression="",
-        default_value="",
-        has_cell_field=lambda name: name == "BoundaryID",
-        apply_surface_field=lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("apply_surface_field should not run before overwrite confirm")
-        ),
-        selected_count=lambda: 0,
     )
     sync_calls = []
 
@@ -468,10 +457,8 @@ def test_pv_apply_edit_field_surface_existing_name_opens_overwrite_dialog():
     ctrl.handlers["pv_apply_edit_field"]()
 
     assert edit_session.geometry_mode == "surface"
-    assert state.edit_overwrite_dialog is True
-    assert state.edit_overwrite_field_name == "BoundaryID"
-    assert state.edit_apply_status_type == "warning"
-    assert "already exists" in state.edit_apply_status
+    assert state.edit_apply_status_type == "success"
+    assert "Assigned 'BoundaryID'" in state.edit_apply_status
     assert sync_calls == ["sync"]
 
 
