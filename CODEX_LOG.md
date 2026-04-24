@@ -73,6 +73,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - manual mode for interactive confirmation (`E2E_SURFACE_GROW_MANUAL=1`)
   - richer attempt logging (`[grow-e2e] ...`) and optional app log streaming (`E2E_STREAM_APP_LOGS=1`)
   - backend selection-coordinate logging via `[selection-record] ...` for click/box inputs
+- Fixed ParaView edit-selection regression introduced by the field workflow rewrite:
+  - scaled `VtkRemoteLocalView` box-selection rectangles into ParaView `ViewSize` coordinates before picking
+  - routed zero-area box-selection events through the click picker
+  - made the Playwright selection-count helper ignore hidden/stale counters and wait for UI updates
 - Added initial `EditSession` scaffolding for the ParaView backend:
   - fetch active pipeline output as local VTK data
   - start/discard an edit session from the `Source` panel

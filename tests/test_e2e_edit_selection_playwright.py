@@ -43,11 +43,25 @@ def _selection_count(page):
     )
     matches = []
     for i in range(loc.count()):
-        text = loc.nth(i).inner_text().strip()
+        item = loc.nth(i)
+        if not item.is_visible():
+            continue
+        text = item.inner_text().strip()
         hit = re.search(r"(\d+)\s+.*selected", text)
         if hit:
             matches.append(int(hit.group(1)))
-    return matches[-1] if matches else None
+    return matches[0] if matches else None
+
+
+def _wait_for_selection_count(page, predicate, timeout_s=4):
+    deadline = time.time() + timeout_s
+    last = None
+    while time.time() < deadline:
+        last = _selection_count(page)
+        if last is not None and predicate(last):
+            return last
+        time.sleep(0.1)
+    return last
 
 
 def _parse_env_box(name, default):
@@ -63,13 +77,25 @@ def _parse_env_box(name, default):
         return default
 
 
-def _stream_proc_stdout(proc):
-    """Stream subprocess stdout to current test stdout."""
+def _stream_proc_stdout(proc, echo=False):
+    """Drain subprocess stdout, optionally echoing it for local diagnostics."""
     stream = getattr(proc, "stdout", None)
     if stream is None:
         return
     for line in stream:
-        print(line, end="", flush=True)
+        if echo:
+            print(line, end="", flush=True)
+
+
+def _drain_proc_stdout(proc):
+    echo = os.environ.get("E2E_STREAM_APP_LOGS", "0").strip() in {
+        "1",
+        "true",
+        "True",
+    }
+    threading.Thread(
+        target=_stream_proc_stdout, args=(proc, echo), daemon=True
+    ).start()
 
 
 def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser):
@@ -99,8 +125,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         stderr=subprocess.STDOUT,
         text=True,
     )
-    if os.environ.get("E2E_STREAM_APP_LOGS", "0").strip() in {"1", "true", "True"}:
-        threading.Thread(target=_stream_proc_stdout, args=(proc,), daemon=True).start()
+    _drain_proc_stdout(proc)
 
     try:
         _wait_for_http_ready(url)
@@ -129,13 +154,13 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         x_click = box["x"] + box["width"] * 0.5
         y_click = box["y"] + box["height"] * 0.5
         page.mouse.click(x_click, y_click)
-        time.sleep(1.0)
-        click_count = _selection_count(page)
+        click_count = _wait_for_selection_count(
+            page, lambda count: 0 < count < all_count
+        )
         assert click_count is not None and 0 < click_count < all_count
 
         page.click("button:has-text('Clear Selection')")
-        time.sleep(0.8)
-        assert _selection_count(page) == 0
+        assert _wait_for_selection_count(page, lambda count: count == 0) == 0
 
         x0 = box["x"] + box["width"] * 0.35
         y0 = box["y"] + box["height"] * 0.35
@@ -145,8 +170,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         page.mouse.down()
         page.mouse.move(x1, y1, steps=12)
         page.mouse.up()
-        time.sleep(1.2)
-        box_count = _selection_count(page)
+        box_count = _wait_for_selection_count(page, lambda count: count > 0)
         assert box_count is not None and box_count > 0
 
         context.close()
@@ -191,6 +215,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
         stderr=subprocess.STDOUT,
         text=True,
     )
+    _drain_proc_stdout(proc)
 
     try:
         _wait_for_http_ready(url)
@@ -351,6 +376,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
         stderr=subprocess.STDOUT,
         text=True,
     )
+    _drain_proc_stdout(proc)
 
     try:
         _wait_for_http_ready(url)
@@ -405,8 +431,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             x = box["x"] + box["width"] * fx
             y = box["y"] + box["height"] * fy
             page.mouse.click(x, y)
-            time.sleep(0.9)
-            count = _selection_count(page)
+            count = _wait_for_selection_count(page, lambda value: value > 0)
             print(
                 f"[grow-e2e] click {label}: fx=({fx:.3f},{fy:.3f}) "
                 f"px=({x:.1f},{y:.1f}) count={count}",
@@ -427,8 +452,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             page.mouse.down()
             page.mouse.move(x1, y1, steps=10)
             page.mouse.up()
-            time.sleep(0.9)
-            count = _selection_count(page)
+            count = _wait_for_selection_count(page, lambda value: value > 0)
             print(
                 f"[grow-e2e] box {label}: fx=({fx0:.3f},{fy0:.3f})->({fx1:.3f},{fy1:.3f}) "
                 f"px=({x0:.1f},{y0:.1f})->({x1:.1f},{y1:.1f}) count={count}",

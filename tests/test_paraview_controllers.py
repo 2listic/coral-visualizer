@@ -516,6 +516,137 @@ def test_surface_mode_selection_keeps_surface_mode_after_sync():
     assert calls == ["sync", "overlay", "render"]
 
 
+def test_degenerate_box_selection_uses_click_picker():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        pick_mode=True,
+        group_select=False,
+        selection_count=0,
+        edit_selection_event="",
+        edit_selection_status="",
+        edit_selection_status_type="info",
+        selection_behavior="touch",
+        edit_selection_mode="replace",
+        edit_geometry_mode="volume",
+        edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
+    )
+    edit_session = SimpleNamespace(active=True, geometry_mode="volume")
+    edit_session.replace_selection = (
+        lambda ids, grow=False, angle_threshold=None: calls.append(
+            ("replace", ids, grow, angle_threshold)
+        )
+        or len(ids)
+    )
+    edit_session.add_selection = lambda ids, grow=False, angle_threshold=None: 0
+    edit_session.subtract_selection = lambda ids, grow=False, angle_threshold=None: 0
+    edit_session.flip_selection = lambda ids, grow=False, angle_threshold=None: 0
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(
+            pick_visible_cell_ids=lambda x, y: calls.append(("click", x, y)) or [7],
+            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("degenerate box should not use rectangle picker")
+            ),
+        ),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: calls.append("sync"),
+        sync_paraview_edit_selection_overlay=lambda: calls.append("overlay"),
+        summarize_edit_event=lambda event: "summary",
+        normalize_edit_selection_ids=lambda event: [],
+    )
+
+    ctrl.handlers["pv_edit_box_selection"]({"selection": [5, 5, 7, 7]})
+
+    assert calls == [
+        ("click", 5.0, 7.0),
+        ("replace", [7], False, None),
+        "sync",
+        "overlay",
+        "render",
+    ]
+    assert state.selection_count == 1
+    assert "click selection" in state.edit_selection_status
+
+
+def test_box_selection_scales_event_coordinates_to_paraview_view():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        pick_mode=True,
+        group_select=False,
+        selection_count=0,
+        edit_selection_event="",
+        edit_selection_status="",
+        edit_selection_status_type="info",
+        selection_behavior="touch",
+        edit_selection_mode="replace",
+        edit_geometry_mode="volume",
+        edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
+    )
+    edit_session = SimpleNamespace(active=True, geometry_mode="volume")
+    edit_session.replace_selection = (
+        lambda ids, grow=False, angle_threshold=None: calls.append(
+            ("replace", ids, grow, angle_threshold)
+        )
+        or len(ids)
+    )
+    edit_session.add_selection = lambda ids, grow=False, angle_threshold=None: 0
+    edit_session.subtract_selection = lambda ids, grow=False, angle_threshold=None: 0
+    edit_session.flip_selection = lambda ids, grow=False, angle_threshold=None: 0
+
+    def pick_rect(x0, y0, x1, y1, behavior="touch"):
+        calls.append(("rect", x0, y0, x1, y1, behavior))
+        return [3, 4]
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(
+            view=SimpleNamespace(ViewSize=(200, 400)),
+            pick_visible_cell_ids_in_rect=pick_rect,
+        ),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: calls.append("sync"),
+        sync_paraview_edit_selection_overlay=lambda: calls.append("overlay"),
+        summarize_edit_event=lambda event: "summary",
+        normalize_edit_selection_ids=lambda event: [],
+    )
+
+    ctrl.handlers["pv_edit_box_selection"](
+        {"selection": [10, 20, 30, 40], "size": [100, 200]}
+    )
+
+    assert calls == [
+        ("rect", 20.0, 60.0, 40.0, 80.0, "touch"),
+        ("replace", [3, 4], False, None),
+        "sync",
+        "overlay",
+        "render",
+    ]
+    assert state.selection_count == 2
+
+
 def test_pick_rotate_handlers_update_mode_and_push_view():
     ctrl = FakeCtrl()
     calls = []

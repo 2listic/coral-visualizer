@@ -202,6 +202,108 @@ def register_paraview_controllers(
         except Exception:
             pass
 
+    def _pick_edit_ids_at_coords(mode, x, y):
+        if mode == "surface":
+            picker = getattr(pv_backend, "pick_visible_surface_keys", None)
+            picked_ids = picker(x, y) if callable(picker) else []
+            if not picked_ids:
+                picked_ids = pv_backend.pick_visible_cell_ids(x, y)
+            return picked_ids
+        if mode == "point":
+            picker = getattr(pv_backend, "pick_visible_point_ids", None)
+            if callable(picker):
+                return picker(x, y)
+            return pv_backend.pick_visible_cell_ids(x, y)
+        return pv_backend.pick_visible_cell_ids(x, y)
+
+    def _pick_edit_ids_in_rect(mode, x0, y0, x1, y1):
+        behavior = state.selection_behavior or "touch"
+        if mode == "surface":
+            picker = getattr(
+                pv_backend, "pick_visible_surface_keys_in_rect", None)
+            picked_ids = (
+                picker(x0, y0, x1, y1, behavior=behavior)
+                if callable(picker)
+                else []
+            )
+            if not picked_ids:
+                picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
+                    x0, y0, x1, y1, behavior=behavior)
+            return picked_ids
+        if mode == "point":
+            picker = getattr(
+                pv_backend, "pick_visible_point_ids_in_rect", None)
+            if callable(picker):
+                return picker(x0, y0, x1, y1, behavior=behavior)
+            return pv_backend.pick_visible_cell_ids_in_rect(
+                x0, y0, x1, y1, behavior=behavior)
+        return pv_backend.pick_visible_cell_ids_in_rect(
+            x0, y0, x1, y1, behavior=behavior)
+
+    def _set_empty_selection_status(mode, interaction):
+        entity_label = "points" if mode == "point" else "cells"
+        state.edit_selection_status = (
+            f"{interaction} selection did not resolve any editable {entity_label}."
+        )
+        state.edit_selection_status_type = "info"
+
+    def _extract_size_pair(value):
+        if isinstance(value, dict):
+            candidates = (
+                (value.get("width"), value.get("height")),
+                (value.get("x"), value.get("y")),
+            )
+        elif isinstance(value, (list, tuple)) and len(value) >= 2:
+            candidates = ((value[0], value[1]),)
+        else:
+            candidates = ()
+        for width, height in candidates:
+            try:
+                width = float(width)
+                height = float(height)
+            except (TypeError, ValueError):
+                continue
+            if width > 0.0 and height > 0.0:
+                return width, height
+        return None, None
+
+    def _view_size():
+        view = getattr(pv_backend, "view", None)
+        if view is None or not hasattr(view, "ViewSize"):
+            return None, None
+        try:
+            width, height = view.ViewSize
+            width = float(width)
+            height = float(height)
+        except (TypeError, ValueError):
+            return None, None
+        if width <= 0.0 or height <= 0.0:
+            return None, None
+        return width, height
+
+    def _scale_box_selection_to_view(event, x0, x1, y0, y1):
+        try:
+            x0 = float(x0)
+            x1 = float(x1)
+            y0 = float(y0)
+            y1 = float(y1)
+        except (TypeError, ValueError):
+            return x0, x1, y0, y1
+
+        event_width, event_height = _extract_size_pair(
+            event.get("size") if isinstance(event, dict) else None
+        )
+        view_width, view_height = _view_size()
+        if event_width and view_width:
+            scale_x = view_width / event_width
+            x0 *= scale_x
+            x1 *= scale_x
+        if event_height and view_height:
+            scale_y = view_height / event_height
+            y0 *= scale_y
+            y1 *= scale_y
+        return x0, x1, y0, y1
+
     @ctrl.add("pv_update_property")
     def pv_update_property(scope, name, value):
         """Update a pending ParaView property edit in Trame state."""
@@ -572,32 +674,12 @@ def register_paraview_controllers(
         mode = _sync_edit_mode_from_state()
         if coords is not None:
             _log_selection_coordinates("click", x=coords[0], y=coords[1])
-            if mode == "surface":
-                picker = getattr(pv_backend, "pick_visible_surface_keys", None)
-                if callable(picker):
-                    picked_ids = picker(coords[0], coords[1])
-                if not picked_ids:
-                    picked_ids = pv_backend.pick_visible_cell_ids(
-                        coords[0], coords[1])
-            elif mode == "point":
-                picker = getattr(pv_backend, "pick_visible_point_ids", None)
-                if callable(picker):
-                    picked_ids = picker(coords[0], coords[1])
-                else:
-                    picked_ids = pv_backend.pick_visible_cell_ids(
-                        coords[0], coords[1])
-            else:
-                picked_ids = pv_backend.pick_visible_cell_ids(
-                    coords[0], coords[1])
+            picked_ids = _pick_edit_ids_at_coords(mode, coords[0], coords[1])
         else:
             picked_ids = [item for item in normalized if isinstance(item, int)]
 
         if not picked_ids:
-            entity_label = "points" if mode == "point" else "cells"
-            state.edit_selection_status = (
-                f"Click selection did not resolve any editable {entity_label}."
-            )
-            state.edit_selection_status_type = "info"
+            _set_empty_selection_status(mode, "Click")
             return
 
         _apply_selection_ids(picked_ids, "click selection")
@@ -634,61 +716,32 @@ def register_paraview_controllers(
             return
 
         x0, x1, y0, y1 = selection
-        _log_selection_coordinates("box", x0=x0, y0=y0, x1=x1, y1=y1)
+        x0, x1, y0, y1 = _scale_box_selection_to_view(
+            event, x0, x1, y0, y1)
         mode = _sync_edit_mode_from_state()
-        picked_ids = []
-        if mode == "surface":
-            picker = getattr(
-                pv_backend, "pick_visible_surface_keys_in_rect", None)
-            if callable(picker):
-                picked_ids = picker(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    behavior=(state.selection_behavior or "touch"),
-                )
+        try:
+            is_click_rect = (
+                abs(float(x1) - float(x0)) <= 1e-6
+                and abs(float(y1) - float(y0)) <= 1e-6
+            )
+        except (TypeError, ValueError):
+            is_click_rect = False
+
+        if is_click_rect:
+            x = (float(x0) + float(x1)) * 0.5
+            y = (float(y0) + float(y1)) * 0.5
+            _log_selection_coordinates("click", x=x, y=y)
+            picked_ids = _pick_edit_ids_at_coords(mode, x, y)
             if not picked_ids:
-                picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    behavior=(state.selection_behavior or "touch"),
-                )
-        elif mode == "point":
-            picker = getattr(
-                pv_backend, "pick_visible_point_ids_in_rect", None)
-            if callable(picker):
-                picked_ids = picker(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    behavior=(state.selection_behavior or "touch"),
-                )
-            else:
-                picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    behavior=(state.selection_behavior or "touch"),
-                )
-        else:
-            picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
-                x0,
-                y0,
-                x1,
-                y1,
-                behavior=(state.selection_behavior or "touch"),
-            )
+                _set_empty_selection_status(mode, "Click")
+                return
+            _apply_selection_ids(picked_ids, "click selection")
+            return
+
+        _log_selection_coordinates("box", x0=x0, y0=y0, x1=x1, y1=y1)
+        picked_ids = _pick_edit_ids_in_rect(mode, x0, y0, x1, y1)
         if not picked_ids:
-            entity_label = "points" if mode == "point" else "cells"
-            state.edit_selection_status = (
-                f"Box selection did not resolve any editable {entity_label}."
-            )
-            state.edit_selection_status_type = "info"
+            _set_empty_selection_status(mode, "Box")
             return
 
         _apply_selection_ids(picked_ids, "box selection")
