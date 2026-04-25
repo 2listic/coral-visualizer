@@ -10,7 +10,7 @@ from constants import (
 )
 from file_utils import get_vtk_files_from_data_folder
 from file_operations import FileOperationService
-from handler_registration import register_app_handlers
+from handler_registration import EditOperations, register_app_handlers
 from paraview_backend import is_paraview_available
 from runtime_setup import attach_runtime_services, create_runtime_context
 from state_setup import initialize_state, resolve_initial_file
@@ -77,23 +77,15 @@ file_operations = FileOperationService(
 register_app_handlers(
     ctrl=ctrl,
     state=state,
-    backend=BACKEND,
-    data_directory=data_directory,
-    pv_backend=runtime.pv_backend,
-    edit_session=runtime.edit_session,
-    edit_state=runtime.edit_state,
-    pick_interactor=runtime.pick_interactor,
-    vtk_runtime=runtime.vtk_runtime,
-    paraview_runtime=runtime.paraview_runtime,
-    update_selection_actor=update_selection_actor,
-    assign_id_to_selection=assign_id_to_selection,
-    save_as_vtu=save_as_vtu,
+    runtime=runtime,
+    edit_operations=EditOperations(
+        update_selection_actor=update_selection_actor,
+        assign_id_to_selection=assign_id_to_selection,
+        save_as_vtu=save_as_vtu,
+    ),
     file_operations=file_operations,
     interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
-    debug_view=view_controls.debug,
-    call_view_update=view_controls.update,
-    call_view_update_geometry=view_controls.update_geometry,
-    call_view_set_remote_rendering=view_controls.set_remote_rendering,
+    view_controls=view_controls,
 )
 
 

@@ -1,5 +1,7 @@
 """Centralized registration of Trame handlers."""
 
+from dataclasses import dataclass
+
 from common_controllers import register_common_controllers
 from paraview_controllers import register_paraview_controllers
 from state_handlers import register_state_handlers
@@ -10,29 +12,31 @@ def _noop(*args, **kwargs):
     return None
 
 
+@dataclass(frozen=True)
+class EditOperations:
+    """VTK edit callbacks passed to the handler registry."""
+
+    update_selection_actor: object
+    assign_id_to_selection: object
+    save_as_vtu: object
+
+
 def register_app_handlers(
     *,
     ctrl,
     state,
-    backend,
-    data_directory,
-    pv_backend,
-    edit_session,
-    edit_state,
-    pick_interactor,
-    vtk_runtime,
-    paraview_runtime,
-    update_selection_actor,
-    assign_id_to_selection,
-    save_as_vtu,
+    runtime,
+    edit_operations,
     file_operations,
     interaction_quality_presets,
-    debug_view,
-    call_view_update,
-    call_view_update_geometry,
-    call_view_set_remote_rendering,
+    view_controls,
 ):
     """Register all app handlers against the active backend runtimes."""
+    backend = runtime.backend
+    pv_backend = runtime.pv_backend
+    edit_session = runtime.edit_session
+    vtk_runtime = runtime.vtk_runtime
+    paraview_runtime = runtime.paraview_runtime
 
     def is_paraview_backend():
         return backend == "paraview"
@@ -104,10 +108,10 @@ def register_app_handlers(
         update_paraview_ui_state=update_paraview_ui_state,
         render_and_push=render_and_push,
         save_paraview_output=file_operations.save_paraview_output,
-        debug_view=debug_view,
-        call_view_update_geometry=call_view_update_geometry,
-        call_view_set_remote_rendering=call_view_set_remote_rendering,
-        call_view_update=call_view_update,
+        debug_view=view_controls.debug,
+        call_view_update_geometry=view_controls.update_geometry,
+        call_view_set_remote_rendering=view_controls.set_remote_rendering,
+        call_view_update=view_controls.update,
         sync_edit_session_state=sync_edit_session_state,
         sync_paraview_edit_selection_overlay=sync_paraview_edit_selection_overlay,
         summarize_edit_event=summarize_edit_event,
@@ -119,14 +123,14 @@ def register_app_handlers(
         ctrl,
         is_vtk_backend=is_vtk_backend,
         viz_getter=get_vtk_visualization,
-        edit_state=edit_state,
-        pick_interactor=pick_interactor,
-        data_directory=data_directory,
+        edit_state=runtime.edit_state,
+        pick_interactor=runtime.pick_interactor,
+        data_directory=runtime.data_directory,
         apply_edit_coloring=apply_edit_coloring,
         render_and_push=render_and_push,
-        update_selection_actor=update_selection_actor,
-        assign_id_to_selection=assign_id_to_selection,
-        save_as_vtu=save_as_vtu,
+        update_selection_actor=edit_operations.update_selection_actor,
+        assign_id_to_selection=edit_operations.assign_id_to_selection,
+        save_as_vtu=edit_operations.save_as_vtu,
         refresh_available_files=file_operations.refresh_available_files,
         update_scalar_bars=update_scalar_bars,
         active_lut_getter=get_active_vtk_lut,
@@ -154,7 +158,7 @@ def register_app_handlers(
         state,
         is_paraview_backend=is_paraview_backend,
         pv_backend=pv_backend,
-        call_view_update=call_view_update,
+        call_view_update=view_controls.update,
         reset_vtk_camera=reset_vtk_camera,
         reset_vtk_view=reset_vtk_view,
         persist_uploaded_file=file_operations.persist_uploaded_file,
