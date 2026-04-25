@@ -1,8 +1,6 @@
-import argparse
-import os
+from app_config import configure_app, enable_paraview_web_venv_if_requested
 
-if os.environ.get("PV_VENV") or "--venv" in os.sys.argv:
-    import paraview.web.venv  # noqa: F401
+enable_paraview_web_venv_if_requested()
 
 from trame.app import get_server
 from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkStringOutputWindow
@@ -33,74 +31,9 @@ from mesh_edit import (
 )
 from ui import build_ui
 
-# -----------------------------------------------------------------------------
-# Command-line arguments
-# -----------------------------------------------------------------------------
-
-parser = argparse.ArgumentParser(description="Flexible VTK Visualization with Trame")
-parser.add_argument(
-    "--file",
-    # default=os.path.join(CURRENT_DIRECTORY, "data/grid-1.vtk"),
-    default=None,
-    help="Path to VTK file to open on start (i.e.: data/grid-1.vtk)",
-)
-parser.add_argument(
-    "--data-directory",
-    default="./data",
-    help="Directory containing input/output VTK files (default: ./data)",
-)
-parser.add_argument(
-    "--backend",
-    choices=["auto", "vtk", "paraview"],
-    default="auto",
-    help="Rendering backend to use (default: auto)",
-)
-parser.add_argument(
-    "--devtools",
-    action=argparse.BooleanOptionalAction,
-    default=True,
-    help=(
-        "Enable developer diagnostics and Trame hot reload "
-        "(default: enabled for now; use --no-devtools to disable)."
-    ),
-)
-parser.add_argument(
-    "--dev",
-    action="store_true",
-    help="Deprecated alias for --devtools.",
-)
-parser.add_argument(
-    "--hide-experimental-filters",
-    action="store_true",
-    help="Hide experimentally discovered ParaView filters from the Filter menu.",
-)
-# Parse known args and let trame handle the rest (--port, --host, --debug, etc.)
-args, unknown = parser.parse_known_args()
-data_directory = os.path.abspath(args.data_directory)
-DEVTOOLS_ENABLED = bool(args.devtools or args.dev)
-
-if DEVTOOLS_ENABLED and "--hot-reload" not in os.sys.argv:
-    os.sys.argv.append("--hot-reload")
-    os.environ["TRAME_HOT_RELOAD"] = "1"
-
-PARAVIEW_AVAILABLE = is_paraview_available()
-if args.backend == "auto":
-    BACKEND = "paraview" if PARAVIEW_AVAILABLE else "vtk"
-elif args.backend == "paraview" and not PARAVIEW_AVAILABLE:
-    BACKEND = "vtk"
-else:
-    BACKEND = args.backend
-
-BACKEND_MESSAGE = ""
-if args.backend == "paraview" and BACKEND != "paraview":
-    BACKEND_MESSAGE = (
-        "ParaView backend requested but not available in this Python environment. "
-        "Falling back to the VTK backend."
-    )
-elif args.backend == "auto" and BACKEND == "vtk" and not PARAVIEW_AVAILABLE:
-    BACKEND_MESSAGE = (
-        "ParaView backend not detected. Running with the legacy VTK backend."
-    )
+config = configure_app(paraview_available=is_paraview_available())
+BACKEND = config.backend
+data_directory = config.data_directory
 
 
 # -----------------------------------------------------------------------------
@@ -121,7 +54,7 @@ if BACKEND == "paraview":
     vtkOutputWindow.SetInstance(_pv_output_window)
     _pv_backend = ParaViewBackend(
         data_directory=data_directory,
-        show_experimental_filters=not args.hide_experimental_filters,
+        show_experimental_filters=config.show_experimental_filters,
     )
     render_target = _pv_backend.initialize_view()
     _scalar_bars = None
@@ -134,7 +67,7 @@ else:
 _edit = BoundaryEditState()
 
 available_files = get_vtk_files_from_data_folder(data_directory)
-initial_file = resolve_initial_file(args.file, available_files)
+initial_file = resolve_initial_file(config.file, available_files)
 
 
 # -----------------------------------------------------------------------------
@@ -148,7 +81,7 @@ view_controls = ViewControllerProxy(
     ctrl,
     state,
     backend=BACKEND,
-    devtools_enabled=DEVTOOLS_ENABLED,
+    devtools_enabled=config.devtools_enabled,
 )
 
 initialize_state(
@@ -156,7 +89,7 @@ initialize_state(
     available_files=available_files,
     initial_file=initial_file,
     backend=BACKEND,
-    backend_message=BACKEND_MESSAGE,
+    backend_message=config.backend_message,
     pv_backend=_pv_backend,
 )
 
