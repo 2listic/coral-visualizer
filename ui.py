@@ -155,7 +155,7 @@ def _build_toolbar(ctrl, backend):
                 click=ctrl.pv_next_time_step,
                 children=[vuetify.VIcon("mdi-skip-next")],
             )
-            vuetify.VLabel("{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})", classes="ml-2 grey--text text--darken-2", style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;")
+            html.Div("{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})", classes="ml-2 grey--text text--darken-2", style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;")
             vuetify.VSlider(
                 v_model=("time_index",),
                 min=0,

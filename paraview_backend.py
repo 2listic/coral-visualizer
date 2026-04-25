@@ -30,7 +30,7 @@ def is_paraview_available():
 class ParaViewBackend:
     """Thin adapter around ``paraview.simple`` with lightweight pipeline state."""
 
-    def __init__(self, data_directory=None, show_experimental_filters=True):
+    def __init__(self, data_directory=None, show_experimental_filters=True, state=None):
         if not is_paraview_available():
             raise RuntimeError(
                 "ParaView backend requested but 'paraview' or 'trame.widgets.paraview' "
@@ -50,6 +50,8 @@ class ParaViewBackend:
         self.filter_catalog = ParaViewFilterCatalog(
             self.simple, show_experimental_filters=show_experimental_filters
         )
+        self.state = state # Store the state object
+
         self.property_inspector = ParaViewPropertyInspector()
         self._edit_selection_overlay = None
         self._edit_selection_display = None
@@ -84,8 +86,45 @@ class ParaViewBackend:
         if source is None:
             raise RuntimeError(f"ParaView could not open file: {filename}")
 
-        source.UpdatePipeline()
-        self.simple.SetActiveSource(source)
+        scene = self.simple.GetAnimationScene()
+        if hasattr(scene, "UpdateAnimationUsingDataTimeSteps"):
+            scene.UpdateAnimationUsingDataTimeSteps()
+
+        # Explicitly check and set time information if available
+        times = scene.TimeKeeper.TimestepValues
+        is_time_dependent = False
+        total_timesteps = 0
+        current_time = 0.0
+        time_index = 0
+
+        if times and isinstance(times, (list, tuple)):
+            total_timesteps = len(times)
+            if total_timesteps > 1:
+                is_time_dependent = True
+                current_time = times[0] if times else 0.0
+                time_index = 0 # Default to first timestep
+            elif total_timesteps == 1:
+                is_time_dependent = False # Only one timestep, not dependent in the animation sense
+                current_time = times[0] if times else 0.0
+                time_index = 0
+            else: # times is empty list []
+                is_time_dependent = False
+                total_timesteps = 0
+        else: # times is None or not list/tuple
+            is_time_dependent = False
+            total_timesteps = 0
+
+        # Update the backend state directly which should be synced to frontend
+        if self.state is not None:
+            self.state.is_time_dependent = is_time_dependent
+            self.state.total_timesteps = total_timesteps
+            self.state.time_values = list(times) if times else []
+            self.state.current_time = current_time
+            self.state.time_index = time_index
+            self.state.time_playing = False
+
+        print(f"DEBUG load_file: Time detection result - is_time_dependent={is_time_dependent}, total_timesteps={total_timesteps}, times={times}")
+
         display = self.simple.Show(source, self.view)
         display.SetRepresentationType(
             self._normalize_representation("Surface with Edges")
