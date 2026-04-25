@@ -2,49 +2,54 @@
 
 ## Priorita alta
 
-- Ridurre lo stato globale mutabile rimasto in `app.py` (`state`, `_pv_backend`,
-  `_edit_session`, `_edit`, runtime) introducendo un application context/service
-  object unico.
-- Rendere più espliciti i confini tra backend `vtk` e backend `paraview`,
-  evitando rami sparsi in tutto il codice.
+- Introdurre una app factory/test harness che costruisca server, state, runtime
+  e handler senza side effect di import e senza chiamare `server.start()`.
+- Separare `paraview_backend.py` in servizi di dominio più piccoli:
+  pipeline/filter, display-colorbar, selection/picking, edit-session I/O,
+  salvataggio/export.
+- Rendere espliciti i contratti tra backend `vtk` e `paraview` con protocolli o
+  facade typed, evitando che i controller conoscano dettagli interni dei runtime.
 
 ## Priorita media
 
-- Completare la separazione di `app.py`, che ora delega configurazione, stato e
-  callback viewer ma contiene ancora:
-  - bootstrap del server Trame
-  - costruzione diretta di backend/runtime/edit state
 - Ridurre l'accoppiamento fra `app.py`, `ui.py` e `paraview_backend.py`.
-- Evitare accessi a metodi interni del backend come `_find_node` fuori dal modulo che li possiede.
-- Sostituire i dependency argument molto granulari di `register_app_handlers(...)`
-  con dependency object più chiari per runtime, edit e viewer controls.
+- Separare `paraview_controllers.py` in controller per pipeline, display,
+  edit-field, edit-selection e file/export.
+- Spezzare `ui.py` in moduli/pannelli (`toolbar`, `pipeline_panel`,
+  `display_panel`, `edit_panel`, `dialogs`) mantenendo invariato il layout.
+- Centralizzare le opzioni UI dichiarative oggi duplicate tra `state_setup.py`,
+  `ui.py` e controller.
 
 ## Test
 
-- Aggiungere test app-level, non solo config-level, per il bootstrap con
-  `--backend vtk`, `--backend paraview` e `--backend auto`.
-- Aggiungere test app-level per il fallback runtime quando `--backend paraview`
-  viene richiesto ma ParaView non e disponibile.
+- Aggiungere test app-level, non solo config-level, per il bootstrap/factory con
+  `--backend vtk`, `--backend paraview`, `--backend auto` e fallback quando
+  ParaView non e disponibile.
 - Aggiungere test piu alti di livello sul wiring UI/client e sui callback Trame dove oggi c'e solo copertura unitaria o e2e specifica.
+- Aggiungere un test/script CI per il container Docker che faccia build, version
+  probe e HTTP smoke test su porta locale.
 
 ## Pulizia codice
 
 - Ridurre la dimensione dei file monolitici `app.py`, `ui.py` e `paraview_backend.py`.
 - Rimuovere helper morti o sperimentali rimasti dopo il passaggio a `VtkRemoteLocalView`.
-- Centralizzare costanti e mapping UI per rappresentazioni, modalita di interazione ed eventi viewer.
 - Estendere type hints/dataclass ai runtime/helper rimasti privi di contratto
   esplicito.
-- Ripulire commenti temporanei o da debugging che spiegano workaround invece di design stabile.
 - Migliorare i nomi delle funzioni che oggi fanno sia sync di stato sia side effect di rendering.
 - Valutare un componente/helper dedicato per i controlli Display avanzati, ora implementati direttamente fra `ui.py`, `paraview_controllers.py` e `paraview_backend.py`.
+- Spostare la normalizzazione coordinate/picking fuori da `paraview_backend.py`
+  in un helper testabile dedicato.
 
 ## Tooling e sviluppo
 
 - Rendere `dev.sh` meno dipendente dall'ambiente locale hardcoded e piu portabile.
 - Valutare lint aggiuntivi o type checking leggero sulle parti Python piu instabili.
-- Ignorare o gestire meglio artefatti locali e dati generati per mantenere il repository pulito.
+- Aggiungere un comando unico documentato per `format`, `lint`, `test`,
+  `docker-build` e `docker-smoke`.
 
 ## Documentazione
 
 - Aggiornare il README con lo stato reale delle feature supportate su ogni backend.
 - Documentare i limiti noti del backend ParaView e i casi ancora sperimentali.
+- Documentare la nuova architettura `app_config` / `runtime_setup` /
+  `handler_registration` con una breve mappa dei flussi principali.
