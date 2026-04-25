@@ -1,5 +1,7 @@
 """ParaView-specific Trame controller registrations."""
 
+from selection_debug import SelectionDebugLogger
+
 
 def register_paraview_controllers(
     ctrl,
@@ -22,6 +24,11 @@ def register_paraview_controllers(
     normalize_edit_selection_ids,
 ):
     """Register ParaView-only controller callbacks on the provided Trame controller."""
+    selection_debug = SelectionDebugLogger(
+        pv_backend=pv_backend,
+        debug_view=debug_view,
+    )
+
     def _sync_edit_mode_from_state():
         mode = (
             getattr(state, "edit_geometry_mode", None)
@@ -171,50 +178,6 @@ def register_paraview_controllers(
         )
         state.edit_selection_status_type = "success"
         render_and_push()
-
-    def _log_selection_coordinates(kind, *, x0=None, y0=None, x1=None, y1=None, x=None, y=None):
-        """Emit debug logs with raw and normalized selection coordinates."""
-        payload = {"kind": kind}
-        view = getattr(pv_backend, "view", None)
-        view_width = view_height = None
-        if view is not None and hasattr(view, "ViewSize"):
-            try:
-                vw, vh = view.ViewSize
-                view_width = float(vw)
-                view_height = float(vh)
-            except (TypeError, ValueError):
-                view_width = view_height = None
-
-        if x is not None and y is not None:
-            payload["pixel"] = (round(float(x), 3), round(float(y), 3))
-            if view_width and view_height:
-                payload["normalized"] = (
-                    round(float(x) / view_width, 6),
-                    round(float(y) / view_height, 6),
-                )
-
-        if None not in (x0, y0, x1, y1):
-            rx0, ry0 = float(x0), float(y0)
-            rx1, ry1 = float(x1), float(y1)
-            payload["pixel_rect"] = (
-                round(rx0, 3),
-                round(ry0, 3),
-                round(rx1, 3),
-                round(ry1, 3),
-            )
-            if view_width and view_height:
-                payload["normalized_rect"] = (
-                    round(rx0 / view_width, 6),
-                    round(ry0 / view_height, 6),
-                    round(rx1 / view_width, 6),
-                    round(ry1 / view_height, 6),
-                )
-
-        if debug_view("edit.selection.coords", **payload):
-            try:
-                print(f"[selection-record] {payload}", flush=True)
-            except Exception:
-                pass
 
     def _pick_edit_ids_at_coords(mode, x, y):
         if mode == "surface":
@@ -795,7 +758,7 @@ def register_paraview_controllers(
         )
         mode = _sync_edit_mode_from_state()
         if coords is not None:
-            _log_selection_coordinates("click", x=coords[0], y=coords[1])
+            selection_debug.log("click", x=coords[0], y=coords[1])
             picked_ids = _pick_edit_ids_at_coords(mode, coords[0], coords[1])
         else:
             picked_ids = [item for item in normalized if isinstance(item, int)]
@@ -852,7 +815,7 @@ def register_paraview_controllers(
         if is_click_rect:
             x = (float(x0) + float(x1)) * 0.5
             y = (float(y0) + float(y1)) * 0.5
-            _log_selection_coordinates("click", x=x, y=y)
+            selection_debug.log("click", x=x, y=y)
             picked_ids = _pick_edit_ids_at_coords(mode, x, y)
             if not picked_ids:
                 _set_empty_selection_status(mode, "Click")
@@ -860,7 +823,7 @@ def register_paraview_controllers(
             _apply_selection_ids(picked_ids, "click selection")
             return
 
-        _log_selection_coordinates("box", x0=x0, y0=y0, x1=x1, y1=y1)
+        selection_debug.log("box", x0=x0, y0=y0, x1=x1, y1=y1)
         picked_ids = _pick_edit_ids_in_rect(mode, x0, y0, x1, y1)
         if not picked_ids:
             _set_empty_selection_status(mode, "Box")

@@ -135,6 +135,7 @@ docker run -it --rm -p 8008:8080 coral-visualizer-standalone
 - `paraview_runtime.py`: synchronizes backend state into Trame state, handles render pushes, edit-session overlay sync, event normalization.
 - `paraview_controllers.py`: user actions from the UI: pipeline actions, filters, edit sessions, selection, field creation, display/color controls.
 - `paraview_property_inspector.py`: collects editable ParaView proxy properties for Source/Display tabs.
+- `selection_debug.py`: builds and emits optional edit-selection debug payloads.
 
 Important ParaView UI state:
 
