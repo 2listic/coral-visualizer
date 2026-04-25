@@ -55,9 +55,18 @@ parser.add_argument(
     help="Rendering backend to use (default: auto)",
 )
 parser.add_argument(
+    "--devtools",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help=(
+        "Enable developer diagnostics and Trame hot reload "
+        "(default: enabled for now; use --no-devtools to disable)."
+    ),
+)
+parser.add_argument(
     "--dev",
     action="store_true",
-    help="Enable development mode conveniences, including Trame hot reload.",
+    help="Deprecated alias for --devtools.",
 )
 parser.add_argument(
     "--hide-experimental-filters",
@@ -67,8 +76,9 @@ parser.add_argument(
 # Parse known args and let trame handle the rest (--port, --host, --debug, etc.)
 args, unknown = parser.parse_known_args()
 data_directory = os.path.abspath(args.data_directory)
+DEVTOOLS_ENABLED = bool(args.devtools or args.dev)
 
-if args.dev and "--hot-reload" not in os.sys.argv:
+if DEVTOOLS_ENABLED and "--hot-reload" not in os.sys.argv:
     os.sys.argv.append("--hot-reload")
     os.environ["TRAME_HOT_RELOAD"] = "1"
 
@@ -137,13 +147,16 @@ ctrl = server.controller
 
 def _debug_view(message, **values):
     """Emit a compact debug trace for RemoteLocal view lifecycle."""
-    if not (BACKEND == "paraview" and args.dev):
-        return
+    if not (BACKEND == "paraview" and DEVTOOLS_ENABLED):
+        return False
     payload = " ".join(f"{key}={values[key]!r}" for key in sorted(values))
     if payload:
         print(f"[view-debug] {message} {payload}", flush=True)
     else:
         print(f"[view-debug] {message}", flush=True)
+    return True
+
+
 def _call_view_update(*args, **kwargs):
     if hasattr(ctrl, "view_update"):
         _debug_view(

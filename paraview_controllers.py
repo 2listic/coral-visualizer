@@ -210,11 +210,11 @@ def register_paraview_controllers(
                     round(ry1 / view_height, 6),
                 )
 
-        debug_view("edit.selection.coords", **payload)
-        try:
-            print(f"[selection-record] {payload}", flush=True)
-        except Exception:
-            pass
+        if debug_view("edit.selection.coords", **payload):
+            try:
+                print(f"[selection-record] {payload}", flush=True)
+            except Exception:
+                pass
 
     def _pick_edit_ids_at_coords(mode, x, y):
         if mode == "surface":

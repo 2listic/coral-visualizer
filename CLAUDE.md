@@ -36,6 +36,10 @@ Run the ParaView app:
 ~/anaconda3/envs/coral-paraview/bin/python app.py --backend paraview --file test_data/square.vtk --data-directory test_data --host 127.0.0.1 --port 8008
 ```
 
+`--devtools` is enabled by default for now. It enables Trame hot reload and
+ParaView view/selection diagnostics. Use `--no-devtools` for quiet
+production-like runs. The older `--dev` flag is a compatibility alias.
+
 Or with conda:
 
 ```bash

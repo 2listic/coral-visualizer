@@ -36,6 +36,10 @@ or using the custom `file` argument plus any Trame argument (i.e. `port`)
 Use `--data-directory` to scan a custom folder instead of the default `./data` (also used as the save destination for exported `.vtu` files):  
 `python app.py --data-directory /path/to/meshes`
 
+Developer diagnostics are enabled by default for now through `--devtools`.
+This also enables Trame hot reload and ParaView view/selection debug logs.
+Use `--no-devtools` for a quieter production-like local run.
+
 ### ParaView backend
 
 The app now supports `--backend vtk|paraview|auto`.
