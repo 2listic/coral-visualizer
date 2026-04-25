@@ -23,6 +23,7 @@ from constants import (
     BOUNDARY_ID_DEFAULT,
     MANIFOLD_ID_DEFAULT,
 )
+from diagnostics import debug_log
 from vtk_pipeline import get_max_cell_dimension
 
 # ---------------------------------------------------------------------------
@@ -615,11 +616,11 @@ def setup_edit_state(edit_state, viz_result, renderer):
     edit_state.file_bnd_cell_indices = bnd_indices
 
     if not extracted_subcells:
-        print("  No exterior boundary sub-cells found for editing.")
+        debug_log("  No exterior boundary sub-cells found for editing.")
         return
 
-    print(f"  Extracted {len(extracted_subcells)} exterior boundary sub-cells")
-    print(f"  ({len(bnd_indices)} were in the file)")
+    debug_log(f"  Extracted {len(extracted_subcells)} exterior boundary sub-cells")
+    debug_log(f"  ({len(bnd_indices)} were in the file)")
 
     edit_state.merged_bnd_dataset = build_merged_boundary_dataset(
         viz_result.full_dataset, bnd_indices, extracted_subcells

@@ -3,6 +3,8 @@
 import os
 import traceback
 
+from diagnostics import debug_log, devtools_enabled
+
 
 def register_state_handlers(
     state,
@@ -28,7 +30,7 @@ def register_state_handlers(
             return
 
         try:
-            print(f"\nLoading file: {selected_file}")
+            debug_log(f"\nLoading file: {selected_file}")
 
             if state.edit_mode:
                 state.edit_mode = False
@@ -39,8 +41,9 @@ def register_state_handlers(
                 load_file_with_vtk_backend(selected_file)
         except Exception as exc:
             state.error_message = f"Error loading file: {exc}"
-            print(f"Error: {exc}")
-            traceback.print_exc()
+            debug_log(f"Error: {exc}")
+            if devtools_enabled():
+                traceback.print_exc()
 
     @state.change("selected_array")
     def on_array_change(selected_array, **kwargs):

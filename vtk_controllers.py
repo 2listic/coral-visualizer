@@ -4,6 +4,7 @@ import os
 import traceback
 
 from constants import BOUNDARY, MATERIAL_ID_ARRAY, VOLUME
+from diagnostics import debug_log, devtools_enabled
 
 
 def register_vtk_handlers(
@@ -239,9 +240,10 @@ def register_vtk_handlers(
             state.save_status_type = "success"
 
             refresh_available_files()
-            print(f"  Saved to {output_path}")
+            debug_log(f"  Saved to {output_path}")
         except Exception as exc:
             state.save_status = f"Error: {str(exc)}"
             state.save_status_type = "error"
-            print(f"Save error: {exc}")
-            traceback.print_exc()
+            debug_log(f"Save error: {exc}")
+            if devtools_enabled():
+                traceback.print_exc()

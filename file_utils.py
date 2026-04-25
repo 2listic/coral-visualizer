@@ -1,5 +1,7 @@
 import os
 
+from diagnostics import debug_log
+
 CURRENT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
 
 
@@ -9,10 +11,10 @@ def get_vtk_files_from_data_folder(data_folder=None):
         data_folder = os.path.join(CURRENT_DIRECTORY, "data")
     else:
         data_folder = os.path.abspath(data_folder)
-    print(f"data_folder: {data_folder}")
+    debug_log(f"data_folder: {data_folder}")
 
     if not os.path.exists(data_folder):
-        print(f"Warning: Data folder not found: {data_folder}")
+        debug_log(f"Warning: Data folder not found: {data_folder}")
         return []
 
     # Support both legacy .vtk and XML format .vtu/.pvtu
@@ -70,13 +72,13 @@ def detect_and_create_reader(filename):
     ext = os.path.splitext(filename)[1].lower()
 
     if ext == ".vtu":
-        print("Detected VTK XML UnstructuredGrid format (.vtu)")
+        debug_log("Detected VTK XML UnstructuredGrid format (.vtu)")
         return vtkXMLUnstructuredGridReader()
     elif ext == ".pvtu":
-        print("Detected VTK XML Parallel UnstructuredGrid format (.pvtu)")
+        debug_log("Detected VTK XML Parallel UnstructuredGrid format (.pvtu)")
         return vtkXMLPUnstructuredGridReader()
     elif ext == ".vtk":
-        print("Detected VTK legacy format (.vtk), reading header...")
+        debug_log("Detected VTK legacy format (.vtk), reading header...")
         reader = None
         with open(filename, "rb") as f:
             # Read first ~500 bytes which should contain the header
@@ -97,7 +99,7 @@ def detect_and_create_reader(filename):
 
         if reader is None:
             # Default fallback for legacy format
-            print(
+            debug_log(
                 "Warning: Could not detect dataset type, trying UnstructuredGridReader"
             )
             reader = vtkUnstructuredGridReader()

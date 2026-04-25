@@ -19,6 +19,7 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch  # noqa
 # Required for rendering initialization
 import vtkmodules.vtkRenderingOpenGL2  # noqa
 
+from diagnostics import debug_log
 from constants import (
     ARRAY_SOLID,
     CATEGORICAL_CELL_ARRAYS,
@@ -220,17 +221,17 @@ def build_visualization(filename, renderer):
     reader.Update()
 
     full_ds = reader.GetOutput()
-    print("\nDataset Info:")
-    print(f"  Type: {full_ds.GetClassName()}")
-    print(f"  Number of points: {full_ds.GetNumberOfPoints()}")
-    print(f"  Number of cells: {full_ds.GetNumberOfCells()}")
+    debug_log("\nDataset Info:")
+    debug_log(f"  Type: {full_ds.GetClassName()}")
+    debug_log(f"  Number of points: {full_ds.GetNumberOfPoints()}")
+    debug_log(f"  Number of cells: {full_ds.GetNumberOfCells()}")
 
     renderer.AddActor(_create_outline_actor(reader))
 
     # Split into volume and boundary sub-datasets by cell dimension
     vol_ds, bnd_ds = split_by_dimension(full_ds)
-    print(f"  Volume cells: {vol_ds.GetNumberOfCells()}")
-    print(f"  Boundary cells: {bnd_ds.GetNumberOfCells() if bnd_ds else 0}")
+    debug_log(f"  Volume cells: {vol_ds.GetNumberOfCells()}")
+    debug_log(f"  Boundary cells: {bnd_ds.GetNumberOfCells() if bnd_ds else 0}")
 
     # --- Volume actor ---
     vol_actor, vol_mapper = _create_dataset_actor(vol_ds)

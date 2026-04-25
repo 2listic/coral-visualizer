@@ -5,6 +5,8 @@ import os
 import sys
 from dataclasses import dataclass
 
+from diagnostics import set_devtools_enabled
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -23,6 +25,7 @@ def configure_app(*, paraview_available):
     args, _unknown = parser.parse_known_args()
 
     devtools_enabled = bool(args.devtools or args.dev)
+    set_devtools_enabled(devtools_enabled)
     if devtools_enabled and "--hot-reload" not in sys.argv:
         sys.argv.append("--hot-reload")
         os.environ["TRAME_HOT_RELOAD"] = "1"
