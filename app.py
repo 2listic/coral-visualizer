@@ -3,28 +3,19 @@ from app_config import configure_app, enable_paraview_web_venv_if_requested
 enable_paraview_web_venv_if_requested()
 
 from trame.app import get_server
-from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkStringOutputWindow
 
 from constants import (
     BOUNDARY,
     INTERACTION_QUALITY_PRESETS,
 )
-from edit_session import EditSession
 from file_utils import get_vtk_files_from_data_folder
 from file_operations import FileOperationService
 from handler_registration import register_app_handlers
-from paraview_runtime import ParaViewRuntime
-from paraview_backend import ParaViewBackend, is_paraview_available
+from paraview_backend import is_paraview_available
+from runtime_setup import attach_runtime_services, create_runtime_context
 from state_setup import initialize_state, resolve_initial_file
 from view_controls import ViewControllerProxy
-from vtk_runtime import VtkRuntime
-from vtk_pipeline import (
-    create_vtk_rendering_context,
-)
-from scalar_bars import ScalarBarManager
-from interactor import PickInteractorManager
 from mesh_edit import (
-    BoundaryEditState,
     assign_id_to_selection,
     update_selection_actor,
     save_as_vtu,
@@ -40,31 +31,7 @@ data_directory = config.data_directory
 # Rendering setup
 # -----------------------------------------------------------------------------
 
-renderer = None
-renderWindow = None
-renderWindowInteractor = None
-render_target = None
-
-_pv_backend = None
-_edit_session = EditSession()
-_pv_output_window = None
-
-if BACKEND == "paraview":
-    _pv_output_window = vtkStringOutputWindow()
-    vtkOutputWindow.SetInstance(_pv_output_window)
-    _pv_backend = ParaViewBackend(
-        data_directory=data_directory,
-        show_experimental_filters=config.show_experimental_filters,
-    )
-    render_target = _pv_backend.initialize_view()
-    _scalar_bars = None
-else:
-    renderer, renderWindow, renderWindowInteractor = create_vtk_rendering_context()
-    render_target = renderWindow
-    _scalar_bars = ScalarBarManager(renderer)
-
-# Boundary editing state
-_edit = BoundaryEditState()
+runtime = create_runtime_context(config)
 
 available_files = get_vtk_files_from_data_folder(data_directory)
 initial_file = resolve_initial_file(config.file, available_files)
@@ -90,7 +57,7 @@ initialize_state(
     initial_file=initial_file,
     backend=BACKEND,
     backend_message=config.backend_message,
-    pv_backend=_pv_backend,
+    pv_backend=runtime.pv_backend,
 )
 
 
@@ -98,51 +65,26 @@ initialize_state(
 # Build UI
 # -----------------------------------------------------------------------------
 
-build_ui(server, render_target, BACKEND)
+build_ui(server, runtime.render_target, BACKEND)
 
-_pick_interactor = None
-if BACKEND == "vtk":
-    _pick_interactor = PickInteractorManager(
-        renderWindowInteractor, renderer, renderWindow, state, ctrl, _edit
-    )
-
-_vtk_runtime = None
-if BACKEND == "vtk":
-    _vtk_runtime = VtkRuntime(
-        state=state,
-        renderer=renderer,
-        render_window=renderWindow,
-        scalar_bars=_scalar_bars,
-        edit_state=_edit,
-        call_view_update=view_controls.update,
-    )
-
-_paraview_runtime = None
-if BACKEND == "paraview":
-    _paraview_runtime = ParaViewRuntime(
-        state=state,
-        pv_backend=_pv_backend,
-        edit_session=_edit_session,
-        output_window=_pv_output_window,
-        call_view_update=view_controls.update,
-    )
+attach_runtime_services(runtime, state=state, ctrl=ctrl, view_controls=view_controls)
 file_operations = FileOperationService(
     state=state,
     data_directory=data_directory,
-    pv_backend=_pv_backend,
-    edit_session=_edit_session,
+    pv_backend=runtime.pv_backend,
+    edit_session=runtime.edit_session,
 )
 register_app_handlers(
     ctrl=ctrl,
     state=state,
     backend=BACKEND,
     data_directory=data_directory,
-    pv_backend=_pv_backend,
-    edit_session=_edit_session,
-    edit_state=_edit,
-    pick_interactor=_pick_interactor,
-    vtk_runtime=_vtk_runtime,
-    paraview_runtime=_paraview_runtime,
+    pv_backend=runtime.pv_backend,
+    edit_session=runtime.edit_session,
+    edit_state=runtime.edit_state,
+    pick_interactor=runtime.pick_interactor,
+    vtk_runtime=runtime.vtk_runtime,
+    paraview_runtime=runtime.paraview_runtime,
     update_selection_actor=update_selection_actor,
     assign_id_to_selection=assign_id_to_selection,
     save_as_vtu=save_as_vtu,
