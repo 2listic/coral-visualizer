@@ -25,9 +25,7 @@ def register_app_handlers(
     update_selection_actor,
     assign_id_to_selection,
     save_as_vtu,
-    refresh_available_files,
-    persist_uploaded_file,
-    save_paraview_output,
+    file_operations,
     interaction_quality_presets,
     debug_view,
     call_view_update,
@@ -35,8 +33,18 @@ def register_app_handlers(
     call_view_set_remote_rendering,
 ):
     """Register all app handlers against the active backend runtimes."""
-    is_paraview_backend = lambda: backend == "paraview"
-    is_vtk_backend = lambda: backend == "vtk"
+
+    def is_paraview_backend():
+        return backend == "paraview"
+
+    def is_vtk_backend():
+        return backend == "vtk"
+
+    def get_vtk_visualization():
+        return vtk_runtime.viz
+
+    def get_active_vtk_lut():
+        return vtk_runtime.active_lut
 
     render_and_push = (
         paraview_runtime.render_and_push
@@ -95,7 +103,7 @@ def register_app_handlers(
         refresh_runtime_message=refresh_runtime_message,
         update_paraview_ui_state=update_paraview_ui_state,
         render_and_push=render_and_push,
-        save_paraview_output=save_paraview_output,
+        save_paraview_output=file_operations.save_paraview_output,
         debug_view=debug_view,
         call_view_update_geometry=call_view_update_geometry,
         call_view_set_remote_rendering=call_view_set_remote_rendering,
@@ -110,7 +118,7 @@ def register_app_handlers(
         state,
         ctrl,
         is_vtk_backend=is_vtk_backend,
-        viz_getter=lambda: vtk_runtime.viz,
+        viz_getter=get_vtk_visualization,
         edit_state=edit_state,
         pick_interactor=pick_interactor,
         data_directory=data_directory,
@@ -119,9 +127,9 @@ def register_app_handlers(
         update_selection_actor=update_selection_actor,
         assign_id_to_selection=assign_id_to_selection,
         save_as_vtu=save_as_vtu,
-        refresh_available_files=refresh_available_files,
+        refresh_available_files=file_operations.refresh_available_files,
         update_scalar_bars=update_scalar_bars,
-        active_lut_getter=lambda: vtk_runtime.active_lut,
+        active_lut_getter=get_active_vtk_lut,
         apply_vtk_coloring=apply_vtk_coloring,
         apply_vtk_representation_to_scene=apply_vtk_representation_to_scene,
     )
@@ -149,6 +157,6 @@ def register_app_handlers(
         call_view_update=call_view_update,
         reset_vtk_camera=reset_vtk_camera,
         reset_vtk_view=reset_vtk_view,
-        persist_uploaded_file=persist_uploaded_file,
-        refresh_available_files=refresh_available_files,
+        persist_uploaded_file=file_operations.persist_uploaded_file,
+        refresh_available_files=file_operations.refresh_available_files,
     )

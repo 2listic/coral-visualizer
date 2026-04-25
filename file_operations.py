@@ -1,9 +1,34 @@
 """File and save helpers shared by Trame controllers."""
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from file_utils import get_vtk_files_from_data_folder
+
+
+@dataclass
+class FileOperationService:
+    """Stateful file operations used by Trame controller wiring."""
+
+    state: object
+    data_directory: str
+    pv_backend: object | None = None
+    edit_session: object | None = None
+
+    def refresh_available_files(self):
+        refresh_available_files(self.state, self.data_directory)
+
+    def persist_uploaded_file(self, client_file):
+        return persist_uploaded_file(self.data_directory, client_file)
+
+    def save_paraview_output(self):
+        return save_paraview_output(
+            state=self.state,
+            data_directory=self.data_directory,
+            pv_backend=self.pv_backend,
+            edit_session=self.edit_session,
+        )
 
 
 def refresh_available_files(state, data_directory):

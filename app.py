@@ -11,7 +11,7 @@ from constants import (
 )
 from edit_session import EditSession
 from file_utils import get_vtk_files_from_data_folder
-from file_operations import persist_uploaded_file, refresh_available_files, save_paraview_output
+from file_operations import FileOperationService
 from handler_registration import register_app_handlers
 from paraview_runtime import ParaViewRuntime
 from paraview_backend import ParaViewBackend, is_paraview_available
@@ -126,6 +126,12 @@ if BACKEND == "paraview":
         output_window=_pv_output_window,
         call_view_update=view_controls.update,
     )
+file_operations = FileOperationService(
+    state=state,
+    data_directory=data_directory,
+    pv_backend=_pv_backend,
+    edit_session=_edit_session,
+)
 register_app_handlers(
     ctrl=ctrl,
     state=state,
@@ -140,16 +146,7 @@ register_app_handlers(
     update_selection_actor=update_selection_actor,
     assign_id_to_selection=assign_id_to_selection,
     save_as_vtu=save_as_vtu,
-    refresh_available_files=lambda: refresh_available_files(state, data_directory),
-    persist_uploaded_file=lambda client_file: persist_uploaded_file(
-        data_directory, client_file
-    ),
-    save_paraview_output=lambda: save_paraview_output(
-        state=state,
-        data_directory=data_directory,
-        pv_backend=_pv_backend,
-        edit_session=_edit_session,
-    ),
+    file_operations=file_operations,
     interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
     debug_view=view_controls.debug,
     call_view_update=view_controls.update,
