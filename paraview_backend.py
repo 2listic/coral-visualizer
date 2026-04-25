@@ -73,9 +73,34 @@ class ParaViewBackend:
         """Create the render view used by Trame."""
         self.simple._DisableFirstRenderCameraReset()
         self.view = self.simple.GetActiveViewOrCreate("RenderView")
+        self._set_white_background()
         self.view.MakeRenderWindowInteractor(True)
         self.simple.SetActiveView(self.view)
         return self.view
+
+    def _set_white_background(self):
+        """Force a plain white render background across ParaView versions."""
+        # Some builds keep the color palette in control unless explicitly disabled.
+        try:
+            if hasattr(self.simple, "LoadPalette"):
+                self.simple.LoadPalette("WhiteBackground")
+        except Exception:
+            pass
+
+        if self.view is None:
+            return
+
+        for name, value in (
+            ("UseColorPaletteForBackground", 0),
+            ("BackgroundColorMode", "Single Color"),
+            ("UseGradientBackground", 0),
+            ("Background", [1.0, 1.0, 1.0]),
+            ("Background2", [1.0, 1.0, 1.0]),
+        ):
+            try:
+                setattr(self.view, name, value)
+            except Exception:
+                pass
 
     def load_file(self, filename):
         """Load a dataset into the current view and make it active."""
@@ -938,7 +963,7 @@ class ParaViewBackend:
         # Fast path: use native ParaView/VTK surface selection on an extracted
         # boundary-surface representation and map selected cells back to source keys.
         native_keys = self._pick_surface_keys_native(rect, behavior=behavior)
-        if native_keys is not None:
+        if native_keys:
             return native_keys
 
         try:
@@ -1168,6 +1193,56 @@ class ParaViewBackend:
         seen = set()
         deduped = []
         for key in keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+        return ParaViewBackend._normalize_surface_keys_to_source_boundary(
+            deduped, source_dataset=source_dataset
+        )
+
+    @staticmethod
+    def _normalize_surface_keys_to_source_boundary(keys, source_dataset=None):
+        """Resolve partial picked keys to canonical source boundary keys when possible."""
+        if not keys or source_dataset is None:
+            return keys or []
+
+        boundary = ParaViewBackend._boundary_codim_elements(source_dataset)
+        if not boundary:
+            return keys
+
+        boundary_keys = list(boundary.keys())
+        boundary_sets = [(key, set(key)) for key in boundary_keys]
+
+        normalized = []
+        for key in keys:
+            if key in boundary:
+                normalized.append(key)
+                continue
+
+            key_set = set(key)
+            if not key_set:
+                continue
+
+            # ParaView may triangulate selected surface faces. Map those partial keys
+            # back to the original boundary face key by subset match.
+            candidates = [
+                boundary_key
+                for boundary_key, boundary_set in boundary_sets
+                if key_set.issubset(boundary_set)
+            ]
+            if not candidates:
+                normalized.append(key)
+                continue
+
+            # Prefer the smallest superset (e.g. triangle -> quad) and keep deterministic.
+            candidates.sort(key=lambda candidate: (len(candidate), candidate))
+            normalized.append(candidates[0])
+
+        # Preserve order with dedupe.
+        deduped = []
+        seen = set()
+        for key in normalized:
             if key in seen:
                 continue
             seen.add(key)
@@ -1508,12 +1583,165 @@ class ParaViewBackend:
                 ]
                 break
 
+        if not selected_ids:
+            try:
+                source_dataset = self.servermanager.Fetch(source)
+            except Exception:
+                source_dataset = None
+            selected_ids = self._source_cell_ids_from_selected_dataset(
+                dataset, source_dataset
+            )
+
         try:
             self.simple.Delete(extract)
         except Exception:
             pass
 
         return selected_ids
+
+    @staticmethod
+    def _source_cell_ids_from_selected_dataset(selected_dataset, source_dataset):
+        """Best-effort map selected cells back to source cell ids by geometry."""
+        if selected_dataset is None or source_dataset is None:
+            return []
+        if not hasattr(selected_dataset, "GetNumberOfCells") or not hasattr(
+            source_dataset, "GetNumberOfCells"
+        ):
+            return []
+        if not hasattr(selected_dataset, "GetPoint") or not hasattr(
+            source_dataset, "GetPoint"
+        ):
+            return []
+
+        coordinate_to_source_point_id = {}
+        try:
+            source_point_count = source_dataset.GetNumberOfPoints()
+        except Exception:
+            return []
+
+        for source_point_id in range(source_point_count):
+            point = source_dataset.GetPoint(source_point_id)
+            if point is None:
+                continue
+            key = (
+                round(float(point[0]), 12),
+                round(float(point[1]), 12),
+                round(float(point[2]), 12),
+            )
+            coordinate_to_source_point_id[key] = int(source_point_id)
+
+        source_cell_count = source_dataset.GetNumberOfCells()
+        source_cell_map = {}
+        top_dim = 0
+        for source_cell_id in range(source_cell_count):
+            source_cell = source_dataset.GetCell(source_cell_id)
+            if source_cell is None:
+                continue
+            try:
+                top_dim = max(top_dim, int(source_cell.GetCellDimension()))
+            except Exception:
+                pass
+            source_key = tuple(
+                sorted(
+                    int(source_cell.GetPointId(point_idx))
+                    for point_idx in range(source_cell.GetNumberOfPoints())
+                )
+            )
+            source_cell_map[source_key] = int(source_cell_id)
+
+        boundary_to_top_cells = {}
+        if top_dim >= 2:
+            for source_cell_id in range(source_cell_count):
+                source_cell = source_dataset.GetCell(source_cell_id)
+                if source_cell is None:
+                    continue
+                try:
+                    cell_dim = int(source_cell.GetCellDimension())
+                except Exception:
+                    continue
+                if cell_dim != top_dim:
+                    continue
+
+                if top_dim == 3:
+                    subcell_count = source_cell.GetNumberOfFaces()
+                    getter = source_cell.GetFace
+                else:
+                    subcell_count = source_cell.GetNumberOfEdges()
+                    getter = source_cell.GetEdge
+
+                for subcell_idx in range(subcell_count):
+                    subcell = getter(subcell_idx)
+                    if subcell is None:
+                        continue
+                    boundary_key = tuple(
+                        sorted(
+                            int(subcell.GetPointId(point_idx))
+                            for point_idx in range(subcell.GetNumberOfPoints())
+                        )
+                    )
+                    if not boundary_key:
+                        continue
+                    boundary_to_top_cells.setdefault(boundary_key, set()).add(
+                        int(source_cell_id)
+                    )
+
+        mapped = []
+        for selected_cell_id in range(selected_dataset.GetNumberOfCells()):
+            selected_cell = selected_dataset.GetCell(selected_cell_id)
+            if selected_cell is None:
+                continue
+
+            mapped_point_ids = []
+            failed = False
+            for point_idx in range(selected_cell.GetNumberOfPoints()):
+                point = selected_dataset.GetPoint(selected_cell.GetPointId(point_idx))
+                if point is None:
+                    failed = True
+                    break
+                point_key = (
+                    round(float(point[0]), 12),
+                    round(float(point[1]), 12),
+                    round(float(point[2]), 12),
+                )
+                source_point_id = coordinate_to_source_point_id.get(point_key)
+                if source_point_id is None:
+                    failed = True
+                    break
+                mapped_point_ids.append(int(source_point_id))
+
+            if failed or not mapped_point_ids:
+                continue
+            cell_key = tuple(sorted(mapped_point_ids))
+            source_cell_id = source_cell_map.get(cell_key)
+            if source_cell_id is not None:
+                mapped.append(int(source_cell_id))
+                continue
+
+            owners = boundary_to_top_cells.get(cell_key)
+            if owners:
+                mapped.extend(sorted(int(owner) for owner in owners))
+                continue
+
+            # Selected surface can be triangulated while source boundary remains
+            # polygonal; resolve by subset match.
+            key_set = set(cell_key)
+            if key_set:
+                matched = []
+                for boundary_key, owner_ids in boundary_to_top_cells.items():
+                    if key_set.issubset(boundary_key):
+                        matched.extend(int(owner) for owner in owner_ids)
+                if matched:
+                    mapped.extend(sorted(set(matched)))
+
+        # Deduplicate while preserving order.
+        deduped = []
+        seen = set()
+        for cell_id in mapped:
+            if cell_id in seen:
+                continue
+            seen.add(cell_id)
+            deduped.append(cell_id)
+        return deduped
 
     def _fetch_selected_original_point_ids(self, source):
         """Extract selected original point ids from the source selection."""

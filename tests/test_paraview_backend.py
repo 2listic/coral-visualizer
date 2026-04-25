@@ -828,6 +828,30 @@ def test_pick_surface_keys_in_rect_skips_occluded_boundary_elements():
     assert picked == [(1, 2, 3)]
 
 
+def test_pick_surface_keys_in_rect_falls_back_when_native_returns_empty():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation())
+    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend.servermanager.Fetch = lambda _source: object()
+
+    backend._pick_surface_keys_native = lambda _rect, behavior="touch": []
+    backend._boundary_codim_elements = lambda _dataset: {
+        (1, 2, 3): {"point_ids": (1, 2, 3)}
+    }
+    backend._surface_element_is_visible = lambda _dataset, _point_ids, _renderer: True
+    backend._project_points_to_display = lambda _dataset, _point_ids, _renderer: [
+        (10.0, 10.0),
+        (20.0, 10.0),
+        (15.0, 20.0),
+    ]
+
+    picked = backend._pick_surface_keys_in_rect([0, 0, 30, 30], behavior="touch")
+
+    assert picked == [(1, 2, 3)]
+
+
 def test_surface_keys_from_selected_dataset_falls_back_to_coordinate_mapping():
     # selected surface polydata points are reindexed but coordinates match source dataset
     selected = FakeSurfaceDataset(
@@ -844,3 +868,184 @@ def test_surface_keys_from_selected_dataset_falls_back_to_coordinate_mapping():
     )
 
     assert keys == [(1, 2, 3)]
+
+
+def test_surface_keys_from_selected_dataset_maps_triangle_to_quad_boundary_key():
+    # Selected surface may be triangulated while source boundary still stores quads.
+    selected = FakeSurfaceDataset(
+        points=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)],
+        cells=[(0, 1, 2)],
+    )
+    class FakeEdge:
+        def __init__(self, point_ids):
+            self._point_ids = tuple(point_ids)
+
+        def GetNumberOfPoints(self):
+            return len(self._point_ids)
+
+        def GetPointId(self, index):
+            return self._point_ids[index]
+
+    class FakeFace:
+        def __init__(self, point_ids):
+            self._point_ids = tuple(point_ids)
+
+        def GetNumberOfPoints(self):
+            return len(self._point_ids)
+
+        def GetPointId(self, index):
+            return self._point_ids[index]
+
+    class FakeVolumeCell:
+        def __init__(self):
+            self._faces = [FakeFace((0, 1, 2, 3))]
+
+        def GetCellDimension(self):
+            return 3
+
+        def GetNumberOfFaces(self):
+            return len(self._faces)
+
+        def GetFace(self, index):
+            return self._faces[index]
+
+    class FakeSourceDataset:
+        def __init__(self):
+            self._cells = [FakeVolumeCell()]
+            self._points = [
+                (0.0, 0.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (1.0, 1.0, 0.0),
+                (0.0, 1.0, 0.0),
+            ]
+
+        def GetNumberOfCells(self):
+            return len(self._cells)
+
+        def GetCell(self, index):
+            return self._cells[index]
+
+        def GetNumberOfPoints(self):
+            return len(self._points)
+
+        def GetPoint(self, index):
+            return self._points[index]
+
+    source = FakeSourceDataset()
+
+    keys = ParaViewBackend._surface_keys_from_selected_dataset(
+        selected, source_dataset=source
+    )
+
+    assert keys == [(0, 1, 2, 3)]
+
+
+def test_source_cell_ids_from_selected_dataset_maps_by_coordinates():
+    source = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (2.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2, 3), (1, 4, 5, 2)],
+    )
+    # selected_dataset points are reindexed and only include one selected source cell
+    selected = FakeSurfaceDataset(
+        points=[
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (2.0, 1.0, 0.0),
+            (1.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2, 3)],
+    )
+
+    cell_ids = ParaViewBackend._source_cell_ids_from_selected_dataset(
+        selected, source
+    )
+
+    assert cell_ids == [1]
+
+
+def test_source_cell_ids_from_selected_dataset_maps_selected_face_to_volume_cell():
+    class FakeFace:
+        def __init__(self, point_ids):
+            self._point_ids = tuple(point_ids)
+
+        def GetNumberOfPoints(self):
+            return len(self._point_ids)
+
+        def GetPointId(self, index):
+            return self._point_ids[index]
+
+    class FakeHexCell:
+        def __init__(self, point_ids):
+            self._point_ids = tuple(point_ids)
+            self._faces = [
+                FakeFace((point_ids[0], point_ids[1], point_ids[2], point_ids[3])),
+                FakeFace((point_ids[4], point_ids[5], point_ids[6], point_ids[7])),
+                FakeFace((point_ids[0], point_ids[1], point_ids[5], point_ids[4])),
+                FakeFace((point_ids[2], point_ids[3], point_ids[7], point_ids[6])),
+                FakeFace((point_ids[0], point_ids[3], point_ids[7], point_ids[4])),
+                FakeFace((point_ids[1], point_ids[2], point_ids[6], point_ids[5])),
+            ]
+
+        def GetCellDimension(self):
+            return 3
+
+        def GetNumberOfPoints(self):
+            return len(self._point_ids)
+
+        def GetPointId(self, index):
+            return self._point_ids[index]
+
+        def GetNumberOfFaces(self):
+            return len(self._faces)
+
+        def GetFace(self, index):
+            return self._faces[index]
+
+    class FakeVolumetricDataset:
+        def __init__(self):
+            self._points = [
+                (0.0, 0.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (1.0, 1.0, 0.0),
+                (0.0, 1.0, 0.0),
+                (0.0, 0.0, 1.0),
+                (1.0, 0.0, 1.0),
+                (1.0, 1.0, 1.0),
+                (0.0, 1.0, 1.0),
+            ]
+            self._cells = [FakeHexCell((0, 1, 2, 3, 4, 5, 6, 7))]
+
+        def GetNumberOfPoints(self):
+            return len(self._points)
+
+        def GetPoint(self, point_id):
+            return self._points[point_id]
+
+        def GetNumberOfCells(self):
+            return len(self._cells)
+
+        def GetCell(self, cell_id):
+            return self._cells[cell_id]
+
+    source = FakeVolumetricDataset()
+    selected = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2)],
+    )
+
+    cell_ids = ParaViewBackend._source_cell_ids_from_selected_dataset(
+        selected, source
+    )
+
+    assert cell_ids == [0]

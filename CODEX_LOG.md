@@ -18,6 +18,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - made non-edit rotation e2e use a non-degenerate dataset (`cube.vtk`) for stable screenshot-diff detection
 - Improved backend test resilience:
   - `get_time_state()` now safely returns default time metadata when animation scene APIs are unavailable in fakes/mocks
+- Fixed volumetric edit-selection ID mapping regressions:
+  - strengthened fallback mapping from selected surface fragments back to source volumetric cell IDs via boundary-face ownership
+  - added triangulation-tolerant subset matching so `touch` rectangle picks map correctly even when picked faces are triangles and source faces are polygons
+  - added backend regression coverage for face-to-volume ID mapping
 
 - Added support for `.pvd` files and time-dependent simulations:
   - Enabled `.pvd` extension in file discovery.
