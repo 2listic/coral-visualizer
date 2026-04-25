@@ -10,7 +10,7 @@ from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
 from edit_session import EditSession
 from paraview_filter_catalog import ParaViewFilterCatalog, SUPPORTED_FILTERS
 from paraview_property_inspector import ParaViewPropertyInspector
-from vtkmodules.vtkCommonDataModel import vtkDataSet
+from vtkmodules.vtkCommonDataModel import vtkCellTypeUtilities, vtkCellTypes, vtkDataSet
 from vtkmodules.vtkIOLegacy import vtkDataSetWriter
 
 
@@ -1522,6 +1522,65 @@ class ParaViewBackend:
 
         return selected_ids
 
+    def _count_cells_by_dim(self, data, dim_counts):
+        """Recursively count cells by dimension in a dataset or composite block."""
+        if hasattr(data, "GetNumberOfBlocks"):  # vtkMultiBlockDataSet
+            for i in range(data.GetNumberOfBlocks()):
+                block = data.GetBlock(i)
+                if block:
+                    self._count_cells_by_dim(block, dim_counts)
+        elif data.IsA("vtkCompositeDataSet"):
+            it = data.NewIterator()
+            it.InitTraversal()
+            while not it.IsDoneWithTraversal():
+                block = it.GetCurrentDataObject()
+                if block:
+                    self._count_cells_by_dim(block, dim_counts)
+                it.Next()
+        elif data.IsA("vtkPolyData"):
+            dim_counts[0] += data.GetNumberOfVerts()
+            dim_counts[1] += data.GetNumberOfLines()
+            dim_counts[2] += data.GetNumberOfPolys() + data.GetNumberOfStrips()
+        elif data.IsA("vtkUnstructuredGrid"):
+            ctypes = vtkCellTypes()
+            data.GetCellTypes(ctypes)
+            for i in range(ctypes.GetNumberOfTypes()):
+                ct = ctypes.GetCellType(i)
+                count = data.GetNumberOfCellsOfType(ct)
+                dim = vtkCellTypeUtilities.GetDimension(ct)
+                if dim in dim_counts:
+                    dim_counts[dim] += count
+        elif data.IsA("vtkDataSet"):
+            # Fallback for ImageData, RectilinearGrid, etc. where all cells are same type
+            if data.GetNumberOfCells() > 0:
+                ct = data.GetCellType(0)
+                dim = vtkCellTypeUtilities.GetDimension(ct)
+                if dim in dim_counts:
+                    dim_counts[dim] += data.GetNumberOfCells()
+
+    def _get_detailed_cell_stats(self, source):
+        """Return detailed cell breakdown by dimension (Volumetric, Surface, etc)."""
+        try:
+            data = self.servermanager.Fetch(source)
+            if data is None:
+                return []
+
+            dim_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+            self._count_cells_by_dim(data, dim_counts)
+
+            res = []
+            if dim_counts[3] > 0:
+                res.append({"label": "Volumetric Cells", "value": str(dim_counts[3])})
+            if dim_counts[2] > 0:
+                res.append({"label": "Surface Cells", "value": str(dim_counts[2])})
+            if dim_counts[1] > 0:
+                res.append({"label": "Edge Cells", "value": str(dim_counts[1])})
+            if dim_counts[0] > 0:
+                res.append({"label": "Vertex Cells", "value": str(dim_counts[0])})
+            return res
+        except Exception:
+            return []
+
     def get_ui_state(self):
         """Return lightweight UI metadata for the current ParaView selection."""
         source = self.source
@@ -1575,9 +1634,17 @@ class ParaViewBackend:
         stats = [
             {"label": "Points", "value": str(data_information.GetNumberOfPoints())},
             {"label": "Cells", "value": str(data_information.GetNumberOfCells())},
-            {"label": "Point Arrays", "value": str(len(point_items))},
-            {"label": "Cell Arrays", "value": str(len(cell_items))},
         ]
+
+        if data_information.GetNumberOfCells() > 0:
+            stats.extend(self._get_detailed_cell_stats(source))
+
+        stats.extend(
+            [
+                {"label": "Point Arrays", "value": str(len(point_items))},
+                {"label": "Cell Arrays", "value": str(len(cell_items))},
+            ]
+        )
 
         color_state = self.get_color_control_state()
         return {

@@ -6,6 +6,9 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Separated cell information by type in the `Information` panel:
+  - Added recursive counting of cells by dimension (Volumetric, Surface, Edge, Vertex) for single and composite (Multi-block) datasets.
+  - Integrated detailed breakdown into the `Information` tab UI.
 - Fixed ParaView edit field creation and replace-selection behavior:
   - removed the separate `Create New Field` button and open the dialog from `Select field -> Create new...`
   - made field-selection changes pass the selected value explicitly to the controller
