@@ -108,6 +108,20 @@ def register_paraview_controllers(
         )
         return mode
 
+    def _sync_color_controls():
+        update_paraview_ui_state()
+        render_and_push()
+
+    def _refresh_color_controls_preserving_visibility():
+        visible = bool(getattr(state, "color_bar_visible", False))
+        update_paraview_ui_state()
+        state.color_bar_visible = visible
+        render_and_push()
+
+    def _set_color_status(message, status_type="success"):
+        state.color_controls_status = message
+        state.color_controls_status_type = status_type
+
     def _apply_selection_ids(picked_ids, source_label):
         mode = _sync_edit_mode_from_state()
         selection_mode = _set_selection_mode(
@@ -523,6 +537,111 @@ def register_paraview_controllers(
         except Exception as exc:
             state.edit_status = f"Could not add edited result to pipeline: {exc}"
             state.edit_status_type = "error"
+
+    @ctrl.add("pv_apply_color_map_preset")
+    def pv_apply_color_map_preset(preset=None):
+        """Apply the selected color-map preset to the active scalar coloring."""
+        if not is_paraview_backend() or pv_backend.display is None:
+            return
+        preset = (preset or getattr(state, "color_map_preset", "") or "").strip()
+        if not preset:
+            return
+        try:
+            state.color_map_preset = preset
+            pv_backend.apply_color_map_preset(preset)
+            _refresh_color_controls_preserving_visibility()
+            _set_color_status(f"Applied color map '{preset}'.")
+        except Exception as exc:
+            _set_color_status(f"Color map update failed: {exc}", "error")
+
+    @ctrl.add("pv_apply_color_range")
+    def pv_apply_color_range():
+        """Apply manual min/max values to the active scalar color range."""
+        if not is_paraview_backend() or pv_backend.display is None:
+            return
+        try:
+            pv_backend.apply_color_range(
+                getattr(state, "color_range_min", ""),
+                getattr(state, "color_range_max", ""),
+            )
+            _refresh_color_controls_preserving_visibility()
+            _set_color_status("Applied color range.")
+        except Exception as exc:
+            _set_color_status(f"Color range update failed: {exc}", "error")
+
+    @ctrl.add("pv_rescale_color_range_to_data")
+    def pv_rescale_color_range_to_data():
+        """Rescale the active color map to the visible data range."""
+        if not is_paraview_backend() or pv_backend.display is None:
+            return
+        try:
+            pv_backend.rescale_color_range_to_data()
+            _refresh_color_controls_preserving_visibility()
+            _set_color_status("Rescaled color range to data.")
+        except Exception as exc:
+            _set_color_status(f"Color range rescale failed: {exc}", "error")
+
+    @ctrl.add("pv_set_scalar_bar_visible")
+    def pv_set_scalar_bar_visible(visible=None):
+        """Toggle the active scalar color legend."""
+        if not is_paraview_backend() or pv_backend.display is None:
+            return
+        visible = bool(
+            getattr(state, "color_bar_visible", False)
+            if visible is None
+            else visible
+        )
+        try:
+            state.color_bar_visible = visible
+            pv_backend.set_scalar_bar_visible(visible)
+            render_and_push()
+            _set_color_status(
+                "Color scale shown." if visible else "Color scale hidden."
+            )
+        except Exception as exc:
+            _set_color_status(f"Color scale update failed: {exc}", "error")
+
+    @ctrl.add("pv_set_orientation_axes_visible")
+    def pv_set_orientation_axes_visible(visible=None):
+        """Toggle the orientation axes in the render view."""
+        if not is_paraview_backend():
+            return
+        visible = bool(
+            getattr(state, "orientation_axes_visible", True)
+            if visible is None
+            else visible
+        )
+        try:
+            state.orientation_axes_visible = visible
+            pv_backend.set_orientation_axes_visible(visible)
+            render_and_push()
+            _set_color_status(
+                "Orientation axes shown." if visible else "Orientation axes hidden."
+            )
+        except Exception as exc:
+            _set_color_status(f"Orientation axes update failed: {exc}", "error")
+
+    @ctrl.add("pv_set_categorical_coloring")
+    def pv_set_categorical_coloring(enabled=None):
+        """Toggle categorical interpretation on the active scalar color map."""
+        if not is_paraview_backend() or pv_backend.display is None:
+            return
+        enabled = bool(
+            getattr(state, "categorical_coloring", False)
+            if enabled is None
+            else enabled
+        )
+        try:
+            state.categorical_coloring = enabled
+            pv_backend.set_categorical_coloring(enabled)
+            _refresh_color_controls_preserving_visibility()
+            _set_color_status(
+                "Categorical colors enabled."
+                if enabled
+                else "Categorical colors disabled."
+            )
+        except Exception as exc:
+            _set_color_status(f"Categorical color update failed: {exc}", "error")
 
     @ctrl.add("pv_on_edit_field_choice")
     def pv_on_edit_field_choice(choice=None):

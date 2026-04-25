@@ -59,6 +59,23 @@ def initialize_state(
     state.source_advanced_property_count = 0
     state.display_default_property_count = 0
     state.display_advanced_property_count = 0
+    state.color_controls_enabled = False
+    state.color_map_preset = "Viridis (matplotlib)"
+    state.color_map_preset_options = [
+        {"text": "Viridis", "value": "Viridis (matplotlib)"},
+        {"text": "Cool to Warm", "value": "Cool to Warm"},
+        {"text": "Rainbow Desaturated", "value": "Rainbow Desaturated"},
+        {"text": "Black-Body Radiation", "value": "Black-Body Radiation"},
+        {"text": "X Ray", "value": "X Ray"},
+        {"text": "Grayscale", "value": "Grayscale"},
+    ]
+    state.color_range_min = ""
+    state.color_range_max = ""
+    state.color_bar_visible = False
+    state.orientation_axes_visible = True
+    state.categorical_coloring = False
+    state.color_controls_status = ""
+    state.color_controls_status_type = "info"
     state.inspector_tab = 0
     state.pv_properties_dirty = False
     state.active_visibility = True

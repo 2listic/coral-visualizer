@@ -106,6 +106,27 @@ def _drag_normalized_box(page, view_box, rect, *, steps=12):
     page.mouse.up()
 
 
+def _switch_checked(page, label):
+    switch = page.locator(
+        f"xpath=//label[contains(normalize-space(.),'{label}')]/ancestor::div[contains(@class,'v-input')]"
+    ).first
+    switch.wait_for(state="visible", timeout=40000)
+    classes = switch.get_attribute("class") or ""
+    return "v-input--is-label-active" in classes
+
+
+def _set_switch(page, label, checked):
+    if _switch_checked(page, label) == checked:
+        return
+    page.click(f"label:has-text('{label}')")
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if _switch_checked(page, label) == checked:
+            return
+        time.sleep(0.1)
+    assert _switch_checked(page, label) == checked
+
+
 def _parse_env_box(name, default):
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -214,6 +235,75 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         page.mouse.up()
         box_count = _wait_for_selection_count(page, lambda count: count > 0)
         assert box_count is not None and box_count > 0
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser):
+    if not is_paraview_available():
+        pytest.skip("ParaView backend is not available in this environment")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--no-browser",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_GRID),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(
+            viewport={"width": 1600, "height": 1000})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("text=Display", timeout=40000)
+
+        _select_vselect_option(page, "Color by", "MaterialID")
+        page.wait_for_selector("text=Color Bar", timeout=40000)
+
+        assert _switch_checked(page, "Show color scale") is True
+
+        _set_switch(page, "Show color scale", False)
+        assert _switch_checked(page, "Show color scale") is False
+        page.click("button:has-text('Rescale Data')")
+        time.sleep(0.8)
+        assert _switch_checked(page, "Show color scale") is False
+
+        _set_switch(page, "Show color scale", True)
+        assert _switch_checked(page, "Show color scale") is True
+        page.click("button:has-text('Rescale Data')")
+        time.sleep(0.8)
+        assert _switch_checked(page, "Show color scale") is True
+
+        _set_switch(page, "Show orientation axes", False)
+        assert _switch_checked(page, "Show orientation axes") is False
+        _set_switch(page, "Show orientation axes", True)
+        assert _switch_checked(page, "Show orientation axes") is True
 
         context.close()
     finally:

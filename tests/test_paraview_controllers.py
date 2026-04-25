@@ -303,6 +303,68 @@ def test_pv_apply_edit_field_requires_field_choice():
     assert sync_calls == ["sync"]
 
 
+def test_pv_color_control_handlers_apply_backend_updates():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        color_map_preset="Cool to Warm",
+        color_range_min="1",
+        color_range_max="9",
+        color_bar_visible=True,
+        orientation_axes_visible=True,
+        categorical_coloring=True,
+        color_controls_status="",
+        color_controls_status_type="info",
+    )
+    pv_backend = SimpleNamespace(
+        display=object(),
+        apply_color_map_preset=lambda preset: calls.append(("preset", preset)),
+        apply_color_range=lambda low, high: calls.append(("range", low, high)),
+        rescale_color_range_to_data=lambda: calls.append("rescale"),
+        set_scalar_bar_visible=lambda visible: calls.append(("bar", visible)),
+        set_orientation_axes_visible=lambda visible: calls.append(("axes", visible)),
+        set_categorical_coloring=lambda enabled: calls.append(("categorical", enabled)),
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=SimpleNamespace(active=False),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: calls.append("sync-ui") or setattr(
+            state, "color_bar_visible", True
+        ),
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_apply_color_map_preset"]("Viridis (matplotlib)")
+    ctrl.handlers["pv_apply_color_range"]()
+    ctrl.handlers["pv_rescale_color_range_to_data"]()
+    ctrl.handlers["pv_set_scalar_bar_visible"](False)
+    ctrl.handlers["pv_set_orientation_axes_visible"](False)
+    ctrl.handlers["pv_set_categorical_coloring"](False)
+
+    assert ("preset", "Viridis (matplotlib)") in calls
+    assert ("range", "1", "9") in calls
+    assert "rescale" in calls
+    assert ("bar", False) in calls
+    assert ("axes", False) in calls
+    assert ("categorical", False) in calls
+    assert state.color_bar_visible is False
+    assert state.color_controls_status_type == "success"
+
+
 def test_pv_on_edit_field_choice_create_new_opens_dialog_from_event_value():
     ctrl = FakeCtrl()
     state = SimpleNamespace(

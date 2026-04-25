@@ -12,6 +12,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - made replace-mode picking ignore native toggled selection payload IDs when coordinates are available
   - clear ParaView native selection state and transient edit-selection overlays before pick queries
   - added e2e coverage for `Select field -> Create new... -> Point data array -> TestField` followed by overlapping replace box selections
+- Added ParaView Display color-bar controls under `Advanced Display Controls`:
+  - color-map preset selection, manual min/max range, and data-range rescale
+  - toggles for color scale, orientation axes, and categorical color interpretation
+  - preserved color-scale visibility across range/preset/category updates
+  - added e2e coverage for color-scale visibility through `Rescale Data`
 - Added backend selection in `app.py`: `--backend auto|vtk|paraview`.
 - Added ParaView backend adapter in `paraview_backend.py`.
 - Added conda-based ParaView environment bootstrap script in `tools/setup_pv_env.sh`.

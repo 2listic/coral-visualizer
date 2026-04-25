@@ -369,6 +369,12 @@ class ParaViewRuntime:
             "active_visibility": True,
             "selected_array": ARRAY_SOLID,
             "representation": "Surface with Edges",
+            "color_controls_enabled": False,
+            "color_range_min": "",
+            "color_range_max": "",
+            "color_bar_visible": False,
+            "orientation_axes_visible": True,
+            "categorical_coloring": False,
             **ui_state,
         }
         self.state.pipeline_items = ui_state["pipeline_items"]
@@ -406,6 +412,12 @@ class ParaViewRuntime:
         self.state.available_arrays.insert(0, {"text": "Solid Color", "value": ARRAY_SOLID})
         self.state.selected_array = ui_state["selected_array"]
         self.state.representation = ui_state["representation"]
+        self.state.color_controls_enabled = ui_state["color_controls_enabled"]
+        self.state.color_range_min = ui_state["color_range_min"]
+        self.state.color_range_max = ui_state["color_range_max"]
+        self.state.color_bar_visible = ui_state["color_bar_visible"]
+        self.state.orientation_axes_visible = ui_state["orientation_axes_visible"]
+        self.state.categorical_coloring = ui_state["categorical_coloring"]
         self.state.pv_properties_dirty = False
         if not self.state.save_filename or self.state.save_filename == "output":
             self.state.save_filename = (

@@ -732,6 +732,101 @@ def _build_paraview_inspector_panel(ctrl):
                     )
                     vuetify.VDivider(classes="my-4")
                     vuetify.VSubheader(classes="px-0", children=["Advanced Display Controls"])
+                    vuetify.VSubheader(classes="px-0", children=["Color Bar"])
+                    with vuetify.VList(
+                        dense=True,
+                        two_line=True,
+                        style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+                        classes="mb-4",
+                    ):
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VSelect(
+                                    v_model=("color_map_preset",),
+                                    items=("color_map_preset_options",),
+                                    item_text="text",
+                                    item_value="value",
+                                    label="Color map",
+                                    dense=True,
+                                    outlined=True,
+                                    hide_details=True,
+                                    disabled=("!color_controls_enabled",),
+                                    change=(ctrl.pv_apply_color_map_preset, "[$event]"),
+                                )
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                with vuetify.VRow(dense=True):
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VTextField(
+                                            v_model=("color_range_min",),
+                                            label="Min",
+                                            dense=True,
+                                            outlined=True,
+                                            hide_details=True,
+                                            disabled=("!color_controls_enabled",),
+                                        )
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VTextField(
+                                            v_model=("color_range_max",),
+                                            label="Max",
+                                            dense=True,
+                                            outlined=True,
+                                            hide_details=True,
+                                            disabled=("!color_controls_enabled",),
+                                        )
+                                with vuetify.VRow(dense=True, classes="mt-1"):
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Apply Range",
+                                            small=True,
+                                            block=True,
+                                            outlined=True,
+                                            disabled=("!color_controls_enabled",),
+                                            click=ctrl.pv_apply_color_range,
+                                        )
+                                    with vuetify.VCol(cols=6):
+                                        vuetify.VBtn(
+                                            "Rescale Data",
+                                            small=True,
+                                            block=True,
+                                            outlined=True,
+                                            disabled=("!color_controls_enabled",),
+                                            click=ctrl.pv_rescale_color_range_to_data,
+                                        )
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VSwitch(
+                                    v_model=("color_bar_visible",),
+                                    label="Show color scale",
+                                    dense=True,
+                                    hide_details=True,
+                                    disabled=("!color_controls_enabled",),
+                                    change=(ctrl.pv_set_scalar_bar_visible, "[$event]"),
+                                )
+                                vuetify.VSwitch(
+                                    v_model=("orientation_axes_visible",),
+                                    label="Show orientation axes",
+                                    dense=True,
+                                    hide_details=True,
+                                    change=(ctrl.pv_set_orientation_axes_visible, "[$event]"),
+                                )
+                                vuetify.VSwitch(
+                                    v_model=("categorical_coloring",),
+                                    label="Interpret values as categories",
+                                    dense=True,
+                                    hide_details=True,
+                                    disabled=("!color_controls_enabled",),
+                                    change=(ctrl.pv_set_categorical_coloring, "[$event]"),
+                                )
+                        with vuetify.VListItem(v_show=("color_controls_status",)):
+                            with vuetify.VListItemContent():
+                                vuetify.VAlert(
+                                    type=("color_controls_status_type",),
+                                    dense=True,
+                                    text=True,
+                                    classes="ma-0",
+                                    children=["{{ color_controls_status }}"],
+                                )
                     vuetify.VAlert(
                         v_if="display_default_property_count + display_advanced_property_count === 0",
                         type="info",

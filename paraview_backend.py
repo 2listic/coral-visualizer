@@ -51,6 +51,7 @@ class ParaViewBackend:
         self.property_inspector = ParaViewPropertyInspector()
         self._edit_selection_overlay = None
         self._edit_selection_display = None
+        self._scalar_bar_visible = False
 
     @property
     def source(self):
@@ -305,6 +306,7 @@ class ParaViewBackend:
 
         if array_value == ARRAY_SOLID or array_value is None:
             self._disable_scalar_coloring(display)
+            self._scalar_bar_visible = False
             self.render()
             return
 
@@ -320,6 +322,102 @@ class ParaViewBackend:
         self.simple.ColorBy(display, (association, name))
         display.RescaleTransferFunctionToDataRange(True, False)
         display.SetScalarBarVisibility(self.view, True)
+        self._scalar_bar_visible = True
+        self.render()
+
+    def get_color_control_state(self):
+        """Return UI state for scalar color-map controls on the active display."""
+        selected_array = self._get_selected_array()
+        enabled = selected_array != ARRAY_SOLID and self.display is not None
+        range_min = ""
+        range_max = ""
+        categorical = False
+        if enabled:
+            lut = self._active_lookup_table()
+            range_min, range_max = self._lookup_table_range(lut)
+            categorical = self._lookup_table_categorical(lut)
+        return {
+            "color_controls_enabled": enabled,
+            "color_range_min": range_min,
+            "color_range_max": range_max,
+            "color_bar_visible": bool(
+                enabled and getattr(self, "_scalar_bar_visible", enabled)
+            ),
+            "orientation_axes_visible": self._orientation_axes_visible(),
+            "categorical_coloring": categorical,
+        }
+
+    def apply_color_map_preset(self, preset):
+        """Apply a named ParaView color preset to the active scalar lookup table."""
+        lut = self._active_lookup_table()
+        if lut is None or not preset:
+            return
+        if hasattr(lut, "ApplyPreset"):
+            lut.ApplyPreset(preset, True)
+        elif hasattr(self.simple, "ApplyColorPreset"):
+            self.simple.ApplyColorPreset(preset, True)
+        self._restore_scalar_bar_visibility()
+        self.render()
+
+    def apply_color_range(self, range_min, range_max):
+        """Apply a manual scalar color range to the active lookup table."""
+        lut = self._active_lookup_table()
+        if lut is None:
+            return
+        range_min = float(range_min)
+        range_max = float(range_max)
+        if range_min >= range_max:
+            raise ValueError("Color range minimum must be less than maximum.")
+        if hasattr(lut, "RescaleTransferFunction"):
+            lut.RescaleTransferFunction(range_min, range_max)
+        self._restore_scalar_bar_visibility()
+        self.render()
+
+    def rescale_color_range_to_data(self):
+        """Rescale the active display color map to the current data range."""
+        display = self.display
+        if display is None:
+            return
+        display.RescaleTransferFunctionToDataRange(True, False)
+        self._restore_scalar_bar_visibility()
+        self.render()
+
+    def set_scalar_bar_visible(self, visible):
+        """Show or hide the scalar color legend for the active display."""
+        display = self.display
+        if display is None or self.view is None:
+            return
+        if hasattr(display, "SetScalarBarVisibility"):
+            display.SetScalarBarVisibility(self.view, bool(visible))
+        self._scalar_bar_visible = bool(visible)
+        if not visible:
+            try:
+                self.simple.HideUnusedScalarBars(self.view)
+            except Exception:
+                pass
+        self.render()
+
+    def set_orientation_axes_visible(self, visible):
+        """Show or hide the ParaView orientation axes in the active view."""
+        if self.view is None:
+            return
+        try:
+            self.view.OrientationAxesVisibility = 1 if visible else 0
+        except Exception:
+            return
+        self.render()
+
+    def set_categorical_coloring(self, enabled):
+        """Toggle categorical interpretation on the active scalar lookup table."""
+        lut = self._active_lookup_table()
+        if lut is None:
+            return
+        for prop_name in ("InterpretValuesAsCategories", "UseCategoricalColors"):
+            if hasattr(lut, prop_name):
+                try:
+                    setattr(lut, prop_name, 1 if enabled else 0)
+                except Exception:
+                    pass
         self.render()
 
     def _disable_scalar_coloring(self, display, *, hide_unused_scalar_bars=True):
@@ -342,12 +440,97 @@ class ParaViewBackend:
                     display.SetScalarBarVisibility(self.view, False)
                 except Exception:
                     pass
+        self._scalar_bar_visible = False
 
         if hide_unused_scalar_bars:
             try:
                 self.simple.HideUnusedScalarBars(self.view)
             except Exception:
                 pass
+
+    def _restore_scalar_bar_visibility(self):
+        """Reapply the user-selected scalar-bar visibility after LUT updates."""
+        display = self.display
+        if display is None or self.view is None:
+            return
+        if self._get_selected_array() == ARRAY_SOLID:
+            self._scalar_bar_visible = False
+        visible = bool(getattr(self, "_scalar_bar_visible", False))
+        if hasattr(display, "SetScalarBarVisibility"):
+            try:
+                display.SetScalarBarVisibility(self.view, visible)
+            except Exception:
+                pass
+        if not visible:
+            try:
+                self.simple.HideUnusedScalarBars(self.view)
+            except Exception:
+                pass
+
+    def _active_lookup_table(self):
+        """Return the active display lookup table, resolving it by array name if needed."""
+        display = self.display
+        if display is None:
+            return None
+        lut = getattr(display, "LookupTable", None)
+        if lut is not None:
+            return lut
+        selected_array = self._get_selected_array()
+        if selected_array == ARRAY_SOLID:
+            return None
+        if selected_array.startswith(POINT_PREFIX):
+            name = selected_array[len(POINT_PREFIX) :]
+        elif selected_array.startswith(CELL_PREFIX):
+            name = selected_array[len(CELL_PREFIX) :]
+        else:
+            return None
+        getter = getattr(self.simple, "GetColorTransferFunction", None)
+        if callable(getter):
+            try:
+                return getter(name)
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _lookup_table_range(lut):
+        """Best-effort min/max extraction from a ParaView lookup table proxy."""
+        if lut is None:
+            return "", ""
+        rgb_points = getattr(lut, "RGBPoints", None)
+        if rgb_points and len(rgb_points) >= 8:
+            try:
+                return f"{float(rgb_points[0]):g}", f"{float(rgb_points[-4]):g}"
+            except (TypeError, ValueError):
+                pass
+        getter = getattr(lut, "GetRange", None)
+        if callable(getter):
+            try:
+                low, high = getter()
+                return f"{float(low):g}", f"{float(high):g}"
+            except Exception:
+                pass
+        return "", ""
+
+    @staticmethod
+    def _lookup_table_categorical(lut):
+        if lut is None:
+            return False
+        for prop_name in ("InterpretValuesAsCategories", "UseCategoricalColors"):
+            if hasattr(lut, prop_name):
+                try:
+                    return bool(getattr(lut, prop_name))
+                except Exception:
+                    pass
+        return False
+
+    def _orientation_axes_visible(self):
+        if self.view is None:
+            return True
+        try:
+            return bool(getattr(self.view, "OrientationAxesVisibility", True))
+        except Exception:
+            return True
 
     def apply_representation(self, representation):
         """Update the representation used by the active display."""
@@ -1363,6 +1546,12 @@ class ParaViewBackend:
                 "active_visibility": True,
                 "selected_array": ARRAY_SOLID,
                 "representation": "Surface with Edges",
+                "color_controls_enabled": False,
+                "color_range_min": "",
+                "color_range_max": "",
+                "color_bar_visible": False,
+                "orientation_axes_visible": self._orientation_axes_visible(),
+                "categorical_coloring": False,
             }
 
         data_information = source.GetDataInformation()
@@ -1390,6 +1579,7 @@ class ParaViewBackend:
             {"label": "Cell Arrays", "value": str(len(cell_items))},
         ]
 
+        color_state = self.get_color_control_state()
         return {
             "pipeline_items": [
                 {
@@ -1430,6 +1620,7 @@ class ParaViewBackend:
             "active_visibility": bool(self.display.Visibility) if self.display else True,
             "selected_array": self._get_selected_array(),
             "representation": self._get_representation(),
+            **color_state,
         }
 
     def apply_property_changes(self, source_properties, display_properties):

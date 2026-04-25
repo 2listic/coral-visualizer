@@ -102,10 +102,34 @@ class FakeSource:
         self.updated += 1
 
 
+class FakeLookupTable:
+    def __init__(self):
+        self.RGBPoints = [0.0, 0.0, 0.0, 1.0, 10.0, 1.0, 0.0, 0.0]
+        self.InterpretValuesAsCategories = 0
+        self.UseCategoricalColors = 0
+        self.presets = []
+        self.ranges = []
+
+    def ApplyPreset(self, preset, rescale):
+        self.presets.append((preset, rescale))
+
+    def RescaleTransferFunction(self, range_min, range_max):
+        self.ranges.append((range_min, range_max))
+        self.RGBPoints[0] = range_min
+        self.RGBPoints[-4] = range_max
+
+
 class FakeDisplay:
-    def __init__(self, color_array=None, representation="Surface With Edges", visibility=1):
+    def __init__(
+        self,
+        color_array=None,
+        representation="Surface With Edges",
+        visibility=1,
+        lookup_table=None,
+    ):
         self.ColorArrayName = color_array
         self.Visibility = visibility
+        self.LookupTable = lookup_table
         self._representation = FakeProperty(representation)
         self._pickable = FakeProperty(1)
         self.Pickable = 1
@@ -138,9 +162,15 @@ class FakeSimple:
         self.hidden = []
         self.active_source = None
         self.active_view = None
+        self.lookup_tables = {}
 
     def ColorBy(self, display, value):
         self.calls.append(("ColorBy", display, value))
+
+    def GetColorTransferFunction(self, name):
+        self.calls.append(("GetColorTransferFunction", name))
+        self.lookup_tables.setdefault(name, FakeLookupTable())
+        return self.lookup_tables[name]
 
     def HideUnusedScalarBars(self, view):
         self.calls.append(("HideUnusedScalarBars", view))
@@ -284,6 +314,7 @@ def make_backend():
     backend.property_inspector = FakePropertyInspector()
     backend._edit_selection_overlay = None
     backend._edit_selection_display = None
+    backend._scalar_bar_visible = False
     return backend
 
 
@@ -358,6 +389,41 @@ def test_apply_coloring_handles_solid_and_scalar_arrays():
     assert ("ColorBy", display, ("POINTS", "U")) in backend.simple.calls
     assert display.scalar_bar_calls == [(backend.view, True)]
     assert display.rescale_calls == [(True, False)]
+
+
+def test_color_controls_manage_lookup_table_scalar_bar_and_axes():
+    backend = make_backend()
+    backend.view.OrientationAxesVisibility = 1
+    lut = FakeLookupTable()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    display = FakeDisplay(color_array=("POINTS", "U"), lookup_table=lut)
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend._scalar_bar_visible = True
+
+    state = backend.get_color_control_state()
+    assert state["color_controls_enabled"] is True
+    assert state["color_range_min"] == "0"
+    assert state["color_range_max"] == "10"
+    assert state["color_bar_visible"] is True
+    assert state["orientation_axes_visible"] is True
+
+    backend.apply_color_map_preset("Cool to Warm")
+    backend.apply_color_range("2.5", "7.5")
+    backend.set_scalar_bar_visible(False)
+    hidden_state = backend.get_color_control_state()
+    backend.rescale_color_range_to_data()
+    backend.set_orientation_axes_visible(False)
+    backend.set_categorical_coloring(True)
+
+    assert lut.presets == [("Cool to Warm", True)]
+    assert lut.ranges == [(2.5, 7.5)]
+    assert hidden_state["color_bar_visible"] is False
+    assert display.scalar_bar_calls[-1] == (backend.view, False)
+    assert backend.view.OrientationAxesVisibility == 0
+    assert lut.InterpretValuesAsCategories == 1
+    assert lut.UseCategoricalColors == 1
 
 
 def test_apply_coloring_solid_tolerates_colorby_none_failures():
