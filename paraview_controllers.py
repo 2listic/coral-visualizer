@@ -129,6 +129,30 @@ def register_paraview_controllers(
         state.color_controls_status = message
         state.color_controls_status_type = status_type
 
+    def _flush_time_state():
+        """Push time-related state updates to the client when available."""
+        dirty = getattr(state, "dirty", None)
+        if callable(dirty):
+            for key in (
+                "time_values",
+                "current_time",
+                "time_index",
+                "total_timesteps",
+                "is_time_dependent",
+                "time_playing",
+                "time_loop",
+            ):
+                try:
+                    dirty(key)
+                except Exception:
+                    pass
+        flush = getattr(state, "flush", None)
+        if callable(flush):
+            try:
+                flush()
+            except Exception:
+                pass
+
     def _apply_selection_ids(picked_ids, source_label):
         mode = _sync_edit_mode_from_state()
         selection_mode = _set_selection_mode(
@@ -566,6 +590,7 @@ def register_paraview_controllers(
             pv_backend.set_time(time_value)
             update_paraview_ui_state()
             render_and_push()
+            _flush_time_state()
         except Exception as exc:
             state.error_message = f"Error setting time: {exc}"
 
@@ -578,6 +603,7 @@ def register_paraview_controllers(
             pv_backend.set_time_step(1)
             update_paraview_ui_state()
             render_and_push()
+            _flush_time_state()
         except Exception as exc:
             state.error_message = f"Error moving to next timestep: {exc}"
 
@@ -590,15 +616,51 @@ def register_paraview_controllers(
             pv_backend.set_time_step(-1)
             update_paraview_ui_state()
             render_and_push()
+            _flush_time_state()
         except Exception as exc:
             state.error_message = f"Error moving to previous timestep: {exc}"
+
+    @ctrl.add("pv_first_time_step")
+    def pv_first_time_step():
+        """Move to the first available timestep."""
+        if not is_paraview_backend():
+            return
+        try:
+            if state.time_values:
+                pv_backend.set_time(state.time_values[0])
+                update_paraview_ui_state()
+                render_and_push()
+                _flush_time_state()
+        except Exception as exc:
+            state.error_message = f"Error moving to first timestep: {exc}"
+
+    @ctrl.add("pv_last_time_step")
+    def pv_last_time_step():
+        """Move to the last available timestep."""
+        if not is_paraview_backend():
+            return
+        try:
+            if state.time_values:
+                pv_backend.set_time(state.time_values[-1])
+                update_paraview_ui_state()
+                render_and_push()
+                _flush_time_state()
+        except Exception as exc:
+            state.error_message = f"Error moving to last timestep: {exc}"
 
     @ctrl.add("pv_play_pause_time")
     def pv_play_pause_time():
         """Toggle time animation playing."""
         state.time_playing = not state.time_playing
+        _flush_time_state()
         if state.time_playing:
             ctrl.pv_animate_step()
+
+    @ctrl.add("pv_toggle_time_loop")
+    def pv_toggle_time_loop():
+        """Toggle looping while playing the time animation."""
+        state.time_loop = not bool(getattr(state, "time_loop", True))
+        _flush_time_state()
 
     @ctrl.add("pv_animate_step")
     def pv_animate_step():
@@ -611,12 +673,19 @@ def register_paraview_controllers(
             pv_backend.set_time_step(1)
             update_paraview_ui_state()
             render_and_push()
+            _flush_time_state()
             
             # Loop if we didn't advance (at end)
             if state.time_index == old_index and state.total_timesteps > 1:
-                pv_backend.set_time(state.time_values[0])
-                update_paraview_ui_state()
-                render_and_push()
+                if bool(getattr(state, "time_loop", True)):
+                    pv_backend.set_time(state.time_values[0])
+                    update_paraview_ui_state()
+                    render_and_push()
+                    _flush_time_state()
+                else:
+                    state.time_playing = False
+                    _flush_time_state()
+                    return
             
             # Schedule next step
             import asyncio
@@ -627,6 +696,7 @@ def register_paraview_controllers(
             asyncio.create_task(_next())
         except Exception as exc:
             state.time_playing = False
+            _flush_time_state()
             state.error_message = f"Animation error: {exc}"
 
     @ctrl.add("pv_set_scalar_bar_visible")

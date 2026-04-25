@@ -6,6 +6,19 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Stabilized ParaView time-dependent UX and compatibility:
+  - fixed `.pvd` timestep coercion for non-`list/tuple` ParaView timestep containers
+  - synced time state propagation (`time_values`, `time_index`, `current_time`, `is_time_dependent`) between backend/runtime/UI
+  - added complete time toolbar controls (first/prev/play-next/last/loop) and fixed duplicated icon rendering in Vuetify buttons
+  - ensured slider/time label stay in sync during animation by explicitly flushing time state updates each animation tick
+  - added compatibility fallback for `Rescale over Time` when `simple.RescaleTransferFunctionToDataRangeOverTime` is unavailable
+- Hardened tests around time-dependent behavior:
+  - added backend unit coverage for non-list timestep containers and over-time rescale fallbacks
+  - made e2e animation assertions rely on rendered toolbar state instead of internal `window.trame.state` structure
+  - made non-edit rotation e2e use a non-degenerate dataset (`cube.vtk`) for stable screenshot-diff detection
+- Improved backend test resilience:
+  - `get_time_state()` now safely returns default time metadata when animation scene APIs are unavailable in fakes/mocks
+
 - Added support for `.pvd` files and time-dependent simulations:
   - Enabled `.pvd` extension in file discovery.
   - Added time animation controls (play/pause, next/prev step, time slider) to the top toolbar, visible for time-dependent datasets.

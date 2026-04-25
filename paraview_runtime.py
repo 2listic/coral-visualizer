@@ -19,6 +19,8 @@ class ParaViewRuntime:
     ):
         self.state = state
         self.pv_backend = pv_backend
+        # Keep backend-originated state writes (e.g. during load) in sync with Trame state.
+        self.pv_backend.state = state
         self.edit_session = edit_session
         self.output_window = output_window
         self.call_view_update = call_view_update
@@ -375,6 +377,11 @@ class ParaViewRuntime:
             "color_bar_visible": False,
             "orientation_axes_visible": True,
             "categorical_coloring": False,
+            "time_values": [],
+            "current_time": 0.0,
+            "time_index": 0,
+            "total_timesteps": 0,
+            "is_time_dependent": False,
             **ui_state,
         }
         self.state.pipeline_items = ui_state["pipeline_items"]
@@ -418,6 +425,13 @@ class ParaViewRuntime:
         self.state.color_bar_visible = ui_state["color_bar_visible"]
         self.state.orientation_axes_visible = ui_state["orientation_axes_visible"]
         self.state.categorical_coloring = ui_state["categorical_coloring"]
+        self.state.time_values = ui_state["time_values"]
+        self.state.current_time = ui_state["current_time"]
+        self.state.time_index = ui_state["time_index"]
+        self.state.total_timesteps = ui_state["total_timesteps"]
+        self.state.is_time_dependent = ui_state["is_time_dependent"]
+        if not self.state.is_time_dependent:
+            self.state.time_playing = False
         self.state.pv_properties_dirty = False
         if not self.state.save_filename or self.state.save_filename == "output":
             self.state.save_filename = (

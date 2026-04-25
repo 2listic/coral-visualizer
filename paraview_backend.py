@@ -91,39 +91,26 @@ class ParaViewBackend:
             scene.UpdateAnimationUsingDataTimeSteps()
 
         # Explicitly check and set time information if available
-        times = scene.TimeKeeper.TimestepValues
-        is_time_dependent = False
-        total_timesteps = 0
-        current_time = 0.0
+        time_values = self._coerce_time_values(getattr(scene.TimeKeeper, "TimestepValues", None))
+        is_time_dependent = len(time_values) > 1
+        total_timesteps = len(time_values)
+        current_time = time_values[0] if time_values else 0.0
         time_index = 0
-
-        if times and isinstance(times, (list, tuple)):
-            total_timesteps = len(times)
-            if total_timesteps > 1:
-                is_time_dependent = True
-                current_time = times[0] if times else 0.0
-                time_index = 0 # Default to first timestep
-            elif total_timesteps == 1:
-                is_time_dependent = False # Only one timestep, not dependent in the animation sense
-                current_time = times[0] if times else 0.0
-                time_index = 0
-            else: # times is empty list []
-                is_time_dependent = False
-                total_timesteps = 0
-        else: # times is None or not list/tuple
-            is_time_dependent = False
-            total_timesteps = 0
 
         # Update the backend state directly which should be synced to frontend
         if self.state is not None:
             self.state.is_time_dependent = is_time_dependent
             self.state.total_timesteps = total_timesteps
-            self.state.time_values = list(times) if times else []
+            self.state.time_values = time_values
             self.state.current_time = current_time
             self.state.time_index = time_index
             self.state.time_playing = False
 
-        print(f"DEBUG load_file: Time detection result - is_time_dependent={is_time_dependent}, total_timesteps={total_timesteps}, times={times}")
+        print(
+            "DEBUG load_file: Time detection result - "
+            f"is_time_dependent={is_time_dependent}, "
+            f"total_timesteps={total_timesteps}, times={time_values}"
+        )
 
         display = self.simple.Show(source, self.view)
         display.SetRepresentationType(
@@ -1958,29 +1945,67 @@ class ParaViewBackend:
         }
         return mapping.get(representation, representation)
 
+    @staticmethod
+    def _coerce_time_values(raw_times):
+        """Return animation timesteps as a plain list of floats."""
+        if raw_times is None:
+            return []
+
+        try:
+            values = list(raw_times)
+        except TypeError:
+            return []
+
+        coerced = []
+        for value in values:
+            try:
+                coerced.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        return coerced
+
     def get_time_state(self):
         """Return time information for the current animation scene."""
-        scene = self.simple.GetAnimationScene()
-        times = scene.TimeKeeper.TimestepValues
-        current_time = scene.AnimationTime
+        get_animation_scene = getattr(self.simple, "GetAnimationScene", None)
+        if not callable(get_animation_scene):
+            return {
+                "time_values": [],
+                "current_time": 0.0,
+                "time_index": 0,
+                "total_timesteps": 0,
+                "is_time_dependent": False,
+            }
+
+        scene = get_animation_scene()
+        if scene is None:
+            return {
+                "time_values": [],
+                "current_time": 0.0,
+                "time_index": 0,
+                "total_timesteps": 0,
+                "is_time_dependent": False,
+            }
+
+        time_values = self._coerce_time_values(getattr(scene.TimeKeeper, "TimestepValues", None))
+        current_time = float(getattr(scene, "AnimationTime", 0.0) or 0.0)
 
         time_index = 0
-        if times:
+        if time_values:
             # Find closest index
-            time_index = bisect.bisect_left(times, current_time)
-            if time_index >= len(times):
-                time_index = len(times) - 1
-            elif time_index > 0 and (times[time_index] - current_time) > (
-                current_time - times[time_index - 1]
+            time_index = bisect.bisect_left(time_values, current_time)
+            if time_index >= len(time_values):
+                time_index = len(time_values) - 1
+            elif time_index > 0 and (time_values[time_index] - current_time) > (
+                current_time - time_values[time_index - 1]
             ):
                 time_index -= 1
 
         return {
-            "time_values": list(times) if times else [],
+            "time_values": time_values,
             "current_time": current_time,
             "time_index": time_index,
-            "total_timesteps": len(times) if times else 0,
-            "is_time_dependent": len(times) > 1 if times else False,
+            "total_timesteps": len(time_values),
+            "is_time_dependent": len(time_values) > 1,
         }
 
     def set_time(self, time_value):
@@ -2005,9 +2030,43 @@ class ParaViewBackend:
         if display is None:
             return
 
-        # ParaView simple has RescaleTransferFunctionToDataRangeOverTime
-        # but it usually operates on the active source/proxy
-        self.simple.RescaleTransferFunctionToDataRangeOverTime()
+        # ParaView API differs across versions/builds:
+        # - some expose simple.RescaleTransferFunctionToDataRangeOverTime()
+        # - some expose display.RescaleTransferFunctionToDataRangeOverTime()
+        # - older versions only support display.RescaleTransferFunctionToDataRange(...)
+        simple_rescale_over_time = getattr(
+            self.simple, "RescaleTransferFunctionToDataRangeOverTime", None
+        )
+        if callable(simple_rescale_over_time):
+            simple_rescale_over_time()
+            self._restore_scalar_bar_visibility()
+            self.render()
+            return
+
+        display_rescale_over_time = getattr(
+            display, "RescaleTransferFunctionToDataRangeOverTime", None
+        )
+        if callable(display_rescale_over_time):
+            display_rescale_over_time()
+            self._restore_scalar_bar_visibility()
+            self.render()
+            return
+
+        display_rescale = getattr(display, "RescaleTransferFunctionToDataRange", None)
+        if callable(display_rescale):
+            for args in ((False, True), (True, False), ()):
+                try:
+                    display_rescale(*args)
+                    self._restore_scalar_bar_visibility()
+                    self.render()
+                    return
+                except TypeError:
+                    continue
+
+        raise RuntimeError(
+            "Current ParaView build does not expose a compatible "
+            "rescale-over-time API."
+        )
 
     @staticmethod
     def _make_node(

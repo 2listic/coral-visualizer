@@ -7,7 +7,7 @@ import socket
 import urllib.request
 import os
 import threading
-import json
+import re
 import pytest
 from paraview_backend import is_paraview_available
 
@@ -80,85 +80,63 @@ def test_pvd_animation_state(paraview_server, shared_browser):
         # Wait for UI to stabilize and ParaView to finish loading the file
         time.sleep(12.0) # Increased wait time
         
-        # Function to get the current state from the window.trame.state
-        def get_trame_state():
-            return page.evaluate("""
-                () => {
-                    const s = window.trame.state;
-                    if (!s) {
-                        console.log("DEBUG: window.trame.state is null or undefined");
-                        return null;
-                    }
-                    // Access properties directly from the state object
-                    const stateObj = s.state || s; // Try both common structures
-                    if (!stateObj) {
-                        console.log("DEBUG: Actual state object not found.");
-                        return null;
-                    }
-                    const res = {};
-                    const keys = ['is_time_dependent', 'total_timesteps', 'time_index', 'current_time', 'time_playing'];
-                    for (const key of keys) {
-                        res[key] = stateObj[key];
-                        console.log(`DEBUG State.${key}: ${res[key]}`);
-                    }
-                    console.log("DEBUG Final State Object: " + JSON.stringify(res));
-                    return res;
-                }
-            """)
+        # Read current time label from the toolbar: "<time> (<index>/<total>)"
+        time_label = page.locator(
+            "div.v-toolbar__content div.grey--text.text--darken-2"
+        ).first
 
-        # Wait until time-dependent state is confirmed
-        page.wait_for_function("""
-            () => {
-                const s = window.trame && window.trame.state;
-                if (!s) return false;
-                const stateObj = s.state || s;
-                if (!stateObj) return false;
-                // Wait until is_time_dependent is explicitly true
-                return stateObj.is_time_dependent === true;
+        # Time-dependent controls must appear for animation.pvd
+        page.wait_for_selector(".mdi-play", timeout=20000)
+        page.wait_for_selector(
+            "div.v-toolbar__content div.grey--text.text--darken-2", timeout=20000
+        )
+
+        def get_time_info():
+            text = time_label.inner_text().strip()
+            match = re.search(r"([+-]?\d+(?:\.\d+)?)\s*\((\d+)/(\d+)\)", text)
+            assert match, f"Unexpected time label format: {text!r}"
+            return {
+                "current_time": float(match.group(1)),
+                "time_index_displayed": int(match.group(2)),
+                "total_timesteps": int(match.group(3)),
             }
-        """, timeout=20000) # Increased timeout for wait_for_function
-        
-        state = get_trame_state()
-        print(f"DEBUG Initial State: {state}")
-        
-        # Initial state check
-        assert state["is_time_dependent"] is True
-        assert state["total_timesteps"] == 4
-        assert state["time_index"] == 0
 
-        # The time controls should appear for animation.pvd
-        play_button_selector = 'div.v-toolbar__content button:has(i.mdi-play)'
-        page.wait_for_selector(play_button_selector, timeout=20000)
-        
+        state = get_time_info()
+        print(f"DEBUG Initial Time Label: {state}")
+
+        # Initial state check from rendered UI
+        assert state["total_timesteps"] == 4
+        assert state["time_index_displayed"] == 1
+
         # Test Next Step button
         page.locator(".mdi-skip-next").first.click()
         time.sleep(1.5) 
-        state = get_trame_state()
-        assert state["time_index"] == 1
+        state = get_time_info()
+        assert state["time_index_displayed"] == 2
 
         # Test Previous Step button
         page.locator(".mdi-skip-previous").first.click()
         time.sleep(1.5)
-        state = get_trame_state()
-        assert state["time_index"] == 0
+        state = get_time_info()
+        assert state["time_index_displayed"] == 1
 
         # Test Play button
         page.locator(".mdi-play").first.click()
+        page.wait_for_selector(".mdi-pause", timeout=5000)
         time.sleep(3.0)
-        state = get_trame_state()
-        assert state["time_playing"] is True
-        assert state["time_index"] > 0
+        state = get_time_info()
+        assert state["time_index_displayed"] > 1
 
         # Test Pause
         page.locator(".mdi-pause").first.click()
+        page.wait_for_selector(".mdi-play", timeout=5000)
         time.sleep(1.5)
-        state = get_trame_state()
-        assert state["time_playing"] is False
-        final_index = state["time_index"]
+        state = get_time_info()
+        final_index = state["time_index_displayed"]
         
         time.sleep(1.0)
-        state = get_trame_state()
-        assert state["time_index"] == final_index
+        state = get_time_info()
+        assert state["time_index_displayed"] == final_index
     except Exception as e:
         page.screenshot(path="failure_pvd_animation.png")
         raise e

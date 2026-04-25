@@ -9,7 +9,7 @@ from paraview_backend import is_paraview_available
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = ROOT_DIR / "test_data"
-TEST_GRID = TEST_DATA_DIR / "square.vtk"
+TEST_GRID = TEST_DATA_DIR / "cube.vtk"
 
 
 def _free_tcp_port():

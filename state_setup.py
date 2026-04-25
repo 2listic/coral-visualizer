@@ -85,6 +85,7 @@ def initialize_state(
     state.is_time_dependent = False
     state.rescale_over_time_dialog = False
     state.time_playing = False
+    state.time_loop = True
     state.inspector_tab = 0
     state.pv_properties_dirty = False
     state.active_visibility = True

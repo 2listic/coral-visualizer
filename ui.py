@@ -135,26 +135,44 @@ def _build_toolbar(ctrl, backend):
             classes="mr-2",
             style="max-width: 260px;",
         )
-        # Time controls
-        with vuetify.VRow(v_if="is_time_dependent", dense=True, align="center", classes="ma-0 mr-4", style="max-width: 400px; flex: 1;"):
-            vuetify.VBtn(
+        with vuetify.VRow(v_if="is_time_dependent", dense=True, align="center", classes="ma-0 mr-4", style="max-width: 640px; flex: 1;"):
+            with vuetify.VBtn(
+                icon=True,
+                small=True,
+                click=ctrl.pv_first_time_step,
+            ):
+                vuetify.VIcon("mdi-skip-backward")
+            with vuetify.VBtn(
                 icon=True,
                 small=True,
                 click=ctrl.pv_prev_time_step,
-                children=[vuetify.VIcon("mdi-skip-previous")],
-            )
-            vuetify.VBtn(
+            ):
+                vuetify.VIcon("mdi-skip-previous")
+            with vuetify.VBtn(
                 icon=True,
                 small=True,
                 click=ctrl.pv_play_pause_time,
-                children=[vuetify.VIcon("{{ time_playing ? 'mdi-pause' : 'mdi-play' }}")],
-            )
-            vuetify.VBtn(
+            ):
+                vuetify.VIcon("{{ time_playing ? 'mdi-pause' : 'mdi-play' }}")
+            with vuetify.VBtn(
                 icon=True,
                 small=True,
                 click=ctrl.pv_next_time_step,
-                children=[vuetify.VIcon("mdi-skip-next")],
-            )
+            ):
+                vuetify.VIcon("mdi-skip-next")
+            with vuetify.VBtn(
+                icon=True,
+                small=True,
+                click=ctrl.pv_last_time_step,
+            ):
+                vuetify.VIcon("mdi-skip-forward")
+            with vuetify.VBtn(
+                icon=True,
+                small=True,
+                click=ctrl.pv_toggle_time_loop,
+                color=("time_loop ? 'primary' : ''",),
+            ):
+                vuetify.VIcon("mdi-repeat")
             html.Div("{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})", classes="ml-2 grey--text text--darken-2", style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;")
             vuetify.VSlider(
                 v_model=("time_index",),

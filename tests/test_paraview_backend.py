@@ -318,6 +318,57 @@ def make_backend():
     return backend
 
 
+def test_load_file_marks_time_dependent_for_non_list_timesteps():
+    class FakeTimeValues:
+        def __init__(self, values):
+            self._values = list(values)
+
+        def __iter__(self):
+            return iter(self._values)
+
+    class FakeScene:
+        def __init__(self):
+            self.TimeKeeper = SimpleNamespace(TimestepValues=FakeTimeValues([0, 1, 2, 3]))
+            self.AnimationTime = 0.0
+            self.updated = 0
+
+        def UpdateAnimationUsingDataTimeSteps(self):
+            self.updated += 1
+
+    backend = make_backend()
+    backend.state = SimpleNamespace(
+        is_time_dependent=False,
+        total_timesteps=0,
+        time_values=[],
+        current_time=0.0,
+        time_index=0,
+        time_playing=False,
+    )
+    backend.reset_camera = lambda: None
+    backend.set_active_node = lambda _node_id: True
+
+    source = FakeSource(
+        "1",
+        FakeDataInformation(point_names=["Velocity"], cell_names=["MaterialID"]),
+    )
+    display = FakeDisplay()
+    scene = FakeScene()
+    backend.simple.OpenDataFile = lambda _filename: source
+    backend.simple.GetAnimationScene = lambda: scene
+    backend.simple.Show = lambda _source, _view: display
+
+    arrays, default_array = backend.load_file("/tmp/data/animation.pvd")
+
+    assert scene.updated == 1
+    assert backend.state.is_time_dependent is True
+    assert backend.state.total_timesteps == 4
+    assert backend.state.time_values == [0.0, 1.0, 2.0, 3.0]
+    assert backend.state.current_time == 0.0
+    assert backend.state.time_index == 0
+    assert arrays[0]["value"] == ARRAY_SOLID
+    assert default_array == ARRAY_SOLID
+
+
 def test_is_paraview_available_reflects_importable_modules(monkeypatch):
     monkeypatch.setattr(
         backend_module.importlib.util,
@@ -424,6 +475,38 @@ def test_color_controls_manage_lookup_table_scalar_bar_and_axes():
     assert backend.view.OrientationAxesVisibility == 0
     assert lut.InterpretValuesAsCategories == 1
     assert lut.UseCategoricalColors == 1
+
+
+def test_rescale_color_range_over_time_uses_display_fallback_when_simple_api_missing():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    display = FakeDisplay(color_array=("POINTS", "U"))
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend._scalar_bar_visible = True
+
+    backend.rescale_color_range_over_time()
+
+    assert display.rescale_calls == [(False, True)]
+    assert display.scalar_bar_calls[-1] == (backend.view, True)
+
+
+def test_rescale_color_range_over_time_raises_when_no_compatible_api():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    display = FakeDisplay(color_array=("POINTS", "U"))
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    display.RescaleTransferFunctionToDataRange = None
+
+    try:
+        backend.rescale_color_range_over_time()
+        assert False, "Expected RuntimeError when no compatible over-time API is available"
+    except RuntimeError as exc:
+        assert "rescale-over-time API" in str(exc)
 
 
 def test_apply_coloring_solid_tolerates_colorby_none_failures():

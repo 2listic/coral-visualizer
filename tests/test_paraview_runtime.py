@@ -87,6 +87,11 @@ class FakeParaViewBackend:
             "active_visibility": True,
             "selected_array": "cell:M",
             "representation": "Wireframe",
+            "time_values": [0.0, 1.0, 2.0, 3.0],
+            "current_time": 0.0,
+            "time_index": 0,
+            "total_timesteps": 4,
+            "is_time_dependent": True,
         }
 
     def default_output_filename(self):
@@ -258,6 +263,11 @@ def test_update_ui_state_applies_backend_metadata_and_editability_flags():
     ]
     assert state.selected_array == "cell:M"
     assert state.representation == "Wireframe"
+    assert state.time_values == [0.0, 1.0, 2.0, 3.0]
+    assert state.current_time == 0.0
+    assert state.time_index == 0
+    assert state.total_timesteps == 4
+    assert state.is_time_dependent is True
     assert state.pv_properties_dirty is False
     assert state.save_filename == "edited_result.vtu"
     assert state.save_target_label == "Edited dataset: Edited Source"
@@ -280,6 +290,9 @@ def test_update_ui_state_tolerates_missing_backend_keys():
     assert state.available_arrays == [{"text": "Solid Color", "value": ARRAY_SOLID}]
     assert state.selected_array == ARRAY_SOLID
     assert state.representation == "Surface with Edges"
+    assert state.time_values == []
+    assert state.total_timesteps == 0
+    assert state.is_time_dependent is False
 
 
 def test_apply_representation_apply_coloring_and_load_file_refresh_state():
