@@ -1,5 +1,5 @@
-# Runtime dependencies — used by Docker
-trame
-trame-vtk
-trame-vuetify
-vtk
+# Runtime dependencies. Keep in sync with the README dependency matrix.
+trame==3.12.0
+trame-vtk==2.11.6
+trame-vuetify==3.2.1
+vtk==9.6.1

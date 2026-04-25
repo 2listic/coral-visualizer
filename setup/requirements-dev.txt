@@ -1,6 +1,8 @@
-# Dev-only tools — local development only, not used in Docker
-black
-ruff
-pre-commit
-pytest
-playwright
+# Dev and test tools. Docker installs these so the container can run e2e tests.
+black==26.3.1
+ruff==0.15.11
+pre-commit==4.6.0
+pytest==9.0.3
+playwright==1.58.0
+pytest-playwright==0.7.2
+Pillow==12.2.0

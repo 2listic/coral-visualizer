@@ -38,17 +38,15 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --chown=$MAMBA_USER:$MAMBA_USER setup/environment-docker.yml /tmp/environment-docker.yml
+COPY --chown=$MAMBA_USER:$MAMBA_USER setup/requirements.txt /tmp/requirements.txt
+COPY --chown=$MAMBA_USER:$MAMBA_USER setup/requirements-dev.txt /tmp/requirements-dev.txt
 
 USER $MAMBA_USER
 
 RUN micromamba create -y -n coral -f /tmp/environment-docker.yml && \
     micromamba run -n coral python -m pip install --no-cache-dir \
-    trame \
-    trame-vtk \
-    trame-vuetify \
-    pytest \
-    pytest-playwright \
-    Pillow && \
+    -r /tmp/requirements.txt \
+    -r /tmp/requirements-dev.txt && \
     micromamba run -n coral playwright install chromium && \
     micromamba clean --all --yes
 

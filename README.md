@@ -17,8 +17,9 @@ source ./.venv/bin/activate
 uv pip install -r setup/requirements.txt -r setup/requirements-dev.txt
 ```
 
-Dependencies are declared unpinned in `setup/requirements.txt` (runtime) and
-`setup/requirements-dev.txt` (dev tools). No lockfiles are used for now.
+Dependencies are pinned in `setup/requirements.txt` (runtime) and
+`setup/requirements-dev.txt` (dev/test tools). Docker installs the same pinned
+Python packages after provisioning ParaView from `setup/environment-docker.yml`.
 
 This environment is suitable for the VTK backend and most unit tests. It is not
 the recommended way to run the ParaView backend.
@@ -81,12 +82,12 @@ Verified on this development machine and in the Docker image on 2026-04-25.
 | ParaView | 6.1 | 6.1 |
 | VTK | 9.6.1 | 9.6.1 |
 | trame | 3.12.0 | 3.12.0 |
-| trame-vtk | 2.11.6 | 2.11.7 |
+| trame-vtk | 2.11.6 | 2.11.6 |
 | trame-vuetify | 3.2.1 | 3.2.1 |
 | pytest | 9.0.3 | 9.0.3 |
 | Playwright | 1.58.0 | 1.58.0 |
-| pytest-playwright | installed for e2e via local dev setup | 0.7.2 |
-| Pillow | not required by local runtime | 12.2.0 |
+| pytest-playwright | pinned in dev requirements; not required by current local suite | 0.7.2 |
+| Pillow | pinned in dev requirements; not required by local runtime | 12.2.0 |
 
 Local version probe:
 
@@ -117,7 +118,9 @@ import paraview.simple as ps; print('paraview', ps.GetParaViewVersion())"
 Original example at the official [Trame repo](https://github.com/Kitware/trame/tree/master/examples/deploy/docker/SingleFile).
 
 The Docker image uses `micromamba` and a dedicated conda environment from
-`conda-forge` so ParaView is available on Linux/arm64 as well. The container
+`conda-forge` so ParaView is available on Linux/arm64 as well. Python and
+ParaView are constrained in `setup/environment-docker.yml`; runtime and dev
+Python packages are installed from the pinned requirements files. The container
 starts the app with `--backend paraview --server` by default.
 
 The Docker path does not install ParaView from `setup/requirements.txt`.
