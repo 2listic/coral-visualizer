@@ -18,6 +18,7 @@ from handler_registration import register_app_handlers
 from paraview_runtime import ParaViewRuntime
 from paraview_backend import ParaViewBackend, is_paraview_available
 from state_setup import initialize_state, resolve_initial_file
+from view_controls import ViewControllerProxy
 from vtk_runtime import VtkRuntime
 from vtk_pipeline import (
     create_vtk_rendering_context,
@@ -143,59 +144,12 @@ initial_file = resolve_initial_file(args.file, available_files)
 server = get_server(client_type="vue2")
 state = server.state
 ctrl = server.controller
-
-
-def _debug_view(message, **values):
-    """Emit a compact debug trace for RemoteLocal view lifecycle."""
-    if not (BACKEND == "paraview" and DEVTOOLS_ENABLED):
-        return False
-    payload = " ".join(f"{key}={values[key]!r}" for key in sorted(values))
-    if payload:
-        print(f"[view-debug] {message} {payload}", flush=True)
-    else:
-        print(f"[view-debug] {message}", flush=True)
-    return True
-
-
-def _call_view_update(*args, **kwargs):
-    if hasattr(ctrl, "view_update"):
-        _debug_view(
-            "view.update",
-            mode=state.mainViewMode,
-            args=args,
-            kwargs=kwargs,
-            edit_session_active=state.edit_session_active,
-        )
-        return ctrl.view_update(*args, **kwargs)
-    return None
-
-
-def _call_view_update_geometry(*args, **kwargs):
-    if hasattr(ctrl, "view_update_geometry"):
-        _debug_view(
-            "view.update_geometry",
-            mode=state.mainViewMode,
-            args=args,
-            kwargs=kwargs,
-            edit_session_active=state.edit_session_active,
-        )
-        return ctrl.view_update_geometry(*args, **kwargs)
-    return None
-
-
-def _call_view_set_remote_rendering(*args, **kwargs):
-    if hasattr(ctrl, "view_set_remote_rendering"):
-        _debug_view(
-            "view.set_remote_rendering",
-            mode_before=state.mainViewMode,
-            args=args,
-            kwargs=kwargs,
-            edit_session_active=state.edit_session_active,
-        )
-        result = ctrl.view_set_remote_rendering(*args, **kwargs)
-        _debug_view("view.set_remote_rendering.done", mode_after=state.mainViewMode)
-        return result
-    return None
+view_controls = ViewControllerProxy(
+    ctrl,
+    state,
+    backend=BACKEND,
+    devtools_enabled=DEVTOOLS_ENABLED,
+)
 
 initialize_state(
     state,
@@ -227,7 +181,7 @@ if BACKEND == "vtk":
         render_window=renderWindow,
         scalar_bars=_scalar_bars,
         edit_state=_edit,
-        call_view_update=_call_view_update,
+        call_view_update=view_controls.update,
     )
 
 _paraview_runtime = None
@@ -237,7 +191,7 @@ if BACKEND == "paraview":
         pv_backend=_pv_backend,
         edit_session=_edit_session,
         output_window=_pv_output_window,
-        call_view_update=_call_view_update,
+        call_view_update=view_controls.update,
     )
 register_app_handlers(
     ctrl=ctrl,
@@ -264,10 +218,10 @@ register_app_handlers(
         edit_session=_edit_session,
     ),
     interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
-    debug_view=_debug_view,
-    call_view_update=_call_view_update,
-    call_view_update_geometry=_call_view_update_geometry,
-    call_view_set_remote_rendering=_call_view_set_remote_rendering,
+    debug_view=view_controls.debug,
+    call_view_update=view_controls.update,
+    call_view_update_geometry=view_controls.update_geometry,
+    call_view_set_remote_rendering=view_controls.set_remote_rendering,
 )
 
 

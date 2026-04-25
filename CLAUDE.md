@@ -127,6 +127,7 @@ docker run -it --rm -p 8008:8080 coral-visualizer-standalone
 - `handler_registration.py`: wires backend-specific controllers and state handlers.
 - `state_setup.py`: initializes all Trame state. If adding UI controls, add defaults here.
 - `state_handlers.py`: shared `@state.change(...)` callbacks for selected file, color-by, representation, active pipeline node, interaction quality, edit mode.
+- `view_controls.py`: central wrapper for Trame view update callbacks and optional ParaView diagnostics.
 
 ### ParaView Backend Path
 
