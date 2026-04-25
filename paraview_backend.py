@@ -56,6 +56,15 @@ class ParaViewBackend:
         self._edit_selection_overlay = None
         self._edit_selection_display = None
         self._scalar_bar_visible = False
+        self._edit_target_dataset = None
+
+    def set_edit_target_dataset(self, dataset):
+        """Set the edit-session dataset used to normalize picker IDs."""
+        self._edit_target_dataset = dataset
+
+    def clear_edit_target_dataset(self):
+        """Clear edit-session dataset normalization context."""
+        self._edit_target_dataset = None
 
     @property
     def source(self):
@@ -77,6 +86,13 @@ class ParaViewBackend:
         self.view.MakeRenderWindowInteractor(True)
         self.simple.SetActiveView(self.view)
         return self.view
+
+    @staticmethod
+    def _preview_values(values, limit=12):
+        seq = list(values or [])
+        if len(seq) <= limit:
+            return seq
+        return seq[:limit] + [f"...(+{len(seq) - limit})"]
 
     def _set_white_background(self):
         """Force a plain white render background across ParaView versions."""
@@ -795,15 +811,25 @@ class ParaViewBackend:
             self._clear_selection_state(source)
             rect = [px - radius, py - radius, px + radius, py + radius]
             self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
-            picked_result = self._fetch_selected_original_cell_ids(source)
-            picked_result = self._filter_visible_cell_ids_by_depth(source, picked_result)
+            raw_picked = self._fetch_selected_original_cell_ids(source)
+            picked_result = list(raw_picked)
+            print(
+                "[selection-debug] backend.pick.click "
+                f"rect={rect} raw_count={len(raw_picked)} raw={self._preview_values(raw_picked)} "
+                f"accepted_count={len(picked_result)} accepted={self._preview_values(picked_result)}"
+            )
             if picked_result:
                 break
 
         # Always clear and RENDER to hide the native ParaView purple selection
         self._clear_selection_state(source)
         self.render()
-        return picked_result
+        remapped = self._remap_cell_ids_to_edit_target_dataset(picked_result, source)
+        print(
+            "[selection-debug] backend.pick.click.result "
+            f"final_count={len(remapped)} final={self._preview_values(remapped)}"
+        )
+        return remapped
 
     def pick_visible_cell_ids_in_rect(self, x0, y0, x1, y1, behavior="touch"):
         """Return selected visible cell ids inside a display-space rectangle."""
@@ -826,10 +852,20 @@ class ParaViewBackend:
         self.simple.SetActiveSource(source)
         self._clear_selection_state(source)
         self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
-        picked = self._fetch_selected_original_cell_ids(source)
-        picked = self._filter_visible_cell_ids_by_depth(source, picked)
+        raw_picked = self._fetch_selected_original_cell_ids(source)
+        picked = list(raw_picked)
         self._clear_selection_state(source)
         self.render()
+        print(
+            "[selection-debug] backend.pick.box "
+            f"behavior={behavior!r} rect={rect} raw_count={len(raw_picked)} raw={self._preview_values(raw_picked)} "
+            f"accepted_count={len(picked)} accepted={self._preview_values(picked)}"
+        )
+        picked = self._remap_cell_ids_to_edit_target_dataset(picked, source)
+        print(
+            "[selection-debug] backend.pick.box.result "
+            f"behavior={behavior!r} final_count={len(picked)} final={self._preview_values(picked)}"
+        )
         if not picked or behavior != "inside":
             return picked
         return self._filter_cell_ids_inside_rect(source, picked, rect)
@@ -964,6 +1000,10 @@ class ParaViewBackend:
         # boundary-surface representation and map selected cells back to source keys.
         native_keys = self._pick_surface_keys_native(rect, behavior=behavior)
         if native_keys:
+            print(
+                "[selection-debug] backend.pick.surface.native "
+                f"behavior={behavior!r} rect={rect} count={len(native_keys)} keys={self._preview_values(native_keys)}"
+            )
             return native_keys
 
         try:
@@ -997,7 +1037,15 @@ class ParaViewBackend:
             else:
                 if self._polyline_intersects_rect(projected, rect):
                     picked.append(key)
-        return picked
+        remapped = self._remap_surface_keys_to_edit_target_dataset(
+            picked, source_dataset=dataset
+        )
+        print(
+            "[selection-debug] backend.pick.surface.fallback "
+            f"behavior={behavior!r} rect={rect} raw_count={len(picked)} raw={self._preview_values(picked)} "
+            f"final_count={len(remapped)} final={self._preview_values(remapped)}"
+        )
+        return remapped
 
     def _pick_surface_keys_native(self, rect, behavior="touch"):
         """Native ParaView selection path for visible boundary faces (3D)."""
@@ -1090,7 +1138,15 @@ class ParaViewBackend:
                         if projected and all(self._point_in_rect(point, rect) for point in projected):
                             inside_keys.append(key)
                     keys = inside_keys
-            return keys
+            remapped = self._remap_surface_keys_to_edit_target_dataset(
+                keys, source_dataset=dataset
+            )
+            print(
+                "[selection-debug] backend.pick.surface.native.result "
+                f"behavior={behavior!r} rect={rect} raw_count={len(keys or [])} raw={self._preview_values(keys or [])} "
+                f"final_count={len(remapped)} final={self._preview_values(remapped)}"
+            )
+            return remapped
         except Exception:
             return None
         finally:
@@ -1591,6 +1647,11 @@ class ParaViewBackend:
             selected_ids = self._source_cell_ids_from_selected_dataset(
                 dataset, source_dataset
             )
+        print(
+            "[selection-debug] backend.extract.cell_ids "
+            f"selected_cells={dataset.GetNumberOfCells()} mapped_count={len(selected_ids)} "
+            f"mapped={self._preview_values(selected_ids)}"
+        )
 
         try:
             self.simple.Delete(extract)
@@ -1598,6 +1659,170 @@ class ParaViewBackend:
             pass
 
         return selected_ids
+
+    def _remap_cell_ids_to_edit_target_dataset(self, cell_ids, source):
+        """Normalize picked source cell IDs onto the active edit-session dataset."""
+        picked_ids = [int(cell_id) for cell_id in (cell_ids or [])]
+        target_dataset = getattr(self, "_edit_target_dataset", None)
+        if target_dataset is None or not picked_ids:
+            return picked_ids
+
+        try:
+            source_dataset = self.servermanager.Fetch(source)
+        except Exception:
+            source_dataset = None
+        remapped = self._remap_cell_ids_between_datasets(
+            picked_ids, source_dataset, target_dataset
+        )
+        print(
+            "[selection-debug] backend.remap.cells "
+            f"input_count={len(picked_ids)} input={self._preview_values(picked_ids)} "
+            f"remapped_count={len(remapped)} remapped={self._preview_values(remapped)}"
+        )
+        return remapped if remapped else picked_ids
+
+    def _remap_surface_keys_to_edit_target_dataset(self, keys, source_dataset=None):
+        """Normalize picked source boundary keys onto edit-session point IDs."""
+        picked_keys = [tuple(key) for key in (keys or []) if key]
+        target_dataset = getattr(self, "_edit_target_dataset", None)
+        if target_dataset is None or source_dataset is None or not picked_keys:
+            return picked_keys
+
+        target_point_map = self._point_coordinate_index(target_dataset)
+        if not target_point_map:
+            return picked_keys
+
+        remapped = []
+        for key in picked_keys:
+            mapped = []
+            failed = False
+            for source_point_id in key:
+                point = self._safe_dataset_point(source_dataset, source_point_id)
+                if point is None:
+                    failed = True
+                    break
+                target_point_id = target_point_map.get(point)
+                if target_point_id is None:
+                    failed = True
+                    break
+                mapped.append(int(target_point_id))
+            if failed or not mapped:
+                continue
+            remapped.append(tuple(sorted(mapped)))
+
+        if not remapped:
+            return picked_keys
+        normalized = self._normalize_surface_keys_to_source_boundary(
+            remapped, source_dataset=target_dataset
+        )
+        try:
+            boundary = self._boundary_codim_elements(target_dataset)
+        except Exception:
+            boundary = {}
+        if boundary:
+            normalized = [key for key in normalized if key in boundary]
+        print(
+            "[selection-debug] backend.remap.surface "
+            f"input_count={len(picked_keys)} input={self._preview_values(picked_keys)} "
+            f"remapped_count={len(remapped)} remapped={self._preview_values(remapped)} "
+            f"normalized_count={len(normalized)} normalized={self._preview_values(normalized)}"
+        )
+        return normalized
+
+    @staticmethod
+    def _safe_dataset_point(dataset, point_id):
+        try:
+            point = dataset.GetPoint(int(point_id))
+        except Exception:
+            return None
+        if point is None:
+            return None
+        return (
+            round(float(point[0]), 12),
+            round(float(point[1]), 12),
+            round(float(point[2]), 12),
+        )
+
+    @staticmethod
+    def _point_coordinate_index(dataset):
+        if dataset is None or not hasattr(dataset, "GetNumberOfPoints"):
+            return {}
+        index = {}
+        for point_id in range(dataset.GetNumberOfPoints()):
+            point = ParaViewBackend._safe_dataset_point(dataset, point_id)
+            if point is None:
+                continue
+            index[point] = int(point_id)
+        return index
+
+    @staticmethod
+    def _cell_coordinate_key(dataset, cell):
+        if dataset is None or cell is None:
+            return None
+        coords = []
+        try:
+            num_points = int(cell.GetNumberOfPoints())
+        except Exception:
+            return None
+        for point_idx in range(num_points):
+            try:
+                point_id = int(cell.GetPointId(point_idx))
+            except Exception:
+                return None
+            point = ParaViewBackend._safe_dataset_point(dataset, point_id)
+            if point is None:
+                return None
+            coords.append(point)
+        if not coords:
+            return None
+        return tuple(sorted(coords))
+
+    @staticmethod
+    def _remap_cell_ids_between_datasets(cell_ids, source_dataset, target_dataset):
+        """Map source-dataset cell ids to target-dataset ids by cell geometry."""
+        if not cell_ids:
+            return []
+        if source_dataset is None or target_dataset is None:
+            return [int(cell_id) for cell_id in cell_ids]
+        if not hasattr(source_dataset, "GetCell") or not hasattr(target_dataset, "GetCell"):
+            return [int(cell_id) for cell_id in cell_ids]
+
+        target_cell_map = {}
+        target_count = target_dataset.GetNumberOfCells()
+        for target_cell_id in range(target_count):
+            target_cell = target_dataset.GetCell(target_cell_id)
+            key = ParaViewBackend._cell_coordinate_key(target_dataset, target_cell)
+            if key is None:
+                continue
+            target_cell_map.setdefault(key, int(target_cell_id))
+
+        remapped = []
+        for cell_id in cell_ids:
+            mapped_id = None
+            try:
+                source_cell_id = int(cell_id)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= source_cell_id < source_dataset.GetNumberOfCells():
+                source_cell = source_dataset.GetCell(source_cell_id)
+                source_key = ParaViewBackend._cell_coordinate_key(
+                    source_dataset, source_cell
+                )
+                if source_key is not None:
+                    mapped_id = target_cell_map.get(source_key)
+            if mapped_id is None and 0 <= source_cell_id < target_count:
+                mapped_id = int(source_cell_id)
+            if mapped_id is not None:
+                remapped.append(int(mapped_id))
+
+        deduped = []
+        seen = set()
+        for cell_id in remapped:
+            if cell_id in seen:
+                continue
+            seen.add(cell_id)
+            deduped.append(cell_id)
+        return deduped
 
     @staticmethod
     def _source_cell_ids_from_selected_dataset(selected_dataset, source_dataset):

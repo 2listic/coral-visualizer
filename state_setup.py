@@ -118,13 +118,11 @@ def initialize_state(
     state.edit_geometry_mode_options = [
         {"text": "Volume", "value": "volume"},
         {"text": "Surface", "value": "surface"},
-        {"text": "Edge", "value": "edge"},
         {"text": "Point", "value": "point"},
     ]
     state.edit_cell_geometry_mode_options = [
         {"text": "Volume", "value": "volume"},
         {"text": "Surface", "value": "surface"},
-        {"text": "Edge", "value": "edge"},
     ]
     state.edit_point_geometry_mode_options = [
         {"text": "Point", "value": "point"},

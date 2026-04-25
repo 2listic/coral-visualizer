@@ -786,7 +786,7 @@ def test_update_edit_selection_overlay_does_not_cleanup_scalar_bars():
     assert hide_calls == []
 
 
-def test_pick_visible_cell_ids_in_rect_filters_out_occluded_cells():
+def test_pick_visible_cell_ids_in_rect_keeps_paraview_surface_selection_ids():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
     node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
@@ -796,11 +796,11 @@ def test_pick_visible_cell_ids_in_rect_filters_out_occluded_cells():
     backend.simple.ClearSelection = lambda *_args, **_kwargs: None
     backend.simple.SelectSurfaceCells = lambda **_kwargs: None
     backend._fetch_selected_original_cell_ids = lambda _source: [1, 2, 3]
-    backend._filter_visible_cell_ids_by_depth = lambda _source, ids: [1, 3]
+    backend._filter_visible_cell_ids_by_depth = lambda _source, ids: []
 
     picked = backend.pick_visible_cell_ids_in_rect(1, 2, 30, 40, behavior="touch")
 
-    assert picked == [1, 3]
+    assert picked == [1, 2, 3]
 
 
 def test_pick_surface_keys_in_rect_skips_occluded_boundary_elements():
@@ -1049,3 +1049,64 @@ def test_source_cell_ids_from_selected_dataset_maps_selected_face_to_volume_cell
     )
 
     assert cell_ids == [0]
+
+
+def test_remap_cell_ids_between_datasets_matches_by_geometry_coordinates():
+    source = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (2.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2, 3), (1, 4, 5, 2)],
+    )
+    target = FakeSurfaceDataset(
+        points=[
+            (2.0, 1.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0),
+        ],
+        cells=[(2, 1, 0, 3), (5, 2, 3, 4)],
+    )
+
+    remapped = ParaViewBackend._remap_cell_ids_between_datasets([0, 1], source, target)
+
+    assert remapped == [1, 0]
+
+
+def test_remap_surface_keys_to_edit_target_dataset_uses_point_coordinates():
+    backend = make_backend()
+    source = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2, 3)],
+    )
+    target = FakeSurfaceDataset(
+        points=[
+            (1.0, 1.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ],
+        cells=[(2, 1, 0, 3)],
+    )
+    backend._edit_target_dataset = target
+    backend._normalize_surface_keys_to_source_boundary = (
+        lambda keys, source_dataset=None: keys
+    )
+
+    remapped = backend._remap_surface_keys_to_edit_target_dataset(
+        [(0, 1, 2, 3)], source_dataset=source
+    )
+
+    assert remapped == [(0, 1, 2, 3)]

@@ -124,11 +124,10 @@ class ParaViewRuntime:
                     [
                         {"text": "Volume", "value": "volume"},
                         {"text": "Surface", "value": "surface"},
-                        {"text": "Edge", "value": "edge"},
                     ],
                 )
             )
-            if self.state.edit_geometry_mode not in {"volume", "surface", "edge"}:
+            if self.state.edit_geometry_mode not in {"volume", "surface"}:
                 self.state.edit_geometry_mode = "volume"
                 self.edit_session.geometry_mode = "volume"
         self.state.selection_count = self.edit_session.selected_count()

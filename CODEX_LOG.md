@@ -22,6 +22,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - strengthened fallback mapping from selected surface fragments back to source volumetric cell IDs via boundary-face ownership
   - added triangulation-tolerant subset matching so `touch` rectangle picks map correctly even when picked faces are triangles and source faces are polygons
   - added backend regression coverage for face-to-volume ID mapping
+- Fixed edit-selection `touch` behavior on `test_data/cube.vtk`:
+  - stopped discarding valid volumetric picks with a centroid-depth visibility pass after ParaView already selected visible surface cells
+  - validated native surface keys against the editable boundary map and fell back to geometric surface picking when ParaView returns non-editable keys
+  - added e2e coverage for center box selection in exposed edit modes: volume, surface, and point
+  - removed edge mode from the exposed edit-mode options until it is implemented reliably
 
 - Added support for `.pvd` files and time-dependent simulations:
   - Enabled `.pvd` extension in file discovery.

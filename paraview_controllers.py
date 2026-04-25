@@ -36,7 +36,7 @@ def register_paraview_controllers(
             or "volume"
         )
         mode = mode.strip().lower()
-        if mode not in {"volume", "surface", "edge", "point"}:
+        if mode not in {"volume", "surface", "point"}:
             mode = "volume"
         edit_session.geometry_mode = mode
         return mode
@@ -73,12 +73,11 @@ def register_paraview_controllers(
                 [
                     {"text": "Volume", "value": "volume"},
                     {"text": "Surface", "value": "surface"},
-                    {"text": "Edge", "value": "edge"},
                 ],
             )
         )
         mode = (getattr(state, "edit_geometry_mode", "") or "").strip().lower()
-        if mode not in {"volume", "surface", "edge"}:
+        if mode not in {"volume", "surface"}:
             mode = "volume"
             state.edit_geometry_mode = mode
         edit_session.geometry_mode = mode
@@ -118,6 +117,48 @@ def register_paraview_controllers(
     def _sync_color_controls():
         update_paraview_ui_state()
         render_and_push()
+
+    def _preview_list(values, limit=12):
+        seq = list(values or [])
+        if len(seq) <= limit:
+            return seq
+        return seq[:limit] + [f"...(+{len(seq) - limit})"]
+
+    def _expected_editable_from_picks(mode, picked_ids):
+        if mode == "surface":
+            resolver = getattr(edit_session, "_surface_keys_from_top_cells", None)
+            if callable(resolver):
+                try:
+                    resolved = resolver(picked_ids)
+                    return sorted(resolved)
+                except Exception:
+                    return []
+            return []
+        if mode == "point":
+            dataset = getattr(edit_session, "working_dataset", None)
+            if dataset is None:
+                return []
+            point_count = dataset.GetNumberOfPoints()
+            return sorted(
+                {
+                    int(point_id)
+                    for point_id in (picked_ids or [])
+                    if isinstance(point_id, (int, float))
+                    and 0 <= int(point_id) < point_count
+                }
+            )
+        dataset = getattr(edit_session, "working_dataset", None)
+        if dataset is None:
+            return []
+        cell_count = dataset.GetNumberOfCells()
+        return sorted(
+            {
+                int(cell_id)
+                for cell_id in (picked_ids or [])
+                if isinstance(cell_id, (int, float))
+                and 0 <= int(cell_id) < cell_count
+            }
+        )
 
     def _refresh_color_controls_preserving_visibility():
         visible = bool(getattr(state, "color_bar_visible", False))
@@ -159,6 +200,13 @@ def register_paraview_controllers(
             getattr(state, "edit_selection_mode", "replace")
         )
         angle_threshold = getattr(state, "angle_threshold", None)
+        expected = _expected_editable_from_picks(mode, picked_ids)
+        print(
+            "[selection-debug] controller.apply.begin "
+            f"mode={mode} selection_mode={selection_mode} source={source_label!r} "
+            f"picked_count={len(picked_ids)} picked={_preview_list(picked_ids)} "
+            f"expected_editable_count={len(expected)} expected_editable={_preview_list(expected)}"
+        )
 
         if selection_mode == "add":
             count = edit_session.add_selection(
@@ -201,6 +249,17 @@ def register_paraview_controllers(
             f"{action} {len(picked_ids)} {entity_label} with {source_label}. {count} selected total."
         )
         state.edit_selection_status_type = "success"
+        if mode == "surface":
+            selected_now = sorted(getattr(edit_session, "selected_surface_keys", set()))
+        elif mode == "point":
+            selected_now = sorted(getattr(edit_session, "selected_point_ids", set()))
+        else:
+            selected_now = sorted(getattr(edit_session, "selected_cell_ids", set()))
+        print(
+            "[selection-debug] controller.apply.end "
+            f"mode={mode} selection_mode={selection_mode} "
+            f"selected_total={count} selected_now={_preview_list(selected_now)}"
+        )
         render_and_push()
 
     def _pick_edit_ids_at_coords(mode, x, y):
@@ -227,9 +286,14 @@ def register_paraview_controllers(
                 if callable(picker)
                 else []
             )
+            if not picked_ids and behavior == "inside" and callable(picker):
+                picked_ids = picker(x0, y0, x1, y1, behavior="touch")
             if not picked_ids:
                 picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
                     x0, y0, x1, y1, behavior=behavior)
+            if not picked_ids and behavior == "inside":
+                picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
+                    x0, y0, x1, y1, behavior="touch")
             return picked_ids
         if mode == "point":
             picker = getattr(
@@ -437,6 +501,9 @@ def register_paraview_controllers(
                 exported["filename"],
                 exported["dataset"],
             )
+            set_edit_target = getattr(pv_backend, "set_edit_target_dataset", None)
+            if callable(set_edit_target):
+                set_edit_target(edit_session.working_dataset)
 
             pv_backend.apply_representation("Surface with Edges")
             state.pick_mode = True
@@ -475,6 +542,9 @@ def register_paraview_controllers(
         """Discard the current edit session."""
         debug_view("pv_discard_edit_session.start", mode=state.mainViewMode)
         edit_session.clear()
+        clear_edit_target = getattr(pv_backend, "clear_edit_target_dataset", None)
+        if callable(clear_edit_target):
+            clear_edit_target()
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         if is_paraview_backend() and pv_backend is not None:
@@ -506,6 +576,9 @@ def register_paraview_controllers(
             debug_view("pv_commit_edit_session.start", mode=state.mainViewMode)
             output_path = save_paraview_output()
             edit_session.clear()
+            clear_edit_target = getattr(pv_backend, "clear_edit_target_dataset", None)
+            if callable(clear_edit_target):
+                clear_edit_target()
             sync_edit_session_state()
             sync_paraview_edit_selection_overlay()
             state.inspector_tab = 0
