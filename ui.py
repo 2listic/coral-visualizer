@@ -535,15 +535,7 @@ def _build_paraview_pipeline_panel(ctrl):
                             outlined=True,
                             hide_details=True,
                             classes="mb-2",
-                            change=ctrl.pv_on_edit_field_choice,
-                        )
-                        vuetify.VBtn(
-                            "Create New Field",
-                            small=True,
-                            block=True,
-                            outlined=True,
-                            click=ctrl.pv_open_create_edit_field_dialog,
-                            classes="mb-2",
+                            change=(ctrl.pv_on_edit_field_choice, "[$event]"),
                         )
                         vuetify.VTextField(
                             v_model=("edit_expression",),

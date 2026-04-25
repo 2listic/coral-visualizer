@@ -64,6 +64,48 @@ def _wait_for_selection_count(page, predicate, timeout_s=4):
     return last
 
 
+def _select_vselect_option(page, label, option):
+    selector = page.locator(
+        f"div.v-input:has(label:has-text('{label}'))").first
+    selector.click()
+    page.click(f"div.v-list-item__title:has-text('{option}')")
+    time.sleep(0.3)
+
+
+def _open_create_field_dialog_from_select(page):
+    _select_vselect_option(page, "Select field", "Create new...")
+    page.wait_for_selector("div.v-dialog--active:has-text('Create New Field')", timeout=40000)
+
+
+def _create_new_edit_field(page, field_name, array_type="Cell data array", default_value="0"):
+    _open_create_field_dialog_from_select(page)
+    if array_type:
+        _select_vselect_option(page, "Array type", array_type)
+    page.fill(
+        "xpath=//label[contains(.,'Field name')]/ancestor::div[contains(@class,'v-input')]//input",
+        field_name,
+    )
+    page.fill(
+        "xpath=//label[contains(.,'Default value')]/ancestor::div[contains(@class,'v-input')]//input",
+        default_value,
+    )
+    page.click("div.v-dialog--active button:has-text('Create')")
+    page.wait_for_selector("div.v-dialog--active:has-text('Create New Field')", state="hidden", timeout=40000)
+    time.sleep(0.4)
+
+
+def _drag_normalized_box(page, view_box, rect, *, steps=12):
+    fx0, fy0, fx1, fy1 = rect
+    x0 = view_box["x"] + view_box["width"] * fx0
+    y0 = view_box["y"] + view_box["height"] * fy0
+    x1 = view_box["x"] + view_box["width"] * fx1
+    y1 = view_box["y"] + view_box["height"] * fy1
+    page.mouse.move(x0, y0)
+    page.mouse.down()
+    page.mouse.move(x1, y1, steps=steps)
+    page.mouse.up()
+
+
 def _parse_env_box(name, default):
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -183,6 +225,101 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
                 proc.kill()
 
 
+def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(shared_browser):
+    if not is_paraview_available():
+        pytest.skip("ParaView backend is not available in this environment")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--no-browser",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_GRID),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(
+            viewport={"width": 1600, "height": 1000})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector(
+            "button:has-text('Enter Edit Mode')", timeout=40000)
+
+        page.click("button:has-text('Enter Edit Mode')")
+        page.wait_for_selector("text=Edit Tools", timeout=40000)
+        time.sleep(1.0)
+
+        _create_new_edit_field(
+            page,
+            "TestField",
+            array_type="Point data array",
+            default_value="0",
+        )
+        page.wait_for_selector("text=TestField", timeout=40000)
+        page.click("button:has-text('Pick')")
+        _select_vselect_option(page, "Selection mode", "Replace")
+
+        view = page.locator('[style*="cursor: crosshair"]').first
+        box = view.bounding_box()
+        assert box is not None and box["width"] > 0 and box["height"] > 0
+
+        first_rect = (0.553663, 0.434707, 0.757133, 0.54557)
+        second_rect = (0.2356, 0.414752, 0.813425, 0.561162)
+
+        page.click("button:has-text('Clear Selection')")
+        assert _wait_for_selection_count(page, lambda count: count == 0) == 0
+        _drag_normalized_box(page, box, second_rect)
+        expected_second_count = _wait_for_selection_count(
+            page, lambda count: count > 0, timeout_s=8
+        )
+        assert expected_second_count is not None and expected_second_count > 0
+
+        page.click("button:has-text('Clear Selection')")
+        assert _wait_for_selection_count(page, lambda count: count == 0) == 0
+        _drag_normalized_box(page, box, first_rect)
+        first_count = _wait_for_selection_count(
+            page, lambda count: count > 0, timeout_s=8
+        )
+        assert first_count is not None and first_count > 0
+
+        _drag_normalized_box(page, box, second_rect)
+        replace_count = _wait_for_selection_count(
+            page, lambda count: count == expected_second_count, timeout_s=8
+        )
+        assert replace_count == expected_second_count, (
+            "Replace mode should discard the previous point selection before applying "
+            f"the second box. first={first_count}, expected_second={expected_second_count}, "
+            f"actual={_selection_count(page)}"
+        )
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(shared_browser):
     if not is_paraview_available():
         pytest.skip("ParaView backend is not available in this environment")
@@ -236,19 +373,12 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
         page.click("div.v-list-item__title:has-text('Surface')")
         time.sleep(0.4)
 
-        page.click("button:has-text('Create New Field')")
-        page.wait_for_selector("text=Create New Field", timeout=40000)
-
-        page.fill(
-            "xpath=//label[contains(.,'Field name')]/ancestor::div[contains(@class,'v-input')]//input",
+        _create_new_edit_field(
+            page,
             "BoundaryID",
+            array_type="Cell data array",
+            default_value="1",
         )
-        page.fill(
-            "xpath=//label[contains(.,'Default value')]/ancestor::div[contains(@class,'v-input')]//input",
-            "1",
-        )
-        page.click("div.v-dialog--active button:has-text('Create')")
-        time.sleep(0.4)
 
         view = page.locator('[style*="cursor: crosshair"]').first
         box = view.bounding_box()

@@ -156,6 +156,10 @@ class ParaViewRuntime:
             return []
 
         if isinstance(event, dict):
+            coords = self._resolve_event_view_coordinates(event)
+            if coords is not None:
+                return [("coords", coords[0], coords[1])]
+
             if isinstance(event.get("compositeID"), int):
                 return [event["compositeID"]]
             if isinstance(event.get("selection"), list):
@@ -166,9 +170,6 @@ class ParaViewRuntime:
                 if result:
                     return result
 
-            coords = self._resolve_event_view_coordinates(event)
-            if coords is not None:
-                return [("coords", coords[0], coords[1])]
             return []
 
         if isinstance(event, list):

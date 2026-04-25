@@ -303,6 +303,40 @@ def test_pv_apply_edit_field_requires_field_choice():
     assert sync_calls == ["sync"]
 
 
+def test_pv_on_edit_field_choice_create_new_opens_dialog_from_event_value():
+    ctrl = FakeCtrl()
+    state = SimpleNamespace(
+        edit_field_choice="cell:BoundaryID",
+        edit_create_field_dialog=False,
+    )
+    edit_session = SimpleNamespace(active=True)
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_on_edit_field_choice"]("__create_new__")
+
+    assert state.edit_create_field_dialog is True
+    assert state.edit_field_choice == "__create_new__"
+
+
 def test_pv_create_edit_field_existing_name_opens_overwrite_dialog():
     ctrl = FakeCtrl()
     state = SimpleNamespace(
@@ -906,6 +940,81 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
     assert calls == ["sync", "overlay", "render"]
     assert state.selection_count == 1
     assert state.edit_selection_status == "Selected 1 cell(s) with click selection. 1 selected total."
+
+
+def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payload():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        pick_mode=True,
+        group_select=False,
+        selection_count=2,
+        edit_selection_event="",
+        edit_selection_status="",
+        edit_selection_status_type="info",
+        selection_behavior="touch",
+        edit_selection_mode="replace",
+        edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
+    )
+    actions = []
+    edit_session = SimpleNamespace(active=True)
+    edit_session.replace_selection = (
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("replace", list(ids), grow)
+        )
+        or len(ids)
+    )
+    edit_session.add_selection = (
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("add", list(ids), grow)
+        )
+        or len(ids)
+    )
+    edit_session.subtract_selection = (
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("subtract", list(ids), grow)
+        )
+        or 0
+    )
+    edit_session.flip_selection = (
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("flip", list(ids), grow)
+        )
+        or 0
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(
+            pick_visible_cell_ids=lambda x, y: [1, 2, 3] if (x, y) == (12, 34) else []
+        ),
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: calls.append("sync"),
+        sync_paraview_edit_selection_overlay=lambda: calls.append("overlay"),
+        summarize_edit_event=lambda event: "summary",
+        normalize_edit_selection_ids=lambda event: [("coords", 12, 34)],
+    )
+
+    ctrl.handlers["pv_edit_click_selection"](
+        {
+            "position": {"x": 12, "y": 34},
+            "selection": [{"compositeID": 2}],
+        }
+    )
+
+    assert actions == [("replace", [1, 2, 3], False)]
+    assert state.selection_count == 3
+    assert state.edit_selection_status == "Selected 3 cell(s) with click selection. 3 selected total."
 
 
 def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():

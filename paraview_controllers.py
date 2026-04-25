@@ -525,12 +525,15 @@ def register_paraview_controllers(
             state.edit_status_type = "error"
 
     @ctrl.add("pv_on_edit_field_choice")
-    def pv_on_edit_field_choice():
+    def pv_on_edit_field_choice(choice=None):
         """React to field selection changes (existing field or create new)."""
         if not is_paraview_backend() or not edit_session.active:
             return
 
-        choice = (getattr(state, "edit_field_choice", "") or "").strip()
+        raw_choice = choice if choice is not None else getattr(
+            state, "edit_field_choice", "")
+        choice = (raw_choice or "").strip()
+        state.edit_field_choice = choice
         if choice == "__create_new__":
             state.edit_create_field_dialog = True
             return

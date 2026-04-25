@@ -192,6 +192,12 @@ def test_normalize_edit_selection_ids_and_event_summary_cover_payload_shapes():
     assert runtime.normalize_edit_selection_ids({"x": 4, "y": 6}) == [("coords", 4, 6)]
     assert runtime.normalize_edit_selection_ids(
         {
+            "position": {"x": 4, "y": 6},
+            "selection": [{"compositeID": 3}, {"compositeID": 5}],
+        }
+    ) == [("coords", 4, 6)]
+    assert runtime.normalize_edit_selection_ids(
+        {
             "position": {"x": 100, "y": 50},
             "size": {"width": 200, "height": 100},
         }
@@ -205,8 +211,7 @@ def test_normalize_edit_selection_ids_and_event_summary_cover_payload_shapes():
     assert runtime.normalize_edit_selection_ids([{"compositeID": 9}]) == [9]
 
     summary = runtime.summarize_edit_event({"mode": "click", "compositeID": 7, "x": 1, "y": 2})
-    assert '"selection_count": 1' in summary
-    assert '"sample_ids": [' in summary
+    assert '"resolved_coords": [' in summary
 
     coord_summary = runtime.summarize_edit_event({"position": {"x": 3, "y": 4}})
     assert '"resolved_coords": [' in coord_summary

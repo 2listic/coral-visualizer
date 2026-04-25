@@ -427,8 +427,16 @@ class ParaViewBackend:
         source = self.source
         if source is None:
             return
+        self._clear_selection_state(source)
+
+    def _clear_selection_state(self, source=None):
+        """Clear ParaView selection state globally and for a specific source."""
         try:
             self.simple.ClearSelection(source)
+        except Exception:
+            pass
+        try:
+            self.simple.ClearSelection()
         except Exception:
             pass
 
@@ -542,12 +550,13 @@ class ParaViewBackend:
             return []
 
         candidates = self._candidate_pick_positions(x, y)
+        self.clear_edit_selection_overlay()
         self.simple.SetActiveView(self.view)
         self.simple.SetActiveSource(source)
 
         picked_result = []
         for px, py in candidates:
-            self.simple.ClearSelection(source)
+            self._clear_selection_state(source)
             rect = [px - radius, py - radius, px + radius, py + radius]
             self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
             picked_result = self._fetch_selected_original_cell_ids(source)
@@ -556,7 +565,7 @@ class ParaViewBackend:
                 break
 
         # Always clear and RENDER to hide the native ParaView purple selection
-        self.simple.ClearSelection(source)
+        self._clear_selection_state(source)
         self.render()
         return picked_result
 
@@ -576,13 +585,14 @@ class ParaViewBackend:
 
         # No Y-inversion here as coordinates from VtkRemoteLocalView are already PV-compatible
         rect = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+        self.clear_edit_selection_overlay()
         self.simple.SetActiveView(self.view)
         self.simple.SetActiveSource(source)
-        self.simple.ClearSelection(source)
+        self._clear_selection_state(source)
         self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
         picked = self._fetch_selected_original_cell_ids(source)
         picked = self._filter_visible_cell_ids_by_depth(source, picked)
-        self.simple.ClearSelection(source)
+        self._clear_selection_state(source)
         self.render()
         if not picked or behavior != "inside":
             return picked
@@ -600,17 +610,18 @@ class ParaViewBackend:
             return []
 
         candidates = self._candidate_pick_positions(x, y)
+        self.clear_edit_selection_overlay()
         self.simple.SetActiveView(self.view)
         self.simple.SetActiveSource(source)
         picked_result = []
         for px, py in candidates:
-            self.simple.ClearSelection(source)
+            self._clear_selection_state(source)
             rect = [px - radius, py - radius, px + radius, py + radius]
             self.simple.SelectSurfacePoints(Rectangle=rect, View=self.view, Modifier=None)
             picked_result = self._fetch_selected_original_point_ids(source)
             if picked_result:
                 break
-        self.simple.ClearSelection(source)
+        self._clear_selection_state(source)
         self.render()
         return picked_result
 
@@ -628,12 +639,13 @@ class ParaViewBackend:
             return []
 
         rect = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+        self.clear_edit_selection_overlay()
         self.simple.SetActiveView(self.view)
         self.simple.SetActiveSource(source)
-        self.simple.ClearSelection(source)
+        self._clear_selection_state(source)
         self.simple.SelectSurfacePoints(Rectangle=rect, View=self.view, Modifier=None)
         picked = self._fetch_selected_original_point_ids(source)
-        self.simple.ClearSelection(source)
+        self._clear_selection_state(source)
         self.render()
         return picked
 
@@ -709,6 +721,8 @@ class ParaViewBackend:
         source = self.source
         if self.view is None or source is None:
             return []
+
+        self.clear_edit_selection_overlay()
 
         # Fast path: use native ParaView/VTK surface selection on an extracted
         # boundary-surface representation and map selected cells back to source keys.
@@ -789,7 +803,7 @@ class ParaViewBackend:
         try:
             self.simple.SetActiveView(self.view)
             self.simple.SetActiveSource(source)
-            self.simple.ClearSelection(source)
+            self._clear_selection_state(source)
 
             temp_source = self.simple.ExtractSurface(Input=source)
             for prop_name, prop_value in (
@@ -817,7 +831,7 @@ class ParaViewBackend:
                 original_display.Visibility = 0
 
             self.simple.SetActiveSource(temp_source)
-            self.simple.ClearSelection(temp_source)
+            self._clear_selection_state(temp_source)
             self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
 
             extract = self.simple.ExtractSelection(Input=temp_source)
