@@ -135,6 +135,37 @@ def _build_toolbar(ctrl, backend):
             classes="mr-2",
             style="max-width: 260px;",
         )
+        # Time controls
+        with vuetify.VRow(v_if="is_time_dependent", dense=True, align="center", classes="ma-0 mr-4", style="max-width: 400px; flex: 1;"):
+            vuetify.VBtn(
+                icon=True,
+                small=True,
+                click=ctrl.pv_prev_time_step,
+                children=[vuetify.VIcon("mdi-skip-previous")],
+            )
+            vuetify.VBtn(
+                icon=True,
+                small=True,
+                click=ctrl.pv_play_pause_time,
+                children=[vuetify.VIcon("{{ time_playing ? 'mdi-pause' : 'mdi-play' }}")],
+            )
+            vuetify.VBtn(
+                icon=True,
+                small=True,
+                click=ctrl.pv_next_time_step,
+                children=[vuetify.VIcon("mdi-skip-next")],
+            )
+            vuetify.VLabel("{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})", classes="ml-2 grey--text text--darken-2", style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;")
+            vuetify.VSlider(
+                v_model=("time_index",),
+                min=0,
+                max=("total_timesteps - 1",),
+                step=1,
+                dense=True,
+                hide_details=True,
+                classes="ml-2 flex-grow-1",
+                change="pv_set_time(time_values[$event])",
+            )
         vuetify.VBtn(
             "Save And Add To Pipeline",
             small=True,
@@ -792,6 +823,17 @@ def _build_paraview_inspector_panel(ctrl):
                                             outlined=True,
                                             disabled=("!color_controls_enabled",),
                                             click=ctrl.pv_rescale_color_range_to_data,
+                                        )
+                                with vuetify.VRow(dense=True, classes="mt-1", v_if="is_time_dependent"):
+                                    with vuetify.VCol(cols=12):
+                                        vuetify.VBtn(
+                                            "Rescale over Time",
+                                            small=True,
+                                            block=True,
+                                            outlined=True,
+                                            color="warning",
+                                            disabled=("!color_controls_enabled",),
+                                            click="rescale_over_time_dialog = true",
                                         )
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
@@ -1465,6 +1507,18 @@ def build_ui(server, render_target, backend):
     with SinglePageLayout(server) as layout:
         layout.title.set_text("")
         layout.icon.hide()
+
+        # Rescale over time confirmation dialog
+        with vuetify.VDialog(v_model=("rescale_over_time_dialog",), max_width=450):
+            with vuetify.VCard():
+                vuetify.VCardTitle("Rescale Range over Time", classes="headline")
+                with vuetify.VCardText():
+                    html.Div("Rescaling the color range over all timesteps may take a significant amount of time as ParaView must process every frame of the simulation.", classes="mb-4")
+                    html.Div("Do you want to proceed?")
+                with vuetify.VCardActions():
+                    vuetify.VSpacer()
+                    vuetify.VBtn("Cancel", click="rescale_over_time_dialog = false", text=True)
+                    vuetify.VBtn("Rescale", click=ctrl.pv_rescale_color_range_over_time, color="warning", text=True)
 
         with layout.toolbar:
             _build_toolbar(ctrl, backend)

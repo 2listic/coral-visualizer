@@ -544,6 +544,91 @@ def register_paraview_controllers(
         except Exception as exc:
             _set_color_status(f"Color range rescale failed: {exc}", "error")
 
+    @ctrl.add("pv_rescale_color_range_over_time")
+    def pv_rescale_color_range_over_time():
+        """Rescale the active color map over all timesteps."""
+        if not is_paraview_backend() or pv_backend.display is None:
+            return
+        try:
+            pv_backend.rescale_color_range_over_time()
+            _refresh_color_controls_preserving_visibility()
+            _set_color_status("Rescaled color range over time.")
+            state.rescale_over_time_dialog = False
+        except Exception as exc:
+            _set_color_status(f"Color range rescale over time failed: {exc}", "error")
+
+    @ctrl.add("pv_set_time")
+    def pv_set_time(time_value):
+        """Set the current time from the UI."""
+        if not is_paraview_backend():
+            return
+        try:
+            pv_backend.set_time(time_value)
+            update_paraview_ui_state()
+            render_and_push()
+        except Exception as exc:
+            state.error_message = f"Error setting time: {exc}"
+
+    @ctrl.add("pv_next_time_step")
+    def pv_next_time_step():
+        """Move to the next available timestep."""
+        if not is_paraview_backend():
+            return
+        try:
+            pv_backend.set_time_step(1)
+            update_paraview_ui_state()
+            render_and_push()
+        except Exception as exc:
+            state.error_message = f"Error moving to next timestep: {exc}"
+
+    @ctrl.add("pv_prev_time_step")
+    def pv_prev_time_step():
+        """Move to the previous available timestep."""
+        if not is_paraview_backend():
+            return
+        try:
+            pv_backend.set_time_step(-1)
+            update_paraview_ui_state()
+            render_and_push()
+        except Exception as exc:
+            state.error_message = f"Error moving to previous timestep: {exc}"
+
+    @ctrl.add("pv_play_pause_time")
+    def pv_play_pause_time():
+        """Toggle time animation playing."""
+        state.time_playing = not state.time_playing
+        if state.time_playing:
+            ctrl.pv_animate_step()
+
+    @ctrl.add("pv_animate_step")
+    def pv_animate_step():
+        """Perform a single animation step if playing."""
+        if not state.time_playing:
+            return
+        
+        try:
+            old_index = state.time_index
+            pv_backend.set_time_step(1)
+            update_paraview_ui_state()
+            render_and_push()
+            
+            # Loop if we didn't advance (at end)
+            if state.time_index == old_index and state.total_timesteps > 1:
+                pv_backend.set_time(state.time_values[0])
+                update_paraview_ui_state()
+                render_and_push()
+            
+            # Schedule next step
+            import asyncio
+            async def _next():
+                await asyncio.sleep(0.1)
+                ctrl.pv_animate_step()
+            
+            asyncio.create_task(_next())
+        except Exception as exc:
+            state.time_playing = False
+            state.error_message = f"Animation error: {exc}"
+
     @ctrl.add("pv_set_scalar_bar_visible")
     def pv_set_scalar_bar_visible(visible=None):
         """Toggle the active scalar color legend."""

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import bisect
 import importlib.util
 import os
+import time
 from math import isfinite
 
 from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
@@ -1688,6 +1690,7 @@ class ParaViewBackend:
             "selected_array": self._get_selected_array(),
             "representation": self._get_representation(),
             **color_state,
+            **self.get_time_state(),
         }
 
     def apply_property_changes(self, source_properties, display_properties):
@@ -1915,6 +1918,57 @@ class ParaViewBackend:
             "Points": "Points",
         }
         return mapping.get(representation, representation)
+
+    def get_time_state(self):
+        """Return time information for the current animation scene."""
+        scene = self.simple.GetAnimationScene()
+        times = scene.TimeKeeper.TimestepValues
+        current_time = scene.AnimationTime
+
+        time_index = 0
+        if times:
+            # Find closest index
+            time_index = bisect.bisect_left(times, current_time)
+            if time_index >= len(times):
+                time_index = len(times) - 1
+            elif time_index > 0 and (times[time_index] - current_time) > (
+                current_time - times[time_index - 1]
+            ):
+                time_index -= 1
+
+        return {
+            "time_values": list(times) if times else [],
+            "current_time": current_time,
+            "time_index": time_index,
+            "total_timesteps": len(times) if times else 0,
+            "is_time_dependent": len(times) > 1 if times else False,
+        }
+
+    def set_time(self, time_value):
+        """Set the current time in the animation scene."""
+        scene = self.simple.GetAnimationScene()
+        scene.AnimationTime = float(time_value)
+
+    def set_time_step(self, step_delta):
+        """Move the current time by a number of steps."""
+        state = self.get_time_state()
+        if not state["is_time_dependent"]:
+            return
+
+        new_index = max(
+            0, min(state["total_timesteps"] - 1, state["time_index"] + step_delta)
+        )
+        self.set_time(state["time_values"][new_index])
+
+    def rescale_color_range_over_time(self):
+        """Rescale the active color map to the range of data over all timesteps."""
+        display = self.display
+        if display is None:
+            return
+
+        # ParaView simple has RescaleTransferFunctionToDataRangeOverTime
+        # but it usually operates on the active source/proxy
+        self.simple.RescaleTransferFunctionToDataRangeOverTime()
 
     @staticmethod
     def _make_node(

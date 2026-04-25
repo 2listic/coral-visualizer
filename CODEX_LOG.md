@@ -6,6 +6,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Added support for `.pvd` files and time-dependent simulations:
+  - Enabled `.pvd` extension in file discovery.
+  - Added time animation controls (play/pause, next/prev step, time slider) to the top toolbar, visible for time-dependent datasets.
+  - Implemented background animation task with looping support.
+  - Added "Rescale over Time" option to the Color Bar panel with a confirmation warning for slow operations.
 - Separated cell information by type in the `Information` panel:
   - Added recursive counting of cells by dimension (Volumetric, Surface, Edge, Vertex) for single and composite (Multi-block) datasets.
   - Integrated detailed breakdown into the `Information` tab UI.

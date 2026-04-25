@@ -17,8 +17,8 @@ def get_vtk_files_from_data_folder(data_folder=None):
         debug_log(f"Warning: Data folder not found: {data_folder}")
         return []
 
-    # Support both legacy .vtk and XML format .vtu/.pvtu
-    supported_extensions = (".vtk", ".vtu", ".pvtu")
+    # Support legacy .vtk, XML format .vtu/.pvtu, and .pvd for simulations
+    supported_extensions = (".vtk", ".vtu", ".pvtu", ".pvd")
 
     # Collect files grouped by subfolder (relative to data_folder)
     groups = {}  # subfolder_rel_path -> list of {text, value}

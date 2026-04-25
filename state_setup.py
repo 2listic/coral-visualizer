@@ -76,6 +76,15 @@ def initialize_state(
     state.categorical_coloring = False
     state.color_controls_status = ""
     state.color_controls_status_type = "info"
+
+    # Time/Simulation state
+    state.time_values = []
+    state.current_time = 0.0
+    state.time_index = 0
+    state.total_timesteps = 0
+    state.is_time_dependent = False
+    state.rescale_over_time_dialog = False
+    state.time_playing = False
     state.inspector_tab = 0
     state.pv_properties_dirty = False
     state.active_visibility = True
