@@ -137,6 +137,151 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     assert state.save_status_type == "error"
 
 
+def test_pv_reload_active_file_refreshes_pipeline_state():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        selected_array="point:U",
+        representation="Wireframe",
+        has_boundary=True,
+        error_message="old",
+        selection_count=4,
+        save_status="old",
+        color_bar_visible=False,
+        color_range_min="2",
+        color_range_max="8",
+        color_map_preset="Cool to Warm",
+        categorical_coloring=True,
+        source_properties=[{"name": "SomeReaderProperty", "pending_value": 2}],
+        display_properties=[
+            {"name": "Opacity", "pending_value": 0.4},
+            {"name": "LineWidth", "pending_value": 3.0},
+        ],
+    )
+    source_properties = state.source_properties
+    display_properties = state.display_properties
+    pv_backend = SimpleNamespace(
+        reload_node_file=lambda node_id: calls.append(("reload", node_id))
+        or ([{"text": "M", "value": "cell:M"}], "cell:M"),
+        apply_representation=lambda representation: calls.append(
+            ("representation", representation)
+        ),
+        apply_coloring=lambda array: calls.append(("coloring", array)),
+        apply_property_changes=lambda source, display: calls.append(
+            ("properties", source, display)
+        ),
+        apply_color_map_preset=lambda preset: calls.append(("preset", preset)),
+        apply_color_range=lambda low, high: calls.append(("range", low, high)),
+        set_categorical_coloring=lambda enabled: calls.append(("categorical", enabled)),
+        set_scalar_bar_visible=lambda visible: calls.append(("bar", visible)),
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=SimpleNamespace(),
+        refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
+        update_paraview_ui_state=lambda: calls.append("update_ui"),
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_reload_active_file"]()
+
+    assert calls[:6] == [
+        ("runtime", {"clear": True}),
+        ("reload", "node-1"),
+        ("representation", "Wireframe"),
+        ("coloring", "point:U"),
+        ("properties", source_properties, display_properties),
+        ("preset", "Cool to Warm"),
+    ]
+    assert calls[6:11] == [
+        ("range", "2", "8"),
+        ("categorical", True),
+        ("bar", False),
+        ("runtime", {}),
+        "update_ui",
+    ]
+    assert calls[-1] == "render"
+    assert state.has_boundary is False
+    assert state.error_message == ""
+    assert state.selection_count == 0
+    assert state.save_status == ""
+
+
+def test_pv_reload_active_file_skips_invalid_restored_preset():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        selected_array="point:U",
+        representation="Surface",
+        has_boundary=True,
+        error_message="old",
+        selection_count=4,
+        save_status="old",
+        color_bar_visible=True,
+        color_range_min="",
+        color_range_max="",
+        color_map_preset="Viridis (matplotlib)",
+        categorical_coloring=False,
+        color_controls_status="",
+        color_controls_status_type="info",
+    )
+    pv_backend = SimpleNamespace(
+        reload_node_file=lambda node_id: calls.append(("reload", node_id))
+        or ([{"text": "U", "value": "point:U"}], "point:U"),
+        apply_representation=lambda representation: calls.append(
+            ("representation", representation)
+        ),
+        apply_coloring=lambda array: calls.append(("coloring", array)),
+        apply_color_map_preset=lambda preset: (_ for _ in ()).throw(
+            RuntimeError("missing preset")
+        ),
+        set_categorical_coloring=lambda enabled: calls.append(("categorical", enabled)),
+        set_scalar_bar_visible=lambda visible: calls.append(("bar", visible)),
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=SimpleNamespace(),
+        refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
+        update_paraview_ui_state=lambda: calls.append("update_ui"),
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_reload_active_file"]()
+
+    assert "update_ui" in calls
+    assert calls[-1] == "render"
+    assert state.error_message == ""
+    assert state.color_controls_status_type == "warning"
+
+
 def test_pv_delete_active_clears_selected_file_when_pipeline_becomes_empty():
     ctrl = FakeCtrl()
     calls = []

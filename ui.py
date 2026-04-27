@@ -411,7 +411,26 @@ def _build_paraview_pipeline_panel(ctrl):
         style="border-right: 1px solid rgba(0,0,0,0.08);",
     ):
         with vuetify.VSheet(classes="pa-4", style="height: 100%; background: #f5f5f7;"):
-            vuetify.VSubheader(classes="px-0", children=["Pipeline Browser"])
+            with vuetify.VRow(
+                no_gutters=True,
+                align="center",
+                classes="mb-1",
+            ):
+                with vuetify.VCol():
+                    vuetify.VSubheader(classes="px-0", children=["Pipeline Browser"])
+                with vuetify.VCol(cols="auto"):
+                    with vuetify.VTooltip(bottom=True):
+                        with vuetify.Template(v_slot_activator="{ on, attrs }"):
+                            with vuetify.VBtn(
+                                icon=True,
+                                small=True,
+                                disabled=("!active_pipeline_item",),
+                                click=ctrl.pv_reload_active_file,
+                                v_bind="attrs",
+                                v_on="on",
+                            ):
+                                vuetify.VIcon("mdi-refresh", small=True)
+                        html.Span("Reload selected pipeline file")
             with vuetify.VList(
                 dense=True,
                 nav=True,

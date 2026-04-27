@@ -6,6 +6,16 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Refined ParaView pipeline reload and display-state preservation:
+  - Added a reload button beside `Pipeline Browser` for the selected pipeline item.
+  - Reload now preserves selected color array, representation, color controls, source/display properties, and scalar-bar state.
+  - Hardened color-map preset restore across ParaView preset-name differences such as `Viridis (matplotlib)` vs `Viridis`.
+  - Fixed stale scalar bars when switching `Color by` arrays by hiding unused scalar bars and binding the active display LUT explicitly.
+  - Made `Rescale Data` force the active color range to the current data range instead of only extending it.
+  - Populated categorical color annotations and indexed colors from unique scalar values when `Interpret values as categories` is enabled.
+- Improved `Information` panel cell counts:
+  - Detailed cell stats now count concrete cells by intrinsic cell dimension via `GetCellDimension()`.
+  - The breakdown reports volume, surface, edge, and vertex cells for mixed-dimensional datasets.
 - Stabilized ParaView time-dependent UX and compatibility:
   - fixed `.pvd` timestep coercion for non-`list/tuple` ParaView timestep containers
   - synced time state propagation (`time_values`, `time_index`, `current_time`, `is_time_dependent`) between backend/runtime/UI

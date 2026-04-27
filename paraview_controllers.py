@@ -166,6 +166,40 @@ def register_paraview_controllers(
         state.color_bar_visible = visible
         render_and_push()
 
+    def _restore_active_color_controls(*, visible, range_min, range_max):
+        preset = (getattr(state, "color_map_preset", "") or "").strip()
+        if preset:
+            apply_preset = getattr(pv_backend, "apply_color_map_preset", None)
+            if callable(apply_preset):
+                try:
+                    apply_preset(preset)
+                except Exception as exc:
+                    _set_color_status(f"Color map restore skipped: {exc}", "warning")
+
+        if range_min != "" and range_max != "":
+            apply_range = getattr(pv_backend, "apply_color_range", None)
+            if callable(apply_range):
+                try:
+                    apply_range(range_min, range_max)
+                except Exception as exc:
+                    _set_color_status(f"Color range restore skipped: {exc}", "warning")
+
+        set_categorical = getattr(pv_backend, "set_categorical_coloring", None)
+        if callable(set_categorical):
+            try:
+                set_categorical(bool(getattr(state, "categorical_coloring", False)))
+            except Exception as exc:
+                _set_color_status(
+                    f"Categorical coloring restore skipped: {exc}", "warning"
+                )
+
+        set_bar_visible = getattr(pv_backend, "set_scalar_bar_visible", None)
+        if callable(set_bar_visible):
+            try:
+                set_bar_visible(visible)
+            except Exception as exc:
+                _set_color_status(f"Color scale restore skipped: {exc}", "warning")
+
     def _set_color_status(message, status_type="success"):
         state.color_controls_status = message
         state.color_controls_status_type = status_type
@@ -442,6 +476,53 @@ def register_paraview_controllers(
         pv_backend.set_visibility(node_id, not visible)
         update_paraview_ui_state()
         render_and_push()
+
+    @ctrl.add("pv_reload_active_file")
+    def pv_reload_active_file():
+        """Reload the file backing the active ParaView pipeline node."""
+        if not is_paraview_backend() or not state.active_pipeline_item:
+            return
+
+        try:
+            property_restore_error = ""
+            selected_array = getattr(state, "selected_array", "") or ""
+            color_bar_visible = bool(getattr(state, "color_bar_visible", False))
+            color_range_min = getattr(state, "color_range_min", "")
+            color_range_max = getattr(state, "color_range_max", "")
+            source_properties = [
+                dict(item) for item in getattr(state, "source_properties", []) or []
+            ]
+            display_properties = [
+                dict(item) for item in getattr(state, "display_properties", []) or []
+            ]
+            refresh_runtime_message(clear=True)
+            _arrays, default_array = pv_backend.reload_node_file(
+                state.active_pipeline_item
+            )
+            pv_backend.apply_representation(state.representation)
+            pv_backend.apply_coloring(selected_array or default_array)
+            apply_properties = getattr(pv_backend, "apply_property_changes", None)
+            if callable(apply_properties):
+                try:
+                    apply_properties(source_properties, display_properties)
+                except Exception as exc:
+                    property_restore_error = (
+                        f"Some pipeline properties could not be restored: {exc}"
+                    )
+            _restore_active_color_controls(
+                visible=color_bar_visible,
+                range_min=color_range_min,
+                range_max=color_range_max,
+            )
+            refresh_runtime_message()
+            update_paraview_ui_state()
+            state.has_boundary = False
+            state.error_message = property_restore_error
+            state.selection_count = 0
+            state.save_status = ""
+            render_and_push()
+        except Exception as exc:
+            state.error_message = f"Error reloading pipeline file: {exc}"
 
     @ctrl.add("pv_delete_active")
     def pv_delete_active():

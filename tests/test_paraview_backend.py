@@ -109,6 +109,10 @@ class FakeLookupTable:
         self.UseCategoricalColors = 0
         self.presets = []
         self.ranges = []
+        self.Annotations = []
+        self.AnnotationsInitialized = 0
+        self.IndexedColors = []
+        self.IndexedLookup = 0
 
     def ApplyPreset(self, preset, rescale):
         self.presets.append((preset, rescale))
@@ -117,6 +121,13 @@ class FakeLookupTable:
         self.ranges.append((range_min, range_max))
         self.RGBPoints[0] = range_min
         self.RGBPoints[-4] = range_max
+
+
+class FakeLookupTableWithRejectedPresets(FakeLookupTable):
+    def ApplyPreset(self, preset, rescale):
+        self.presets.append((preset, rescale))
+        if preset == "Viridis (matplotlib)":
+            raise RuntimeError("missing preset")
 
 
 class FakeDisplay:
@@ -214,6 +225,59 @@ class FakeOverlayDataset:
 
     def GetNumberOfCells(self):
         return self.cell_count
+
+
+class FakeScalarArray:
+    def __init__(self, values):
+        self.values = list(values)
+
+    def GetNumberOfTuples(self):
+        return len(self.values)
+
+    def GetNumberOfComponents(self):
+        return 1
+
+    def GetTuple1(self, index):
+        return self.values[index]
+
+
+class FakeDataAttributes:
+    def __init__(self, arrays):
+        self.arrays = arrays
+
+    def GetArray(self, name):
+        return self.arrays.get(name)
+
+
+class FakeCategoricalDataset:
+    def __init__(self, *, point_arrays=None, cell_arrays=None):
+        self.point_data = FakeDataAttributes(point_arrays or {})
+        self.cell_data = FakeDataAttributes(cell_arrays or {})
+
+    def GetPointData(self):
+        return self.point_data
+
+    def GetCellData(self):
+        return self.cell_data
+
+
+class FakeDimensionCell:
+    def __init__(self, dimension):
+        self.dimension = dimension
+
+    def GetCellDimension(self):
+        return self.dimension
+
+
+class FakeIntrinsicDimensionDataset:
+    def __init__(self, dimensions):
+        self.cells = [FakeDimensionCell(dimension) for dimension in dimensions]
+
+    def GetNumberOfCells(self):
+        return len(self.cells)
+
+    def GetCell(self, cell_id):
+        return self.cells[cell_id]
 
 
 class FakeFilterCatalog:
@@ -438,8 +502,41 @@ def test_apply_coloring_handles_solid_and_scalar_arrays():
     assert ("ColorBy", display, None) in backend.simple.calls
     assert ("HideUnusedScalarBars", backend.view) in backend.simple.calls
     assert ("ColorBy", display, ("POINTS", "U")) in backend.simple.calls
-    assert display.scalar_bar_calls == [(backend.view, True)]
+    assert display.scalar_bar_calls == [(backend.view, False), (backend.view, True)]
     assert display.rescale_calls == [(True, False)]
+
+
+def test_apply_coloring_hides_previous_scalar_bar_when_switching_arrays():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    display = FakeDisplay()
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.apply_coloring(f"{POINT_PREFIX}U")
+    backend.simple.calls.clear()
+    display.scalar_bar_calls.clear()
+    backend.apply_coloring(f"{CELL_PREFIX}M")
+
+    assert display.scalar_bar_calls == [(backend.view, False), (backend.view, True)]
+    assert ("HideUnusedScalarBars", backend.view) in backend.simple.calls
+    assert ("ColorBy", display, ("CELLS", "M")) in backend.simple.calls
+
+
+def test_apply_coloring_binds_lookup_table_before_showing_scalar_bar():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"]))
+    display = FakeDisplay()
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.apply_coloring(f"{POINT_PREFIX}U")
+
+    assert display.LookupTable is backend.simple.lookup_tables["U"]
+    assert ("GetColorTransferFunction", "U") in backend.simple.calls
+    assert display.scalar_bar_calls[-1] == (backend.view, True)
 
 
 def test_color_controls_manage_lookup_table_scalar_bar_and_axes():
@@ -471,10 +568,51 @@ def test_color_controls_manage_lookup_table_scalar_bar_and_axes():
     assert lut.presets == [("Cool to Warm", True)]
     assert lut.ranges == [(2.5, 7.5)]
     assert hidden_state["color_bar_visible"] is False
+    assert display.rescale_calls == [(False, True)]
     assert display.scalar_bar_calls[-1] == (backend.view, False)
     assert backend.view.OrientationAxesVisibility == 0
     assert lut.InterpretValuesAsCategories == 1
     assert lut.UseCategoricalColors == 1
+
+
+def test_categorical_coloring_populates_annotations_and_indexed_colors():
+    backend = make_backend()
+    lut = FakeLookupTable()
+    source = FakeSource("1", FakeDataInformation(cell_names=["RegionId"]))
+    display = FakeDisplay(color_array=("CELLS", "RegionId"), lookup_table=lut)
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend.servermanager.Fetch = lambda _source: FakeCategoricalDataset(
+        cell_arrays={"RegionId": FakeScalarArray([3, 1, 3, 2])}
+    )
+
+    backend.set_categorical_coloring(True)
+
+    assert lut.InterpretValuesAsCategories == 1
+    assert lut.UseCategoricalColors == 1
+    assert lut.Annotations == ["1", "1", "2", "2", "3", "3"]
+    assert len(lut.IndexedColors) == 9
+    colors = {
+        tuple(lut.IndexedColors[index : index + 3])
+        for index in range(0, 9, 3)
+    }
+    assert len(colors) == 3
+
+
+def test_apply_color_map_preset_tries_paraview_aliases():
+    backend = make_backend()
+    lut = FakeLookupTableWithRejectedPresets()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"]))
+    display = FakeDisplay(color_array=("POINTS", "U"), lookup_table=lut)
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend._scalar_bar_visible = True
+
+    backend.apply_color_map_preset("Viridis (matplotlib)")
+
+    assert lut.presets == [("Viridis (matplotlib)", True), ("Viridis", True)]
 
 
 def test_rescale_color_range_over_time_uses_display_fallback_when_simple_api_missing():
@@ -674,6 +812,23 @@ def test_get_ui_state_reports_pipeline_metadata_for_active_source():
     assert ui_state["display_properties"] == [{"name": "display_property", "scope": "display"}]
 
 
+def test_get_detailed_cell_stats_reports_intrinsic_dimensions():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(cells=7))
+    backend.servermanager.Fetch = lambda _source: FakeIntrinsicDimensionDataset(
+        [3, 3, 2, 2, 1, 1, 0]
+    )
+
+    stats = backend._get_detailed_cell_stats(source)
+
+    assert stats == [
+        {"label": "Volume Cells", "value": "2"},
+        {"label": "Surface Cells", "value": "2"},
+        {"label": "Edge Cells", "value": "2"},
+        {"label": "Vertex Cells", "value": "1"},
+    ]
+
+
 def test_pipeline_helpers_cover_parentage_labels_and_descendants():
     backend = make_backend()
     root = backend._make_node(FakeSource("1", FakeDataInformation()), FakeDisplay(), "/tmp/data/a.vtu", "source", "Reader")
@@ -705,6 +860,57 @@ def test_delete_node_removes_descendants_and_selects_last_remaining_node():
     assert backend.simple.deleted == [child["source"], root["source"]]
     assert [node["id"] for node in backend.pipeline_nodes] == [other["id"]]
     assert chosen == [other["id"]]
+
+
+def test_reload_node_file_replaces_root_source_for_selected_filter():
+    backend = make_backend()
+    root = backend._make_node(
+        FakeSource("1", FakeDataInformation()),
+        FakeDisplay(),
+        "/tmp/data/a.vtu",
+        "source",
+        "Reader",
+    )
+    child = backend._make_node(
+        FakeSource("2", FakeDataInformation()),
+        FakeDisplay(),
+        "/tmp/data/a.vtu",
+        "filter",
+        "Clip 1",
+        parent_id=root["id"],
+        filter_key="clip",
+    )
+    other = backend._make_node(
+        FakeSource("3", FakeDataInformation()),
+        FakeDisplay(),
+        "/tmp/data/b.vtu",
+        "source",
+        "Other",
+    )
+    backend.pipeline_nodes = [root, child, other]
+    backend.active_node_id = child["id"]
+    backend.state = None
+    backend.reset_camera = lambda: None
+
+    reloaded_source = FakeSource("4", FakeDataInformation(cell_names=["MaterialID"]))
+    reloaded_display = FakeDisplay()
+    backend.simple.OpenDataFile = lambda filename: reloaded_source
+    backend.simple.GetAnimationScene = lambda: SimpleNamespace(
+        TimeKeeper=SimpleNamespace(TimestepValues=[]),
+        UpdateAnimationUsingDataTimeSteps=lambda: None,
+    )
+    backend.simple.Show = lambda source, view: reloaded_display
+
+    arrays, default_array = backend.reload_node_file(child["id"])
+
+    assert backend.simple.deleted == [child["source"], root["source"]]
+    assert [node["source"] for node in backend.pipeline_nodes] == [
+        other["source"],
+        reloaded_source,
+    ]
+    assert backend.active_node_id == f"source:{reloaded_source.GetGlobalIDAsString()}"
+    assert arrays[-1]["value"] == f"{CELL_PREFIX}MaterialID"
+    assert default_array == f"{CELL_PREFIX}MaterialID"
 
 
 def test_candidate_pick_positions_and_pick_debug_info_cover_fallbacks():

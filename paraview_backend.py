@@ -304,6 +304,29 @@ class ParaViewBackend:
             self._sync_view_center(node["source"])
         return True
 
+    def reload_node_file(self, node_id):
+        """Reload the file backing a pipeline node as a fresh source."""
+        node = self._find_node(node_id)
+        if node is None:
+            raise RuntimeError("No active pipeline item to reload")
+
+        filename = node.get("filename")
+        if not filename:
+            raise RuntimeError("Active pipeline item has no backing file")
+
+        root = node
+        parent_id = root.get("parent_id")
+        while parent_id:
+            parent = self._find_node(parent_id)
+            if parent is None:
+                break
+            root = parent
+            parent_id = root.get("parent_id")
+
+        arrays, default_array = self.load_file(filename)
+        self.delete_node(root["id"])
+        return arrays, default_array
+
     def set_visibility(self, node_id, visible):
         """Show or hide the display associated with a pipeline node."""
         node = self._find_node(node_id)
@@ -388,7 +411,9 @@ class ParaViewBackend:
         else:
             raise ValueError(f"Unsupported array value for ParaView backend: {array_value}")
 
+        self._hide_current_scalar_bar(display)
         self.simple.ColorBy(display, (association, name))
+        self._ensure_display_lookup_table(display, name)
         display.RescaleTransferFunctionToDataRange(True, False)
         display.SetScalarBarVisibility(self.view, True)
         self._scalar_bar_visible = True
@@ -421,10 +446,23 @@ class ParaViewBackend:
         lut = self._active_lookup_table()
         if lut is None or not preset:
             return
-        if hasattr(lut, "ApplyPreset"):
-            lut.ApplyPreset(preset, True)
-        elif hasattr(self.simple, "ApplyColorPreset"):
-            self.simple.ApplyColorPreset(preset, True)
+
+        errors = []
+        for candidate in self._color_preset_candidates(preset):
+            try:
+                if hasattr(lut, "ApplyPreset"):
+                    lut.ApplyPreset(candidate, True)
+                elif hasattr(self.simple, "ApplyColorPreset"):
+                    self.simple.ApplyColorPreset(candidate, True)
+                else:
+                    return
+                break
+            except Exception as exc:
+                errors.append(exc)
+        else:
+            if errors:
+                raise errors[-1]
+
         self._restore_scalar_bar_visibility()
         self.render()
 
@@ -447,7 +485,7 @@ class ParaViewBackend:
         display = self.display
         if display is None:
             return
-        display.RescaleTransferFunctionToDataRange(True, False)
+        self._rescale_display_transfer_function_to_data(display)
         self._restore_scalar_bar_visibility()
         self.render()
 
@@ -481,12 +519,19 @@ class ParaViewBackend:
         lut = self._active_lookup_table()
         if lut is None:
             return
+        if enabled:
+            self._configure_categorical_lookup_table(lut)
         for prop_name in ("InterpretValuesAsCategories", "UseCategoricalColors"):
             if hasattr(lut, prop_name):
                 try:
                     setattr(lut, prop_name, 1 if enabled else 0)
                 except Exception:
                     pass
+        if hasattr(lut, "IndexedLookup"):
+            try:
+                lut.IndexedLookup = 1 if enabled else 0
+            except Exception:
+                pass
         self.render()
 
     def _disable_scalar_coloring(self, display, *, hide_unused_scalar_bars=True):
@@ -517,6 +562,18 @@ class ParaViewBackend:
             except Exception:
                 pass
 
+    def _hide_current_scalar_bar(self, display):
+        """Hide the active display's current scalar bar before switching arrays."""
+        if display is not None and hasattr(display, "SetScalarBarVisibility"):
+            try:
+                display.SetScalarBarVisibility(self.view, False)
+            except Exception:
+                pass
+        try:
+            self.simple.HideUnusedScalarBars(self.view)
+        except Exception:
+            pass
+
     def _restore_scalar_bar_visibility(self):
         """Reapply the user-selected scalar-bar visibility after LUT updates."""
         display = self.display
@@ -535,6 +592,24 @@ class ParaViewBackend:
                 self.simple.HideUnusedScalarBars(self.view)
             except Exception:
                 pass
+
+    @staticmethod
+    def _rescale_display_transfer_function_to_data(display):
+        """Force-rescale an active display LUT to the current data range."""
+        rescale = getattr(display, "RescaleTransferFunctionToDataRange", None)
+        if not callable(rescale):
+            raise RuntimeError(
+                "Current ParaView build does not expose data-range rescaling."
+            )
+
+        for args in ((False, True), (False,), ()):
+            try:
+                rescale(*args)
+                return
+            except TypeError:
+                continue
+
+        rescale(False, True)
 
     def _active_lookup_table(self):
         """Return the active display lookup table, resolving it by array name if needed."""
@@ -556,10 +631,26 @@ class ParaViewBackend:
         getter = getattr(self.simple, "GetColorTransferFunction", None)
         if callable(getter):
             try:
-                return getter(name)
+                return self._ensure_display_lookup_table(display, name)
             except Exception:
                 return None
         return None
+
+    def _ensure_display_lookup_table(self, display, array_name):
+        """Return and bind the LUT ParaView should use for a display array."""
+        lut = getattr(display, "LookupTable", None)
+        if lut is not None:
+            return lut
+        getter = getattr(self.simple, "GetColorTransferFunction", None)
+        if not callable(getter) or not array_name:
+            return None
+        lut = getter(array_name)
+        if lut is not None and hasattr(display, "LookupTable"):
+            try:
+                display.LookupTable = lut
+            except Exception:
+                pass
+        return lut
 
     @staticmethod
     def _lookup_table_range(lut):
@@ -592,6 +683,145 @@ class ParaViewBackend:
                 except Exception:
                     pass
         return False
+
+    def _configure_categorical_lookup_table(self, lut):
+        """Populate annotations and indexed colors for the active scalar array."""
+        values = self._active_scalar_unique_values(limit=64)
+        if not values:
+            return
+
+        annotations = []
+        for value in values:
+            label = self._format_category_value(value)
+            annotations.extend([label, label])
+
+        for prop_name in ("Annotations", "AnnotationsInitialized"):
+            if not hasattr(lut, prop_name):
+                continue
+            try:
+                value = annotations if prop_name == "Annotations" else 1
+                setattr(lut, prop_name, value)
+            except Exception:
+                pass
+
+        if hasattr(lut, "IndexedColors"):
+            try:
+                lut.IndexedColors = self._categorical_palette(len(values))
+            except Exception:
+                pass
+
+    def _active_scalar_unique_values(self, limit=64):
+        """Return sorted unique scalar values for the active color array."""
+        selected_array = self._get_selected_array()
+        if selected_array == ARRAY_SOLID:
+            return []
+        if selected_array.startswith(POINT_PREFIX):
+            association = "point"
+            name = selected_array[len(POINT_PREFIX) :]
+        elif selected_array.startswith(CELL_PREFIX):
+            association = "cell"
+            name = selected_array[len(CELL_PREFIX) :]
+        else:
+            return []
+
+        fetch = getattr(self.servermanager, "Fetch", None)
+        if not callable(fetch) or self.source is None:
+            return []
+
+        try:
+            dataset = fetch(self.source)
+        except Exception:
+            return []
+
+        values = set()
+        self._collect_scalar_unique_values(dataset, association, name, values, limit)
+        return sorted(values, key=lambda item: (float(item), str(item)))
+
+    def _collect_scalar_unique_values(self, dataset, association, name, values, limit):
+        if dataset is None or len(values) >= limit:
+            return
+        if hasattr(dataset, "GetNumberOfBlocks"):
+            for index in range(dataset.GetNumberOfBlocks()):
+                self._collect_scalar_unique_values(
+                    dataset.GetBlock(index), association, name, values, limit
+                )
+                if len(values) >= limit:
+                    return
+            return
+
+        data_getter = (
+            getattr(dataset, "GetPointData", None)
+            if association == "point"
+            else getattr(dataset, "GetCellData", None)
+        )
+        data = data_getter() if callable(data_getter) else None
+        array = (
+            data.GetArray(name)
+            if data is not None and hasattr(data, "GetArray")
+            else None
+        )
+        if array is None:
+            return
+
+        tuples = array.GetNumberOfTuples() if hasattr(array, "GetNumberOfTuples") else 0
+        components = (
+            array.GetNumberOfComponents()
+            if hasattr(array, "GetNumberOfComponents")
+            else 1
+        )
+        for index in range(tuples):
+            try:
+                value = (
+                    array.GetTuple1(index)
+                    if components == 1 and hasattr(array, "GetTuple1")
+                    else array.GetTuple(index)[0]
+                )
+                values.add(float(value))
+            except Exception:
+                continue
+            if len(values) >= limit:
+                return
+
+    @staticmethod
+    def _format_category_value(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if number.is_integer():
+            return str(int(number))
+        return f"{number:g}"
+
+    @staticmethod
+    def _categorical_palette(count):
+        base = [
+            (0.1216, 0.4667, 0.7059),
+            (1.0, 0.4980, 0.0549),
+            (0.1725, 0.6275, 0.1725),
+            (0.8392, 0.1529, 0.1569),
+            (0.5804, 0.4039, 0.7412),
+            (0.5490, 0.3373, 0.2941),
+            (0.8902, 0.4667, 0.7608),
+            (0.4980, 0.4980, 0.4980),
+            (0.7373, 0.7412, 0.1333),
+            (0.0902, 0.7451, 0.8118),
+        ]
+        colors = []
+        for index in range(max(0, count)):
+            colors.extend(base[index % len(base)])
+        return colors
+
+    @staticmethod
+    def _color_preset_candidates(preset):
+        """Return compatible ParaView preset names for a UI preset value."""
+        candidates = [preset]
+        aliases = {
+            "Viridis (matplotlib)": "Viridis",
+        }
+        alias = aliases.get(preset)
+        if alias and alias not in candidates:
+            candidates.append(alias)
+        return candidates
 
     def _orientation_axes_visible(self):
         if self.view is None:
@@ -2010,7 +2240,9 @@ class ParaViewBackend:
                 block = data.GetBlock(i)
                 if block:
                     self._count_cells_by_dim(block, dim_counts)
-        elif data.IsA("vtkCompositeDataSet"):
+        elif self._count_cells_by_intrinsic_dim(data, dim_counts):
+            return
+        elif hasattr(data, "IsA") and data.IsA("vtkCompositeDataSet"):
             it = data.NewIterator()
             it.InitTraversal()
             while not it.IsDoneWithTraversal():
@@ -2018,11 +2250,11 @@ class ParaViewBackend:
                 if block:
                     self._count_cells_by_dim(block, dim_counts)
                 it.Next()
-        elif data.IsA("vtkPolyData"):
+        elif hasattr(data, "IsA") and data.IsA("vtkPolyData"):
             dim_counts[0] += data.GetNumberOfVerts()
             dim_counts[1] += data.GetNumberOfLines()
             dim_counts[2] += data.GetNumberOfPolys() + data.GetNumberOfStrips()
-        elif data.IsA("vtkUnstructuredGrid"):
+        elif hasattr(data, "IsA") and data.IsA("vtkUnstructuredGrid"):
             ctypes = vtkCellTypes()
             data.GetCellTypes(ctypes)
             for i in range(ctypes.GetNumberOfTypes()):
@@ -2031,7 +2263,7 @@ class ParaViewBackend:
                 dim = vtkCellTypeUtilities.GetDimension(ct)
                 if dim in dim_counts:
                     dim_counts[dim] += count
-        elif data.IsA("vtkDataSet"):
+        elif hasattr(data, "IsA") and data.IsA("vtkDataSet"):
             # Fallback for ImageData, RectilinearGrid, etc. where all cells are same type
             if data.GetNumberOfCells() > 0:
                 ct = data.GetCellType(0)
@@ -2039,8 +2271,31 @@ class ParaViewBackend:
                 if dim in dim_counts:
                     dim_counts[dim] += data.GetNumberOfCells()
 
+    @staticmethod
+    def _count_cells_by_intrinsic_dim(data, dim_counts):
+        """Count concrete cells using each cell's intrinsic dimension."""
+        if not hasattr(data, "GetNumberOfCells") or not hasattr(data, "GetCell"):
+            return False
+
+        try:
+            cell_count = data.GetNumberOfCells()
+        except Exception:
+            return False
+
+        counted = False
+        for cell_id in range(cell_count):
+            try:
+                cell = data.GetCell(cell_id)
+                dim = int(cell.GetCellDimension())
+            except Exception:
+                continue
+            if dim in dim_counts:
+                dim_counts[dim] += 1
+                counted = True
+        return counted or cell_count == 0
+
     def _get_detailed_cell_stats(self, source):
-        """Return detailed cell breakdown by dimension (Volumetric, Surface, etc)."""
+        """Return detailed cell breakdown by intrinsic dimension."""
         try:
             data = self.servermanager.Fetch(source)
             if data is None:
@@ -2051,7 +2306,7 @@ class ParaViewBackend:
 
             res = []
             if dim_counts[3] > 0:
-                res.append({"label": "Volumetric Cells", "value": str(dim_counts[3])})
+                res.append({"label": "Volume Cells", "value": str(dim_counts[3])})
             if dim_counts[2] > 0:
                 res.append({"label": "Surface Cells", "value": str(dim_counts[2])})
             if dim_counts[1] > 0:
