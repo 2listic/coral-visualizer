@@ -6,6 +6,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Sanitized fragile VTK XML metadata:
+  - Removed `L2_NORM_RANGE` / `L2_NORM_FINITE_RANGE` array information keys before `.vtu` writes.
+  - Added temporary XML sanitization on ParaView load for existing files that still contain those metadata blocks.
+  - Added unit coverage for metadata cleanup.
 - Refined ParaView pipeline reload and display-state preservation:
   - Added a reload button beside `Pipeline Browser` for the selected pipeline item.
   - Reload now preserves selected color array, representation, color controls, source/display properties, and scalar-bar state.

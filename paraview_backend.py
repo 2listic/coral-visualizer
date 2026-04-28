@@ -12,6 +12,7 @@ from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
 from edit_session import EditSession
 from paraview_filter_catalog import ParaViewFilterCatalog, SUPPORTED_FILTERS
 from paraview_property_inspector import ParaViewPropertyInspector
+from vtk_metadata import sanitized_vtk_xml_path, strip_data_array_information_keys
 from vtkmodules.vtkCommonDataModel import vtkCellTypeUtilities, vtkCellTypes, vtkDataSet
 from vtkmodules.vtkIOLegacy import vtkDataSetWriter
 
@@ -123,7 +124,8 @@ class ParaViewBackend:
         if self.view is None:
             self.initialize_view()
 
-        source = self.simple.OpenDataFile(filename)
+        reader_filename = sanitized_vtk_xml_path(filename)
+        source = self.simple.OpenDataFile(reader_filename)
         if source is None:
             raise RuntimeError(f"ParaView could not open file: {filename}")
 
@@ -254,6 +256,7 @@ class ParaViewBackend:
         if suffix == ".vtk":
             dataset = self.servermanager.Fetch(source)
             if isinstance(dataset, vtkDataSet):
+                strip_data_array_information_keys(dataset)
                 writer = vtkDataSetWriter()
                 writer.SetFileName(str(output_path))
                 writer.SetInputData(dataset)

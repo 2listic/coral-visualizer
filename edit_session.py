@@ -9,6 +9,8 @@ from vtkmodules.vtkFiltersCore import vtkArrayCalculator, vtkCellCenters, vtkExt
 from vtkmodules.vtkIOLegacy import vtkUnstructuredGridWriter
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
 
+from vtk_metadata import strip_data_array_information_keys
+
 
 class EditSession:
     """Owns the temporary editable dataset derived from the active pipeline node."""
@@ -111,6 +113,7 @@ class EditSession:
             raise ValueError(
                 "Unsupported edit output format. Use .vtu or .vtk for edit-session saves."
             )
+        strip_data_array_information_keys(self.working_dataset)
         writer.SetFileName(str(output_path))
         writer.SetInputData(self.working_dataset)
         if writer.Write() != 1:

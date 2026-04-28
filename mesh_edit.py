@@ -24,6 +24,7 @@ from constants import (
     MANIFOLD_ID_DEFAULT,
 )
 from diagnostics import debug_log
+from vtk_metadata import strip_data_array_information_keys
 from vtk_pipeline import get_max_cell_dimension
 
 # ---------------------------------------------------------------------------
@@ -588,6 +589,7 @@ def save_as_vtu(edit_state, output_path):
 
     writer = vtkXMLUnstructuredGridWriter()
     writer.SetFileName(output_path)
+    strip_data_array_information_keys(output)
     writer.SetInputData(output)
     writer.Write()
 
