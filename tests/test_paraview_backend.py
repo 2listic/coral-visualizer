@@ -204,6 +204,33 @@ class FakeSimple:
         self.deleted.append(source)
 
 
+class FakeExtractCellsByType:
+    def __init__(self, Input):
+        self.Input = Input
+        self.CellTypes = []
+        self.updated = 0
+
+    def UpdatePipeline(self):
+        self.updated += 1
+
+
+class FakeSimpleWithExtractCells(FakeSimple):
+    def __init__(self):
+        super().__init__()
+        self.extracts = []
+        self.shown = []
+
+    def ExtractCellsByType(self, Input):
+        extract = FakeExtractCellsByType(Input)
+        self.extracts.append(extract)
+        return extract
+
+    def Show(self, source, view):
+        display = FakeDisplay()
+        self.shown.append((source, view, display))
+        return display
+
+
 class FakeOverlayProducer:
     def __init__(self):
         self.output = None
@@ -280,6 +307,15 @@ class FakeIntrinsicDimensionDataset:
         return self.cells[cell_id]
 
 
+class FakeCellTypesDataset:
+    def __init__(self, cell_types):
+        self.cell_types = list(cell_types)
+
+    def GetCellTypes(self, output):
+        for cell_type in self.cell_types:
+            output.InsertNextType(cell_type)
+
+
 class FakeFilterCatalog:
     def pipeline_icon(self, node):
         return f"icon:{node['kind']}"
@@ -338,6 +374,20 @@ class FakeSimpleCell:
     def GetPointId(self, idx):
         return self._point_ids[idx]
 
+    def GetCellDimension(self):
+        if len(self._point_ids) >= 3:
+            return 2
+        if len(self._point_ids) == 2:
+            return 1
+        return 0
+
+    def GetNumberOfEdges(self):
+        return len(self._point_ids) if len(self._point_ids) >= 2 else 0
+
+    def GetEdge(self, idx):
+        count = len(self._point_ids)
+        return FakeSimpleCell([self._point_ids[idx], self._point_ids[(idx + 1) % count]])
+
 
 class FakeSurfaceDataset:
     def __init__(self, points, cells):
@@ -360,6 +410,30 @@ class FakeSurfaceDataset:
         return SimpleNamespace(GetArray=lambda name: None)
 
 
+class FakeSelectedSurfaceDataset(FakeSurfaceDataset):
+    def __init__(self, points, cells, original_point_ids):
+        super().__init__(points, cells)
+        self._original_point_ids = FakeScalarArray(original_point_ids)
+
+    def GetPointData(self):
+        return SimpleNamespace(
+            GetArray=lambda name: self._original_point_ids
+            if name == "vtkOriginalPointIds"
+            else None
+        )
+
+
+class FakeMultiBlockDataset:
+    def __init__(self, blocks):
+        self._blocks = list(blocks)
+
+    def GetNumberOfBlocks(self):
+        return len(self._blocks)
+
+    def GetBlock(self, index):
+        return self._blocks[index]
+
+
 def make_backend():
     backend = ParaViewBackend.__new__(ParaViewBackend)
     renderer = FakeRenderer()
@@ -379,6 +453,11 @@ def make_backend():
     backend._edit_selection_overlay = None
     backend._edit_selection_display = None
     backend._scalar_bar_visible = False
+    backend._edit_target_dataset = None
+    backend._cell_type_name_aliases = {
+        "Tetra": "Tetrahedron",
+        "QuadraticTetra": "QuadraticTetrahedron",
+    }
     return backend
 
 
@@ -682,6 +761,52 @@ def test_apply_representation_and_apply_property_changes_render():
     assert ("apply", display, [{"name": "B"}]) in backend.property_inspector.calls
 
 
+def test_set_cell_dimension_visibility_uses_extracts_and_preserves_node_visibility():
+    backend = make_backend()
+    backend.simple = FakeSimpleWithExtractCells()
+    backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([12, 5])
+    source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
+    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.set_cell_dimension_visibility(True, False)
+
+    assert display.Visibility == 0
+    assert backend.get_visibility(node["id"]) is True
+    assert backend.simple.extracts[0].CellTypes == ["Hexahedron"]
+    volume_display = node["cell_dimension_extracts"]["volume"]["display"]
+    assert volume_display.Visibility == 1
+    assert ("ColorBy", volume_display, ("CELLS", "M")) in backend.simple.calls
+
+    backend.set_cell_dimension_visibility(True, True)
+
+    assert display.Visibility == 1
+    assert volume_display.Visibility == 0
+
+
+def test_set_cell_dimension_visibility_treats_volume_as_unavailable_on_2d_meshes():
+    backend = make_backend()
+    backend.simple = FakeSimpleWithExtractCells()
+    backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([5])
+    source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
+    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
+    node = backend._make_node(source, display, "/tmp/data/square.vtu", "source", "square")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.set_cell_dimension_visibility(False, True)
+
+    assert display.Visibility == 1
+    assert backend.simple.extracts == []
+
+    backend.set_cell_dimension_visibility(True, False)
+
+    assert display.Visibility == 0
+    assert backend.simple.extracts == []
+
+
 def test_save_active_data_uses_legacy_writer_for_vtk(tmp_path, monkeypatch):
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
@@ -776,6 +901,8 @@ def test_get_ui_state_reports_defaults_without_active_source():
     ]
     assert ui_state["selected_array"] == ARRAY_SOLID
     assert ui_state["representation"] == "Surface with Edges"
+    assert ui_state["show_volume_cells"] is True
+    assert ui_state["show_surface_cells"] is True
 
 
 def test_get_ui_state_reports_pipeline_metadata_for_active_source():
@@ -1076,6 +1203,59 @@ def test_surface_keys_from_selected_dataset_falls_back_to_coordinate_mapping():
     assert keys == [(1, 2, 3)]
 
 
+def test_surface_keys_from_selected_dataset_uses_tolerant_coordinate_mapping():
+    selected = FakeSurfaceDataset(
+        points=[
+            (1.0 + 1e-11, 0.0, 0.0),
+            (2.0 - 1e-11, 0.0, 0.0),
+            (3.0, 1e-11, 0.0),
+        ],
+        cells=[(0, 1, 2)],
+    )
+    source = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+        ],
+        cells=[],
+    )
+
+    keys = ParaViewBackend._surface_keys_from_selected_dataset(
+        selected, source_dataset=source
+    )
+
+    assert keys == [(1, 2, 3)]
+
+
+def test_surface_keys_from_selected_dataset_handles_multiblock_results():
+    selected = FakeMultiBlockDataset(
+        [
+            FakeSurfaceDataset(
+                points=[(1.0, 0.0, 0.0), (2.0, 0.0, 0.0), (3.0, 0.0, 0.0)],
+                cells=[(0, 1, 2)],
+            ),
+            FakeSurfaceDataset(points=[], cells=[]),
+        ]
+    )
+    source = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+        ],
+        cells=[],
+    )
+
+    keys = ParaViewBackend._surface_keys_from_selected_dataset(
+        selected, source_dataset=source
+    )
+
+    assert keys == [(1, 2, 3)]
+
+
 def test_surface_keys_from_selected_dataset_maps_triangle_to_quad_boundary_key():
     # Selected surface may be triangulated while source boundary still stores quads.
     selected = FakeSurfaceDataset(
@@ -1303,6 +1483,102 @@ def test_remap_surface_keys_to_edit_target_dataset_uses_point_coordinates():
             (1.0, 0.0, 0.0),
             (0.0, 0.0, 0.0),
             (0.0, 1.0, 0.0),
+        ],
+        cells=[(2, 1, 0, 3)],
+    )
+    backend._edit_target_dataset = target
+    backend._normalize_surface_keys_to_source_boundary = (
+        lambda keys, source_dataset=None: keys
+    )
+
+    remapped = backend._remap_surface_keys_to_edit_target_dataset(
+        [(0, 1, 2, 3)], source_dataset=source
+    )
+
+    assert remapped == [(0, 1, 2, 3)]
+
+
+def test_selected_original_source_ids_remap_to_edit_target_surface_keys():
+    backend = make_backend()
+    source = FakeSurfaceDataset(
+        points=[
+            (10.0, 0.0, 0.0),
+            (11.0, 0.0, 0.0),
+            (11.0, 1.0, 0.0),
+            (10.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2, 3)],
+    )
+    target = FakeSurfaceDataset(
+        points=[
+            (10.0, 1.0, 0.0),
+            (11.0, 1.0, 0.0),
+            (11.0, 0.0, 0.0),
+            (10.0, 0.0, 0.0),
+        ],
+        cells=[(3, 2, 1, 0)],
+    )
+    selected = FakeSelectedSurfaceDataset(
+        points=[
+            (10.0, 0.0, 0.0),
+            (11.0, 0.0, 0.0),
+            (11.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2)],
+        original_point_ids=[0, 1, 2],
+    )
+    backend._edit_target_dataset = target
+
+    source_keys = ParaViewBackend._surface_keys_from_selected_dataset(
+        selected, source_dataset=source
+    )
+    remapped = backend._remap_surface_keys_to_edit_target_dataset(
+        source_keys, source_dataset=source
+    )
+
+    assert source_keys == [(0, 1, 2)]
+    assert remapped == [(1, 2, 3)]
+
+
+def test_remap_surface_keys_to_edit_target_dataset_skips_identity_remap():
+    backend = make_backend()
+    dataset = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2)],
+    )
+    backend._edit_target_dataset = dataset
+    backend._point_coordinate_indexes = lambda _dataset: (_ for _ in ()).throw(
+        AssertionError("identity remap should not build coordinate indexes")
+    )
+
+    remapped = backend._remap_surface_keys_to_edit_target_dataset(
+        [(0, 1, 2)], source_dataset=dataset
+    )
+
+    assert remapped == [(0, 1, 2)]
+
+
+def test_remap_surface_keys_to_edit_target_dataset_tolerates_coordinate_noise():
+    backend = make_backend()
+    source = FakeSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2, 3)],
+    )
+    target = FakeSurfaceDataset(
+        points=[
+            (1.0 + 1e-11, 1.0, 0.0),
+            (1.0, 1e-11, 0.0),
+            (0.0, 0.0, 0.0),
+            (0.0, 1.0 - 1e-11, 0.0),
         ],
         cells=[(2, 1, 0, 3)],
     )

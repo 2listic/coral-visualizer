@@ -31,6 +31,7 @@ class EditSession:
         self.selected_point_ids = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._existing_codim_keys_cache = {}
         self._surface_adjacency = None
         self._surface_element_vectors = None
 
@@ -51,6 +52,7 @@ class EditSession:
         self.selected_point_ids = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._existing_codim_keys_cache = {}
         self._surface_adjacency = None
         self._surface_element_vectors = None
 
@@ -79,6 +81,7 @@ class EditSession:
         self.selected_point_ids = set()
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._existing_codim_keys_cache = {}
         self._surface_adjacency = None
         self._surface_element_vectors = None
         self._ensure_cell_centers_array()
@@ -802,7 +805,7 @@ class EditSession:
 
         keys = set()
         top_cell_ids = set()
-        existing_keys = self._existing_codim_keys(top_dim - 1)
+        existing_keys = None
 
         for item in (cell_ids or []):
             if isinstance(item, (tuple, list)) and len(item) >= 2:
@@ -810,7 +813,12 @@ class EditSession:
                     key = tuple(sorted(int(value) for value in item))
                 except (TypeError, ValueError):
                     continue
-                if key in boundary_map or key in existing_keys:
+                if key in boundary_map:
+                    keys.add(key)
+                    continue
+                if existing_keys is None:
+                    existing_keys = self._existing_codim_keys(top_dim - 1)
+                if key in existing_keys:
                     keys.add(key)
                 continue
 
@@ -842,6 +850,10 @@ class EditSession:
         return keys
 
     def _existing_codim_keys(self, codim_dimension):
+        cached = self._existing_codim_keys_cache.get(codim_dimension)
+        if cached is not None:
+            return cached
+
         dataset = self.working_dataset
         if dataset is None:
             return set()
@@ -851,6 +863,7 @@ class EditSession:
             if cell.GetCellDimension() != codim_dimension:
                 continue
             keys.add(self._cell_key(cell))
+        self._existing_codim_keys_cache[codim_dimension] = keys
         return keys
 
     def _build_surface_dataset(self, surface_keys):
@@ -902,6 +915,7 @@ class EditSession:
     def _invalidate_geometry_caches(self):
         self._volume_adjacency = None
         self._surface_boundary_map = None
+        self._existing_codim_keys_cache = {}
         self._surface_adjacency = None
         self._surface_element_vectors = None
 

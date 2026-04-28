@@ -798,6 +798,29 @@ def _build_paraview_inspector_panel(ctrl):
                         hide_details=True,
                         classes="mb-3",
                     )
+                    with vuetify.VList(
+                        dense=True,
+                        style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+                        classes="mb-4",
+                    ):
+                        with vuetify.VListItem():
+                            with vuetify.VListItemContent():
+                                vuetify.VCheckbox(
+                                    v_model=("show_volume_cells",),
+                                    label="Show volume cells",
+                                    dense=True,
+                                    hide_details=True,
+                                    classes="mt-0",
+                                    change=(ctrl.pv_set_cell_visibility, "[show_volume_cells, show_surface_cells]"),
+                                )
+                                vuetify.VCheckbox(
+                                    v_model=("show_surface_cells",),
+                                    label="Show surface cells",
+                                    dense=True,
+                                    hide_details=True,
+                                    classes="mt-0",
+                                    change=(ctrl.pv_set_cell_visibility, "[show_volume_cells, show_surface_cells]"),
+                                )
                     vuetify.VDivider(classes="my-4")
                     vuetify.VSubheader(classes="px-0", children=["Advanced Display Controls"])
                     vuetify.VSubheader(classes="px-0", children=["Color Bar"])
@@ -1148,6 +1171,13 @@ def _build_paraview_inspector_panel(ctrl):
                                     type=("edit_selection_status_type",),
                                     children=["{{ edit_selection_status }}"],
                                     classes="ma-0",
+                                )
+                        with vuetify.VListItem(v_show=("selection_timing_last",)):
+                            with vuetify.VListItemContent():
+                                vuetify.VListItemSubtitle("Last selection timing")
+                                vuetify.VListItemTitle(
+                                    "{{ selection_timing_last }}",
+                                    style="font-family: monospace; white-space: normal; font-size: 0.78rem;",
                                 )
 def _build_property_list(ctrl, state_key):
     with vuetify.VExpansionPanels(accordion=True, flat=True, style="background: transparent;"):

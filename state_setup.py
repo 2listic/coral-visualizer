@@ -40,6 +40,8 @@ def initialize_state(
     state.available_arrays = initial_arrays
     state.selected_array = ARRAY_SOLID
     state.representation = DEFAULT_REPRESENTATION
+    state.show_volume_cells = True
+    state.show_surface_cells = True
     state.has_boundary = False
     state.backend = backend
     state.backend_message = backend_message
@@ -150,6 +152,8 @@ def initialize_state(
     state.edit_selection_status = ""
     state.edit_selection_status_type = "info"
     state.edit_selection_event = ""
+    state.selection_timing_last = ""
+    state.selection_timing_payload = {}
     state.edit_selection_mode = "replace"
     state.edit_selection_mode_options = [
         {"text": "Replace", "value": "replace"},

@@ -137,6 +137,86 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     assert state.save_status_type == "error"
 
 
+def test_pv_set_cell_visibility_updates_backend_and_refreshes_view():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        show_volume_cells=False,
+        show_surface_cells=True,
+        error_message="",
+    )
+    pv_backend = SimpleNamespace(
+        set_cell_dimension_visibility=lambda volume, surface: calls.append(
+            ("cell_visibility", volume, surface)
+        )
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=SimpleNamespace(),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: calls.append("update_ui"),
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_set_cell_visibility"]()
+
+    assert calls == [("cell_visibility", False, True), "update_ui", "render"]
+
+
+def test_pv_set_cell_visibility_accepts_checkbox_pair_payload():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        show_volume_cells=True,
+        show_surface_cells=True,
+        error_message="",
+    )
+    pv_backend = SimpleNamespace(
+        set_cell_dimension_visibility=lambda volume, surface: calls.append(
+            ("cell_visibility", volume, surface)
+        )
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=SimpleNamespace(),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: calls.append("update_ui"),
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_set_cell_visibility"]([False, True])
+
+    assert calls == [("cell_visibility", False, True), "update_ui", "render"]
+
+
 def test_pv_reload_active_file_refreshes_pipeline_state():
     ctrl = FakeCtrl()
     calls = []
@@ -153,6 +233,8 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
         color_range_max="8",
         color_map_preset="Cool to Warm",
         categorical_coloring=True,
+        show_volume_cells=False,
+        show_surface_cells=True,
         source_properties=[{"name": "SomeReaderProperty", "pending_value": 2}],
         display_properties=[
             {"name": "Opacity", "pending_value": 0.4},
@@ -168,6 +250,9 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
             ("representation", representation)
         ),
         apply_coloring=lambda array: calls.append(("coloring", array)),
+        set_cell_dimension_visibility=lambda volume, surface: calls.append(
+            ("cell_visibility", volume, surface)
+        ),
         apply_property_changes=lambda source, display: calls.append(
             ("properties", source, display)
         ),
@@ -204,10 +289,11 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
         ("reload", "node-1"),
         ("representation", "Wireframe"),
         ("coloring", "point:U"),
+        ("cell_visibility", False, True),
         ("properties", source_properties, display_properties),
-        ("preset", "Cool to Warm"),
     ]
-    assert calls[6:11] == [
+    assert calls[6:12] == [
+        ("preset", "Cool to Warm"),
         ("range", "2", "8"),
         ("categorical", True),
         ("bar", False),
@@ -1209,6 +1295,9 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
     assert calls == ["sync", "overlay", "render"]
     assert state.selection_count == 1
     assert state.edit_selection_status == "Selected 1 cell(s) with click selection. 1 selected total."
+    assert state.selection_timing_payload["interaction"] == "click"
+    assert state.selection_timing_payload["picked_count"] == 1
+    assert "backend_pick" in state.selection_timing_last
 
 
 def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payload():
@@ -1355,6 +1444,8 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
     assert state.selection_count == 4
     assert state.edit_selection_mode == "flip"
     assert state.edit_selection_status == "Flipped 2 cell(s) with box selection. 4 selected total."
+    assert state.selection_timing_payload["interaction"] == "box"
+    assert state.selection_timing_payload["picked_count"] == 2
 
 
 def test_surface_selection_passes_angle_threshold_to_edit_session():

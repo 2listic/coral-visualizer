@@ -13,7 +13,31 @@ from edit_session import EditSession
 from paraview_filter_catalog import ParaViewFilterCatalog, SUPPORTED_FILTERS
 from paraview_property_inspector import ParaViewPropertyInspector
 from vtk_metadata import sanitized_vtk_xml_path, strip_data_array_information_keys
-from vtkmodules.vtkCommonDataModel import vtkCellTypeUtilities, vtkCellTypes, vtkDataSet
+try:
+    from vtkmodules.vtkCommonDataModel import vtkCellTypeUtilities, vtkCellTypes, vtkDataSet
+except Exception:
+    # Fallback minimal stubs for environments without full VTK support
+    class _DummyCellTypeUtilities:
+        @staticmethod
+        def GetDimension(cell_type):
+            return 0
+        @staticmethod
+        def GetClassNameFromTypeId(cell_type):
+            return ""
+    vtkCellTypeUtilities = _DummyCellTypeUtilities
+    class _DummyCellTypes:
+        def __init__(self):
+            pass
+        def GetNumberOfTypes(self):
+            return 0
+        def GetCellType(self, index):
+            return 0
+        @staticmethod
+        def GetClassNameFromTypeId(cell_type):
+            return ""
+    vtkCellTypes = _DummyCellTypes
+    class vtkDataSet:
+        pass
 from vtkmodules.vtkIOLegacy import vtkDataSetWriter
 
 POINT_COORDINATE_DECIMALS = (12, 10, 8)

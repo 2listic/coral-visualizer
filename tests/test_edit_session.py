@@ -119,6 +119,18 @@ def test_surface_mode_accepts_explicit_surface_key_tuples():
     assert session.replace_selection([(0, 1, 2)]) == 1
 
 
+def test_surface_mode_explicit_boundary_keys_do_not_scan_existing_codim_cells():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+    session._surface_boundary_map_for_top_cells()
+    session._existing_codim_keys = lambda _dimension: (_ for _ in ()).throw(
+        AssertionError("boundary keys should not require existing codim scan")
+    )
+
+    assert session.replace_selection([(0, 1, 2)]) == 1
+
+
 def test_surface_mode_grow_selection_expands_across_adjacent_faces():
     session = EditSession()
     session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())

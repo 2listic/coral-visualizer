@@ -370,6 +370,8 @@ class ParaViewRuntime:
             "active_visibility": True,
             "selected_array": ARRAY_SOLID,
             "representation": "Surface with Edges",
+            "show_volume_cells": True,
+            "show_surface_cells": True,
             "color_controls_enabled": False,
             "color_range_min": "",
             "color_range_max": "",
@@ -418,6 +420,8 @@ class ParaViewRuntime:
         self.state.available_arrays.insert(0, {"text": "Solid Color", "value": ARRAY_SOLID})
         self.state.selected_array = ui_state["selected_array"]
         self.state.representation = ui_state["representation"]
+        self.state.show_volume_cells = ui_state["show_volume_cells"]
+        self.state.show_surface_cells = ui_state["show_surface_cells"]
         self.state.color_controls_enabled = ui_state["color_controls_enabled"]
         self.state.color_range_min = ui_state["color_range_min"]
         self.state.color_range_max = ui_state["color_range_max"]

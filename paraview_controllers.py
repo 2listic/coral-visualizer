@@ -1,6 +1,9 @@
 """ParaView-specific Trame controller registrations."""
 
+from contextlib import nullcontext
+
 from selection_debug import SelectionDebugLogger
+from selection_timing import SelectionTiming
 
 
 def register_paraview_controllers(
@@ -126,6 +129,8 @@ def register_paraview_controllers(
 
     def _expected_editable_from_picks(mode, picked_ids):
         if mode == "surface":
+            if len(picked_ids or []) > 50:
+                return []
             resolver = getattr(edit_session, "_surface_keys_from_top_cells", None)
             if callable(resolver):
                 try:
@@ -228,13 +233,17 @@ def register_paraview_controllers(
             except Exception:
                 pass
 
-    def _apply_selection_ids(picked_ids, source_label):
-        mode = _sync_edit_mode_from_state()
-        selection_mode = _set_selection_mode(
-            getattr(state, "edit_selection_mode", "replace")
-        )
-        angle_threshold = getattr(state, "angle_threshold", None)
-        expected = _expected_editable_from_picks(mode, picked_ids)
+    def _apply_selection_ids(picked_ids, source_label, timing=None, mode=None):
+        if mode is None:
+            with timing.phase("sync_mode") if timing else nullcontext():
+                mode = _sync_edit_mode_from_state()
+        with timing.phase("selection_mode") if timing else nullcontext():
+            selection_mode = _set_selection_mode(
+                getattr(state, "edit_selection_mode", "replace")
+            )
+            angle_threshold = getattr(state, "angle_threshold", None)
+        with timing.phase("resolve_expected") if timing else nullcontext():
+            expected = _expected_editable_from_picks(mode, picked_ids)
         print(
             "[selection-debug] controller.apply.begin "
             f"mode={mode} selection_mode={selection_mode} source={source_label!r} "
@@ -242,37 +251,40 @@ def register_paraview_controllers(
             f"expected_editable_count={len(expected)} expected_editable={_preview_list(expected)}"
         )
 
-        if selection_mode == "add":
-            count = edit_session.add_selection(
-                picked_ids,
-                grow=bool(state.group_select),
-                angle_threshold=angle_threshold,
-            )
-            action = "Added"
-        elif selection_mode == "subtract":
-            count = edit_session.subtract_selection(
-                picked_ids,
-                grow=bool(state.group_select),
-                angle_threshold=angle_threshold,
-            )
-            action = "Removed"
-        elif selection_mode == "flip":
-            count = edit_session.flip_selection(
-                picked_ids,
-                grow=bool(state.group_select),
-                angle_threshold=angle_threshold,
-            )
-            action = "Flipped"
-        else:
-            count = edit_session.replace_selection(
-                picked_ids,
-                grow=bool(state.group_select),
-                angle_threshold=angle_threshold,
-            )
-            action = "Selected"
-        sync_edit_session_state()
-        sync_paraview_edit_selection_overlay()
-        state.selection_count = count
+        with timing.phase("edit_session_apply") if timing else nullcontext():
+            if selection_mode == "add":
+                count = edit_session.add_selection(
+                    picked_ids,
+                    grow=bool(state.group_select),
+                    angle_threshold=angle_threshold,
+                )
+                action = "Added"
+            elif selection_mode == "subtract":
+                count = edit_session.subtract_selection(
+                    picked_ids,
+                    grow=bool(state.group_select),
+                    angle_threshold=angle_threshold,
+                )
+                action = "Removed"
+            elif selection_mode == "flip":
+                count = edit_session.flip_selection(
+                    picked_ids,
+                    grow=bool(state.group_select),
+                    angle_threshold=angle_threshold,
+                )
+                action = "Flipped"
+            else:
+                count = edit_session.replace_selection(
+                    picked_ids,
+                    grow=bool(state.group_select),
+                    angle_threshold=angle_threshold,
+                )
+                action = "Selected"
+        with timing.phase("sync_edit_state") if timing else nullcontext():
+            sync_edit_session_state()
+            state.selection_count = count
+        with timing.phase("sync_overlay") if timing else nullcontext():
+            sync_paraview_edit_selection_overlay()
         if mode == "surface":
             entity_label = "surface element(s)"
         elif mode == "point":
@@ -294,7 +306,16 @@ def register_paraview_controllers(
             f"mode={mode} selection_mode={selection_mode} "
             f"selected_total={count} selected_now={_preview_list(selected_now)}"
         )
-        render_and_push()
+        if timing:
+            timing.update(
+                mode=mode,
+                selection_mode=selection_mode,
+                picked_count=len(picked_ids),
+                selected_total=count,
+                source=source_label,
+            )
+        with timing.phase("render") if timing else nullcontext():
+            render_and_push()
 
     def _pick_edit_ids_at_coords(mode, x, y):
         if mode == "surface":
@@ -309,6 +330,18 @@ def register_paraview_controllers(
                 return picker(x, y)
             return pv_backend.pick_visible_cell_ids(x, y)
         return pv_backend.pick_visible_cell_ids(x, y)
+
+    def _append_backend_timing(timing):
+        if timing is None:
+            return
+        consume = getattr(pv_backend, "consume_selection_backend_timing", None)
+        if not callable(consume):
+            return
+        for phase in consume() or []:
+            name = phase.get("name") if isinstance(phase, dict) else None
+            duration_ms = phase.get("ms") if isinstance(phase, dict) else None
+            if name is not None and duration_ms is not None:
+                timing.add_phase(f"backend.{name}", duration_ms)
 
     def _pick_edit_ids_in_rect(mode, x0, y0, x1, y1):
         behavior = state.selection_behavior or "touch"
@@ -477,6 +510,32 @@ def register_paraview_controllers(
         update_paraview_ui_state()
         render_and_push()
 
+    @ctrl.add("pv_set_cell_visibility")
+    def pv_set_cell_visibility(volume_visible=None, surface_visible=None):
+        """Show or hide intrinsic volume/surface cells for the active node."""
+        if not is_paraview_backend() or not state.active_pipeline_item:
+            return
+
+        if (
+            surface_visible is None
+            and isinstance(volume_visible, (list, tuple))
+            and len(volume_visible) >= 2
+        ):
+            volume_visible, surface_visible = volume_visible[:2]
+        if volume_visible is None:
+            volume_visible = getattr(state, "show_volume_cells", True)
+        if surface_visible is None:
+            surface_visible = getattr(state, "show_surface_cells", True)
+
+        try:
+            pv_backend.set_cell_dimension_visibility(
+                bool(volume_visible), bool(surface_visible)
+            )
+            update_paraview_ui_state()
+            render_and_push()
+        except Exception as exc:
+            state.error_message = f"Error updating cell visibility: {exc}"
+
     @ctrl.add("pv_reload_active_file")
     def pv_reload_active_file():
         """Reload the file backing the active ParaView pipeline node."""
@@ -489,6 +548,8 @@ def register_paraview_controllers(
             color_bar_visible = bool(getattr(state, "color_bar_visible", False))
             color_range_min = getattr(state, "color_range_min", "")
             color_range_max = getattr(state, "color_range_max", "")
+            show_volume_cells = bool(getattr(state, "show_volume_cells", True))
+            show_surface_cells = bool(getattr(state, "show_surface_cells", True))
             source_properties = [
                 dict(item) for item in getattr(state, "source_properties", []) or []
             ]
@@ -501,6 +562,9 @@ def register_paraview_controllers(
             )
             pv_backend.apply_representation(state.representation)
             pv_backend.apply_coloring(selected_array or default_array)
+            set_cell_visibility = getattr(pv_backend, "set_cell_dimension_visibility", None)
+            if callable(set_cell_visibility):
+                set_cell_visibility(show_volume_cells, show_surface_cells)
             apply_properties = getattr(pv_backend, "apply_property_changes", None)
             if callable(apply_properties):
                 try:
@@ -1051,32 +1115,51 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not edit_session.active or not state.pick_mode:
             return
 
-        state.edit_selection_event = summarize_edit_event(event)
-        normalized = normalize_edit_selection_ids(event)
-        picked_ids = []
+        timing = SelectionTiming("click")
+        status = "ok"
+        try:
+            with timing.phase("summarize_event"):
+                state.edit_selection_event = summarize_edit_event(event)
+            with timing.phase("normalize_event"):
+                normalized = normalize_edit_selection_ids(event)
+            picked_ids = []
 
-        coords = next(
-            (
-                (item[1], item[2])
-                for item in normalized
-                if isinstance(item, tuple)
-                and len(item) == 3
-                and item[0] == "coords"
-            ),
-            None,
-        )
-        mode = _sync_edit_mode_from_state()
-        if coords is not None:
-            selection_debug.log("click", x=coords[0], y=coords[1])
-            picked_ids = _pick_edit_ids_at_coords(mode, coords[0], coords[1])
-        else:
-            picked_ids = [item for item in normalized if isinstance(item, int)]
+            coords = next(
+                (
+                    (item[1], item[2])
+                    for item in normalized
+                    if isinstance(item, tuple)
+                    and len(item) == 3
+                    and item[0] == "coords"
+                ),
+                None,
+            )
+            with timing.phase("sync_mode"):
+                mode = _sync_edit_mode_from_state()
+            if coords is not None:
+                selection_debug.log("click", x=coords[0], y=coords[1])
+                with timing.phase("backend_pick"):
+                    picked_ids = _pick_edit_ids_at_coords(mode, coords[0], coords[1])
+                _append_backend_timing(timing)
+            else:
+                with timing.phase("payload_pick"):
+                    picked_ids = [item for item in normalized if isinstance(item, int)]
 
-        if not picked_ids:
-            _set_empty_selection_status(mode, "Click")
-            return
+            if not picked_ids:
+                with timing.phase("empty_status"):
+                    _set_empty_selection_status(mode, "Click")
+                status = "empty"
+                timing.update(mode=mode, picked_count=0)
+                return
 
-        _apply_selection_ids(picked_ids, "click selection")
+            _apply_selection_ids(
+                picked_ids, "click selection", timing=timing, mode=mode
+            )
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            timing.emit(state, status=status)
 
     @ctrl.add("pv_set_pick_mode")
     def pv_set_pick_mode():
@@ -1102,43 +1185,71 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not edit_session.active or not state.pick_mode:
             return
 
-        state.edit_selection_event = summarize_edit_event(event)
-        selection = event.get("selection") if isinstance(event, dict) else None
-        if not isinstance(selection, (list, tuple)) or len(selection) != 4:
-            state.edit_selection_status = "Box selection did not include a usable rectangle."
-            state.edit_selection_status_type = "warning"
-            return
-
-        x0, x1, y0, y1 = selection
-        x0, x1, y0, y1 = _scale_box_selection_to_view(
-            event, x0, x1, y0, y1)
-        mode = _sync_edit_mode_from_state()
+        timing = SelectionTiming("box")
+        status = "ok"
         try:
-            is_click_rect = (
-                abs(float(x1) - float(x0)) <= 1e-6
-                and abs(float(y1) - float(y0)) <= 1e-6
-            )
-        except (TypeError, ValueError):
-            is_click_rect = False
-
-        if is_click_rect:
-            x = (float(x0) + float(x1)) * 0.5
-            y = (float(y0) + float(y1)) * 0.5
-            selection_debug.log("click", x=x, y=y)
-            picked_ids = _pick_edit_ids_at_coords(mode, x, y)
-            if not picked_ids:
-                _set_empty_selection_status(mode, "Click")
+            with timing.phase("summarize_event"):
+                state.edit_selection_event = summarize_edit_event(event)
+            selection = event.get("selection") if isinstance(event, dict) else None
+            if not isinstance(selection, (list, tuple)) or len(selection) != 4:
+                with timing.phase("invalid_status"):
+                    state.edit_selection_status = (
+                        "Box selection did not include a usable rectangle."
+                    )
+                    state.edit_selection_status_type = "warning"
+                status = "invalid"
                 return
-            _apply_selection_ids(picked_ids, "click selection")
-            return
 
-        selection_debug.log("box", x0=x0, y0=y0, x1=x1, y1=y1)
-        picked_ids = _pick_edit_ids_in_rect(mode, x0, y0, x1, y1)
-        if not picked_ids:
-            _set_empty_selection_status(mode, "Box")
-            return
+            x0, x1, y0, y1 = selection
+            with timing.phase("scale_rect"):
+                x0, x1, y0, y1 = _scale_box_selection_to_view(
+                    event, x0, x1, y0, y1
+                )
+            with timing.phase("sync_mode"):
+                mode = _sync_edit_mode_from_state()
+            try:
+                is_click_rect = (
+                    abs(float(x1) - float(x0)) <= 1e-6
+                    and abs(float(y1) - float(y0)) <= 1e-6
+                )
+            except (TypeError, ValueError):
+                is_click_rect = False
 
-        _apply_selection_ids(picked_ids, "box selection")
+            if is_click_rect:
+                x = (float(x0) + float(x1)) * 0.5
+                y = (float(y0) + float(y1)) * 0.5
+                selection_debug.log("click", x=x, y=y)
+                with timing.phase("backend_pick"):
+                    picked_ids = _pick_edit_ids_at_coords(mode, x, y)
+                _append_backend_timing(timing)
+                if not picked_ids:
+                    with timing.phase("empty_status"):
+                        _set_empty_selection_status(mode, "Click")
+                    status = "empty"
+                    timing.update(mode=mode, picked_count=0)
+                    return
+                _apply_selection_ids(
+                    picked_ids, "click selection", timing=timing, mode=mode
+                )
+                return
+
+            selection_debug.log("box", x0=x0, y0=y0, x1=x1, y1=y1)
+            with timing.phase("backend_pick"):
+                picked_ids = _pick_edit_ids_in_rect(mode, x0, y0, x1, y1)
+            _append_backend_timing(timing)
+            if not picked_ids:
+                with timing.phase("empty_status"):
+                    _set_empty_selection_status(mode, "Box")
+                status = "empty"
+                timing.update(mode=mode, picked_count=0)
+                return
+
+            _apply_selection_ids(picked_ids, "box selection", timing=timing, mode=mode)
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            timing.emit(state, status=status)
 
     @ctrl.add("pv_clear_edit_preview")
     def pv_clear_edit_preview():
