@@ -262,6 +262,10 @@ Two workflows run on push and pull requests to `main`:
 - `ModuleNotFoundError: No module named 'paraview'`: use the conda
   `coral-paraview` environment or rebuild the Docker image. The `.venv`/`uv`
   environment does not provide ParaView.
+- **ParaView backend not available even with `conda run`**: if the `.venv` is
+  active in your shell, `conda run` inherits its `PATH` and `python` resolves
+  to `.venv/bin/python` instead of the conda env. Run `deactivate` first, then
+  retry `conda run -n coral-paraview python app.py ...`.
 - `Page.wait_for_selector` failures in e2e: first verify the app can start with
   `--backend paraview`; then rerun with `--show-browser` or
   `E2E_STREAM_APP_LOGS=1`.

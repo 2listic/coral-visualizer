@@ -214,6 +214,7 @@ pytest -q tests/test_paraview_backend.py tests/test_paraview_runtime.py tests/te
 
 ## Debugging Notes
 
+- If `conda run -n coral-paraview python` resolves to `.venv/bin/python` (ParaView unavailable despite using the conda env): the `.venv` is active and its `PATH` entry wins. Run `deactivate` first, then retry.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.
 - Selection e2e logs can include `[selection-record] ...`; use `E2E_STREAM_APP_LOGS=1` to see app output live.
