@@ -1,11 +1,9 @@
-
 import pathlib
 import subprocess
 import sys
 import time
 import socket
 import urllib.request
-import os
 import threading
 import re
 import pytest
@@ -15,12 +13,14 @@ ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = ROOT_DIR / "test_data"
 ANIMATION_PVD = TEST_DATA_DIR / "animation.pvd"
 
+
 def _free_tcp_port():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
     _, port = sock.getsockname()
     sock.close()
     return port
+
 
 def _wait_for_http_ready(url, timeout_s=45):
     deadline = time.time() + timeout_s
@@ -32,37 +32,44 @@ def _wait_for_http_ready(url, timeout_s=45):
             time.sleep(0.25)
     raise RuntimeError(f"Timed out waiting for server at {url}")
 
+
 @pytest.fixture
 def paraview_server():
     if not is_paraview_available():
         pytest.skip("ParaView not available")
-    
+
     port = _free_tcp_port()
     cmd = [
         sys.executable,
         str(ROOT_DIR / "app.py"),
-        "--backend", "paraview",
-        "--file", str(ANIMATION_PVD),
-        "--data-directory", str(TEST_DATA_DIR),
-        "--port", str(port),
-        "--host", "127.0.0.1",
+        "--backend",
+        "paraview",
+        "--file",
+        str(ANIMATION_PVD),
+        "--data-directory",
+        str(TEST_DATA_DIR),
+        "--port",
+        str(port),
+        "--host",
+        "127.0.0.1",
+        "--server",
     ]
-    
+
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        cwd=str(ROOT_DIR)
+        cwd=str(ROOT_DIR),
     )
-    
+
     def _stream_logs():
         for line in proc.stdout:
             print(f"[server] {line.strip()}")
-            
+
     threading.Thread(target=_stream_logs, daemon=True).start()
-    
+
     url = f"http://127.0.0.1:{port}/"
     try:
         _wait_for_http_ready(url)
@@ -71,15 +78,16 @@ def paraview_server():
         proc.terminate()
         proc.wait()
 
+
 def test_pvd_animation_state(paraview_server, shared_browser):
     page = shared_browser.new_page()
     try:
         page.on("console", lambda msg: print(f"[browser] {msg.text}"))
         page.goto(paraview_server)
-        
+
         # Wait for UI to stabilize and ParaView to finish loading the file
-        time.sleep(12.0) # Increased wait time
-        
+        time.sleep(12.0)  # Increased wait time
+
         # Read current time label from the toolbar: "<time> (<index>/<total>)"
         time_label = page.locator(
             "div.v-toolbar__content div.grey--text.text--darken-2"
@@ -110,7 +118,7 @@ def test_pvd_animation_state(paraview_server, shared_browser):
 
         # Test Next Step button
         page.locator(".mdi-skip-next").first.click()
-        time.sleep(1.5) 
+        time.sleep(1.5)
         state = get_time_info()
         assert state["time_index_displayed"] == 2
 
@@ -133,7 +141,7 @@ def test_pvd_animation_state(paraview_server, shared_browser):
         time.sleep(1.5)
         state = get_time_info()
         final_index = state["time_index_displayed"]
-        
+
         time.sleep(1.0)
         state = get_time_info()
         assert state["time_index_displayed"] == final_index

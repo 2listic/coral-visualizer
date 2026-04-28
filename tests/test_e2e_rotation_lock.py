@@ -44,7 +44,7 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -62,14 +62,12 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(
-            viewport={"width": 1200, "height": 800})
+        context = shared_browser.new_context(viewport={"width": 1200, "height": 800})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
 
         # Wait for app to be ready
-        page.wait_for_selector(
-            "button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
 
         # Enter Edit Mode (defaults to Pick mode)
         page.click("button:has-text('Enter Edit Mode')")
@@ -113,7 +111,9 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
         screenshot_after_pick_drag = viewport.screenshot()
 
         # PHASE 1 ASSERT: Should NOT have rotated.
-        assert screenshot_initial == screenshot_after_pick_drag, "Screenshots differ! The view likely rotated or changed during drag in PICK mode."
+        assert (
+            screenshot_initial == screenshot_after_pick_drag
+        ), "Screenshots differ! The view likely rotated or changed during drag in PICK mode."
 
         # --- PHASE 2: DRAG IN ROTATE MODE ---
         # Switch to Rotate mode
@@ -133,7 +133,9 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
         screenshot_after_rotate_drag = viewport.screenshot()
 
         # PHASE 2 ASSERT: SHOULD have rotated.
-        assert screenshot_after_pick_drag != screenshot_after_rotate_drag, "Screenshots are identical! The view did NOT rotate during drag in ROTATE mode."
+        assert (
+            screenshot_after_pick_drag != screenshot_after_rotate_drag
+        ), "Screenshots are identical! The view did NOT rotate during drag in ROTATE mode."
 
         context.close()
     finally:
