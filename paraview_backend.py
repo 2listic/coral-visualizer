@@ -16,6 +16,8 @@ from vtk_metadata import sanitized_vtk_xml_path, strip_data_array_information_ke
 from vtkmodules.vtkCommonDataModel import vtkCellTypeUtilities, vtkCellTypes, vtkDataSet
 from vtkmodules.vtkIOLegacy import vtkDataSetWriter
 
+POINT_COORDINATE_DECIMALS = (12, 10, 8)
+
 
 def is_paraview_available():
     """Return True when both ParaView and the trame ParaView widget are importable."""
@@ -58,14 +60,33 @@ class ParaViewBackend:
         self._edit_selection_display = None
         self._scalar_bar_visible = False
         self._edit_target_dataset = None
+        self._surface_selection_helper = None
+        self._last_selection_backend_timing = []
+        self._boundary_cache = {}
+        self._cell_type_name_aliases = {
+            "Tetra": "Tetrahedron",
+            "QuadraticTetra": "QuadraticTetrahedron",
+        }
 
     def set_edit_target_dataset(self, dataset):
         """Set the edit-session dataset used to normalize picker IDs."""
         self._edit_target_dataset = dataset
+        self._clear_surface_selection_helper()
+        self._boundary_cache.clear()
+
 
     def clear_edit_target_dataset(self):
         """Clear edit-session dataset normalization context."""
         self._edit_target_dataset = None
+        self._clear_surface_selection_helper()
+        self._boundary_cache.clear()
+
+
+    def consume_selection_backend_timing(self):
+        """Return and clear detailed timing from the last backend selection."""
+        timing = list(getattr(self, "_last_selection_backend_timing", []) or [])
+        self._last_selection_backend_timing = []
+        return timing
 
     @property
     def source(self):
@@ -208,21 +229,22 @@ class ParaViewBackend:
         filter_proxy.UpdatePipeline()
         self.simple.SetActiveSource(filter_proxy)
         filter_display = self.simple.Show(filter_proxy, self.view)
+        filter_node = self._make_node(
+            source=filter_proxy,
+            display=filter_display,
+            filename=node["filename"],
+            kind="filter",
+            label=f"{spec['label']} {self._filter_counts.get(filter_key, 0) + 1}",
+            parent_id=node["id"],
+            filter_key=filter_key,
+        )
+        filter_node["visibility"] = visible
         filter_display.Visibility = 1 if visible else 0
         filter_display.SetRepresentationType(self._normalize_representation(representation))
         if display is not None:
             display.Visibility = 0
 
         self._filter_counts[filter_key] = self._filter_counts.get(filter_key, 0) + 1
-        filter_node = self._make_node(
-            source=filter_proxy,
-            display=filter_display,
-            filename=node["filename"],
-            kind="filter",
-            label=f"{spec['label']} {self._filter_counts[filter_key]}",
-            parent_id=node["id"],
-            filter_key=filter_key,
-        )
         self.pipeline_nodes.append(filter_node)
         self.set_active_node(filter_node["id"])
         self.apply_coloring(self._resolve_available_array_value(selected_array))
@@ -336,7 +358,8 @@ class ParaViewBackend:
         if node is None or node["display"] is None:
             return False
 
-        node["display"].Visibility = 1 if visible else 0
+        node["visibility"] = bool(visible)
+        self._apply_cell_dimension_visibility(node)
         self.render()
         return True
 
@@ -345,13 +368,30 @@ class ParaViewBackend:
         node = self._find_node(node_id)
         if node is None or node["display"] is None:
             return None
-        return bool(node["display"].Visibility)
+        return bool(node.get("visibility", node["display"].Visibility))
+
+    def set_cell_dimension_visibility(self, volume_visible=True, surface_visible=True):
+        """Show/hide intrinsic 3D volume and 2D surface cells on the active node."""
+        node = self._get_active_node()
+        if node is None or node["display"] is None:
+            return False
+
+        node["cell_dimension_visibility"] = {
+            "volume": bool(volume_visible),
+            "surface": bool(surface_visible),
+        }
+        self._apply_cell_dimension_visibility(node)
+        self.render()
+        return True
 
     def delete_node(self, node_id):
         """Delete a pipeline node and adjust active selection."""
         node = self._find_node(node_id)
         if node is None:
             return False
+        self._clear_surface_selection_helper()
+        self._boundary_cache.clear()
+
 
         node_ids = {entry["id"] for entry in self._collect_descendants(node_id)}
         node_ids.add(node_id)
@@ -359,6 +399,7 @@ class ParaViewBackend:
         for entry in reversed(nodes_to_delete):
             if entry["display"] is not None and self.view is not None:
                 self.simple.Hide(entry["source"], self.view)
+                self._delete_cell_dimension_extracts(entry)
             self.simple.Delete(entry["source"])
 
         self.pipeline_nodes = [
@@ -398,9 +439,11 @@ class ParaViewBackend:
             return
 
         array_value = self._resolve_available_array_value(array_value)
+        displays = self._active_display_targets()
 
         if array_value == ARRAY_SOLID or array_value is None:
-            self._disable_scalar_coloring(display)
+            for target_display in displays:
+                self._disable_scalar_coloring(target_display)
             self._scalar_bar_visible = False
             self.render()
             return
@@ -414,11 +457,13 @@ class ParaViewBackend:
         else:
             raise ValueError(f"Unsupported array value for ParaView backend: {array_value}")
 
-        self._hide_current_scalar_bar(display)
-        self.simple.ColorBy(display, (association, name))
-        self._ensure_display_lookup_table(display, name)
-        display.RescaleTransferFunctionToDataRange(True, False)
-        display.SetScalarBarVisibility(self.view, True)
+        for target_display in displays:
+            self._hide_current_scalar_bar(target_display)
+            self.simple.ColorBy(target_display, (association, name))
+            self._ensure_display_lookup_table(target_display, name)
+            target_display.RescaleTransferFunctionToDataRange(True, False)
+        if display is not None:
+            display.SetScalarBarVisibility(self.view, True)
         self._scalar_bar_visible = True
         self.render()
 
@@ -497,8 +542,9 @@ class ParaViewBackend:
         display = self.display
         if display is None or self.view is None:
             return
-        if hasattr(display, "SetScalarBarVisibility"):
-            display.SetScalarBarVisibility(self.view, bool(visible))
+        for target_display in self._active_display_targets():
+            if hasattr(target_display, "SetScalarBarVisibility"):
+                target_display.SetScalarBarVisibility(self.view, bool(visible))
         self._scalar_bar_visible = bool(visible)
         if not visible:
             try:
@@ -585,9 +631,11 @@ class ParaViewBackend:
         if self._get_selected_array() == ARRAY_SOLID:
             self._scalar_bar_visible = False
         visible = bool(getattr(self, "_scalar_bar_visible", False))
-        if hasattr(display, "SetScalarBarVisibility"):
+        for target_display in self._active_display_targets():
+            if not hasattr(target_display, "SetScalarBarVisibility"):
+                continue
             try:
-                display.SetScalarBarVisibility(self.view, visible)
+                target_display.SetScalarBarVisibility(self.view, visible)
             except Exception:
                 pass
         if not visible:
@@ -834,6 +882,196 @@ class ParaViewBackend:
         except Exception:
             return True
 
+    def _active_display_targets(self):
+        """Return active original/extracted displays that need styling updates."""
+        node = self._get_active_node()
+        if node is None:
+            return []
+
+        displays = [node["display"]] if node.get("display") is not None else []
+        for entry in (node.get("cell_dimension_extracts") or {}).values():
+            display = entry.get("display") if isinstance(entry, dict) else None
+            if display is not None and display not in displays:
+                displays.append(display)
+        return displays
+
+    def _apply_cell_dimension_visibility(self, node):
+        """Apply stored volume/surface flags using per-dimension extract displays."""
+        if node is None or node.get("display") is None:
+            return
+
+        node_visible = bool(node.get("visibility", True))
+        flags = node.get("cell_dimension_visibility") or {
+            "volume": True,
+            "surface": True,
+        }
+        volume_visible = bool(flags.get("volume", True))
+        surface_visible = bool(flags.get("surface", True))
+        available_dimensions = self._available_cell_dimension_keys(node)
+        requested_dimensions = set()
+        if volume_visible and "volume" in available_dimensions:
+            requested_dimensions.add("volume")
+        if surface_visible and "surface" in available_dimensions:
+            requested_dimensions.add("surface")
+
+        if requested_dimensions == available_dimensions:
+            self._set_proxy_visibility(node["display"], node_visible)
+            self._set_extract_displays_visibility(node, False)
+            return
+
+        self._set_proxy_visibility(node["display"], False)
+        self._set_extract_visibility_for_dimension(
+            node, "volume", node_visible and volume_visible
+        )
+        self._set_extract_visibility_for_dimension(
+            node, "surface", node_visible and surface_visible
+        )
+
+    def _available_cell_dimension_keys(self, node):
+        """Return available volume/surface dimensions for a pipeline node."""
+        if node is None:
+            return set()
+        available = set()
+        if self._cell_type_names_for_dimension(node["source"], 3):
+            available.add("volume")
+        if self._cell_type_names_for_dimension(node["source"], 2):
+            available.add("surface")
+        return available
+
+    def _set_extract_visibility_for_dimension(self, node, dimension_key, visible):
+        """Ensure a cell-dimension extract exists when it needs to be visible."""
+        entry = self._ensure_cell_dimension_extract(node, dimension_key) if visible else None
+        if entry is None:
+            entry = (node.get("cell_dimension_extracts") or {}).get(dimension_key)
+        display = entry.get("display") if isinstance(entry, dict) else None
+        self._set_proxy_visibility(display, visible)
+
+    def _ensure_cell_dimension_extract(self, node, dimension_key):
+        """Create an ExtractCellsByType display for one intrinsic dimension."""
+        extracts = node.setdefault("cell_dimension_extracts", {})
+        entry = extracts.get(dimension_key)
+        if entry is not None:
+            return entry
+
+        factory = getattr(self.simple, "ExtractCellsByType", None)
+        if not callable(factory):
+            raise RuntimeError("This ParaView build does not expose ExtractCellsByType.")
+
+        target_dimension = 3 if dimension_key == "volume" else 2
+        cell_types = self._cell_type_names_for_dimension(node["source"], target_dimension)
+        if not cell_types:
+            return None
+
+        extract = factory(Input=node["source"])
+        extract.CellTypes = cell_types
+        extract.UpdatePipeline()
+        display = self.simple.Show(extract, self.view)
+        display.SetRepresentationType(self._normalize_representation(self._get_representation()))
+        self._copy_display_coloring(node["display"], display)
+        extracts[dimension_key] = {"source": extract, "display": display}
+        return extracts[dimension_key]
+
+    def _delete_cell_dimension_extracts(self, node):
+        """Remove auxiliary extract proxies for a pipeline node."""
+        extracts = node.get("cell_dimension_extracts") or {}
+        for entry in list(extracts.values()):
+            source = entry.get("source") if isinstance(entry, dict) else None
+            if source is None:
+                continue
+            try:
+                if self.view is not None:
+                    self.simple.Hide(source, self.view)
+            except Exception:
+                pass
+            try:
+                self.simple.Delete(source)
+            except Exception:
+                pass
+        extracts.clear()
+
+    def _set_extract_displays_visibility(self, node, visible):
+        for entry in (node.get("cell_dimension_extracts") or {}).values():
+            display = entry.get("display") if isinstance(entry, dict) else None
+            self._set_proxy_visibility(display, visible)
+
+    @staticmethod
+    def _set_proxy_visibility(display, visible):
+        if display is not None and hasattr(display, "Visibility"):
+            display.Visibility = 1 if visible else 0
+
+    def _apply_representation_to_extract_displays(self, node, representation):
+        for entry in (node.get("cell_dimension_extracts") or {}).values():
+            display = entry.get("display") if isinstance(entry, dict) else None
+            if display is not None:
+                display.SetRepresentationType(self._normalize_representation(representation))
+
+    def _copy_display_coloring(self, source_display, target_display):
+        """Copy the active display coloring onto a newly-created extract display."""
+        selected_array = self._get_selected_array()
+        if selected_array == ARRAY_SOLID:
+            self._disable_scalar_coloring(target_display, hide_unused_scalar_bars=False)
+            return
+        if selected_array.startswith(POINT_PREFIX):
+            association = "POINTS"
+            name = selected_array[len(POINT_PREFIX) :]
+        elif selected_array.startswith(CELL_PREFIX):
+            association = "CELLS"
+            name = selected_array[len(CELL_PREFIX) :]
+        else:
+            return
+
+        self.simple.ColorBy(target_display, (association, name))
+        if getattr(source_display, "LookupTable", None) is not None and hasattr(
+            target_display, "LookupTable"
+        ):
+            try:
+                target_display.LookupTable = source_display.LookupTable
+                return
+            except Exception:
+                pass
+        self._ensure_display_lookup_table(target_display, name)
+
+    def _cell_type_names_for_dimension(self, source, target_dimension):
+        """Return ParaView ExtractCellsByType names present for a cell dimension."""
+        try:
+            dataset = self.servermanager.Fetch(source)
+        except Exception:
+            return []
+        if dataset is None or not hasattr(dataset, "GetCellTypes"):
+            return []
+
+        cell_types = vtkCellTypes()
+        try:
+            dataset.GetCellTypes(cell_types)
+        except Exception:
+            return []
+
+        names = []
+        for index in range(cell_types.GetNumberOfTypes()):
+            cell_type = cell_types.GetCellType(index)
+            try:
+                dimension = vtkCellTypeUtilities.GetDimension(cell_type)
+            except Exception:
+                continue
+            if dimension != target_dimension:
+                continue
+            name_getter = getattr(
+                vtkCellTypeUtilities, "GetClassNameFromTypeId", None
+            )
+            name = (
+                name_getter(cell_type)
+                if callable(name_getter)
+                else vtkCellTypes.GetClassNameFromTypeId(cell_type)
+            )
+            if not name:
+                continue
+            if name.startswith("vtk"):
+                name = name[3:]
+            name = self._cell_type_name_aliases.get(name, name)
+            if name not in names:
+                names.append(name)
+        return names
+
     def apply_representation(self, representation):
         """Update the representation used by the active display."""
         display = self.display
@@ -841,6 +1079,9 @@ class ParaViewBackend:
             return
 
         display.SetRepresentationType(self._normalize_representation(representation))
+        self._apply_representation_to_extract_displays(
+            self._get_active_node(), representation
+        )
         self.render()
 
     def reset_camera(self):
@@ -1227,6 +1468,7 @@ class ParaViewBackend:
         if self.view is None or source is None:
             return []
 
+        self._last_selection_backend_timing = []
         self.clear_edit_selection_overlay()
 
         # Fast path: use native ParaView/VTK surface selection on an extracted
@@ -1252,7 +1494,7 @@ class ParaViewBackend:
         if renderer is None:
             return []
 
-        boundary = self._boundary_codim_elements(dataset)
+        boundary = self._cached_boundary_elements(dataset)
         if not boundary:
             return []
 
@@ -1282,31 +1524,42 @@ class ParaViewBackend:
 
     def _pick_surface_keys_native(self, rect, behavior="touch"):
         """Native ParaView selection path for visible boundary faces (3D)."""
+        phases = []
+
+        def record_phase(name, start):
+            phases.append({"name": name, "ms": round((time.perf_counter() - start) * 1000.0, 3)})
+
         source = self.source
         if self.view is None or source is None:
             return None
 
-        try:
-            dataset = self.servermanager.Fetch(source)
-        except Exception:
+        edit_dataset = self._edit_target_dataset
+        phase_start = time.perf_counter()
+        source_dataset = None
+        if edit_dataset is None:
+            try:
+                source_dataset = self.servermanager.Fetch(source)
+            except Exception:
+                return None
+            edit_dataset = source_dataset
+        record_phase("dataset", phase_start)
+        if edit_dataset is None:
             return None
-        if dataset is None:
-            return None
-        if not hasattr(dataset, "GetNumberOfCells") or not hasattr(dataset, "GetCell"):
+        if not hasattr(edit_dataset, "GetNumberOfCells") or not hasattr(edit_dataset, "GetCell"):
             return None
 
+        phase_start = time.perf_counter()
         top_dim = max(
-            (dataset.GetCell(cell_id).GetCellDimension() for cell_id in range(dataset.GetNumberOfCells())),
+            (edit_dataset.GetCell(cell_id).GetCellDimension() for cell_id in range(edit_dataset.GetNumberOfCells())),
             default=0,
         )
+        record_phase("top_dimension", phase_start)
         # Keep old custom path for 2D/1D where ExtractSurface does not target boundary edges.
         if top_dim != 3:
             return None
 
         # For "inside" behavior, use native touch selection first and refine with geometric check.
         inside_only = behavior == "inside"
-        temp_source = None
-        temp_display = None
         extract = None
         selected_dataset = None
         original_source = source
@@ -1322,58 +1575,61 @@ class ParaViewBackend:
             self.simple.SetActiveSource(source)
             self._clear_selection_state(source)
 
-            temp_source = self.simple.ExtractSurface(Input=source)
-            for prop_name, prop_value in (
-                ("PassThroughPointIds", 1),
-                ("PassThroughCellIds", 1),
-                ("PassThroughPointIdsArrayName", "vtkOriginalPointIds"),
-                ("PassThroughCellIdsArrayName", "vtkOriginalCellIds"),
-            ):
-                if hasattr(temp_source, prop_name):
-                    try:
-                        setattr(temp_source, prop_name, prop_value)
-                    except Exception:
-                        pass
-            temp_source.UpdatePipeline()
-
-            temp_display = self.simple.Show(temp_source, self.view)
-            # Keep the temporary selection helper uncolored to avoid LUT lookups/warnings.
-            try:
-                self._disable_scalar_coloring(
-                    temp_display, hide_unused_scalar_bars=False
-                )
-            except Exception:
-                pass
+            phase_start = time.perf_counter()
+            helper = self._surface_selection_helper_for(source)
+            record_phase("surface_helper", phase_start)
+            temp_source = helper["source"]
+            temp_display = helper["display"]
+            temp_display.Visibility = 1
             if original_display is not None and original_visibility is not None:
                 original_display.Visibility = 0
 
             self.simple.SetActiveSource(temp_source)
             self._clear_selection_state(temp_source)
+            phase_start = time.perf_counter()
             self.simple.SelectSurfaceCells(Rectangle=rect, View=self.view, Modifier=None)
+            record_phase("select_surface_cells", phase_start)
 
+            phase_start = time.perf_counter()
             extract = self.simple.ExtractSelection(Input=temp_source)
             extract.UpdatePipeline()
+            record_phase("extract_selection", phase_start)
+            phase_start = time.perf_counter()
             selected_dataset = self.servermanager.Fetch(extract)
+            record_phase("fetch_selection", phase_start)
+            if source_dataset is None:
+                phase_start = time.perf_counter()
+                try:
+                    source_dataset = self.servermanager.Fetch(source)
+                except Exception:
+                    source_dataset = edit_dataset
+                record_phase("fetch_source_dataset", phase_start)
+            phase_start = time.perf_counter()
             keys = self._surface_keys_from_selected_dataset(
-                selected_dataset, source_dataset=dataset
+                selected_dataset, source_dataset=source_dataset
             )
+            record_phase("map_selection_keys", phase_start)
             if keys is None:
                 return None
 
             if inside_only and keys:
                 # Refine to inside-only using existing projected containment on this subset.
+                phase_start = time.perf_counter()
                 client_view = self.view.GetClientSideObject()
                 renderer = client_view.GetRenderer() if client_view is not None else None
                 if renderer is not None:
                     inside_keys = []
                     for key in keys:
-                        projected = self._project_points_to_display(dataset, key, renderer)
+                        projected = self._project_points_to_display(source_dataset, key, renderer)
                         if projected and all(self._point_in_rect(point, rect) for point in projected):
                             inside_keys.append(key)
                     keys = inside_keys
+                record_phase("inside_refine", phase_start)
+            phase_start = time.perf_counter()
             remapped = self._remap_surface_keys_to_edit_target_dataset(
-                keys, source_dataset=dataset
+                keys, source_dataset=source_dataset
             )
+            record_phase("remap_to_edit_target", phase_start)
             print(
                 "[selection-debug] backend.pick.surface.native.result "
                 f"behavior={behavior!r} rect={rect} raw_count={len(keys or [])} raw={self._preview_values(keys or [])} "
@@ -1383,18 +1639,23 @@ class ParaViewBackend:
         except Exception:
             return None
         finally:
+            cleanup_start = time.perf_counter()
             try:
                 if original_display is not None and original_visibility is not None:
                     original_display.Visibility = original_visibility
             except Exception:
                 pass
             try:
-                self.simple.SetActiveSource(original_source)
+                helper = getattr(self, "_surface_selection_helper", None)
+                helper_display = (
+                    helper.get("display") if isinstance(helper, dict) else None
+                )
+                if helper_display is not None:
+                    helper_display.Visibility = 0
             except Exception:
                 pass
             try:
-                if temp_display is not None and temp_source is not None:
-                    self.simple.Hide(temp_source, self.view)
+                self.simple.SetActiveSource(original_source)
             except Exception:
                 pass
             try:
@@ -1403,80 +1664,149 @@ class ParaViewBackend:
             except Exception:
                 pass
             try:
-                if temp_source is not None:
-                    self.simple.Delete(temp_source)
-            except Exception:
-                pass
-            try:
                 self.render()
             except Exception:
                 pass
+            record_phase("cleanup_render", cleanup_start)
+            self._last_selection_backend_timing = phases
+
+    def _cached_boundary_elements(self, dataset):
+        """Return cached boundary codimension‑1 elements for *dataset*.
+        The cache key is the object's id; this is safe because the VTK dataset
+        instance lives as long as the backend holds a reference. If the dataset
+        changes (e.g. a new file is loaded) a new id is produced and a fresh
+        computation runs.
+        """
+        if dataset is None:
+            return {}
+        cache_key = id(dataset)
+        cached = getattr(self, "_boundary_cache", {}).get(cache_key)
+        if cached is not None:
+            return cached
+        # Compute and store
+        boundary = self._boundary_codim_elements(dataset)
+        # Ensure the cache dict exists (it does from __init__)
+        self._boundary_cache[cache_key] = boundary
+        return boundary
+
+        self._clear_surface_selection_helper()
+        self._boundary_cache.clear()
+
+        temp_source = self.simple.ExtractSurface(Input=source)
+        for prop_name, prop_value in (
+            ("PassThroughPointIds", 1),
+            ("PassThroughCellIds", 1),
+            ("PassThroughPointIdsArrayName", "vtkOriginalPointIds"),
+            ("PassThroughCellIdsArrayName", "vtkOriginalCellIds"),
+        ):
+            if hasattr(temp_source, prop_name):
+                try:
+                    setattr(temp_source, prop_name, prop_value)
+                except Exception:
+                    pass
+        temp_source.UpdatePipeline()
+
+        temp_display = self.simple.Show(temp_source, self.view)
+        temp_display.Visibility = 0
+        try:
+            self._disable_scalar_coloring(temp_display, hide_unused_scalar_bars=False)
+        except Exception:
+            pass
+        self._surface_selection_helper = {
+            "input": source,
+            "source": temp_source,
+            "display": temp_display,
+        }
+        return self._surface_selection_helper
+
+    def _clear_surface_selection_helper(self):
+        """Delete the cached selection-only ExtractSurface proxy, if any."""
+        helper = getattr(self, "_surface_selection_helper", None)
+        if not isinstance(helper, dict):
+            self._surface_selection_helper = None
+            return
+
+        source = helper.get("source")
+        try:
+            if source is not None and self.view is not None:
+                self.simple.Hide(source, self.view)
+        except Exception:
+            pass
+        try:
+            if source is not None:
+                self.simple.Delete(source)
+        except Exception:
+            pass
+        self._surface_selection_helper = None
 
     @staticmethod
     def _surface_keys_from_selected_dataset(selected_dataset, source_dataset=None):
         """Map selected ExtractSurface cells back to original source point-id keys."""
-        if selected_dataset is None or selected_dataset.GetNumberOfCells() <= 0:
+        selected_blocks = ParaViewBackend._iter_leaf_datasets(selected_dataset)
+        if not selected_blocks:
             return []
 
-        point_data = selected_dataset.GetPointData()
-        original_point_array = None
-        for name in ("vtkOriginalPointIds", "OriginalPointIds", "vtkOriginalPointId", "vtkOriginalIds"):
-            array = point_data.GetArray(name) if point_data is not None else None
-            if array is not None:
-                original_point_array = array
-                break
-
-        coordinate_to_source_point_id = None
-        if original_point_array is None:
-            if source_dataset is None or not hasattr(source_dataset, "GetNumberOfPoints"):
-                return None
-            coordinate_to_source_point_id = {}
-            for source_point_id in range(source_dataset.GetNumberOfPoints()):
-                point = source_dataset.GetPoint(source_point_id)
-                if point is None:
-                    continue
-                key = (
-                    round(float(point[0]), 12),
-                    round(float(point[1]), 12),
-                    round(float(point[2]), 12),
-                )
-                coordinate_to_source_point_id[key] = int(source_point_id)
+        source_point_indexes = None
 
         keys = []
-        for cell_id in range(selected_dataset.GetNumberOfCells()):
-            cell = selected_dataset.GetCell(cell_id)
-            if cell is None or cell.GetNumberOfPoints() <= 0:
+        for block in selected_blocks:
+            if block is None or not hasattr(block, "GetNumberOfCells"):
                 continue
-            try:
-                if original_point_array is not None:
-                    key = tuple(
-                        sorted(
-                            int(original_point_array.GetTuple1(cell.GetPointId(point_idx)))
-                            for point_idx in range(cell.GetNumberOfPoints())
+
+            point_data = block.GetPointData() if hasattr(block, "GetPointData") else None
+            original_point_array = None
+            for name in (
+                "vtkOriginalPointIds",
+                "OriginalPointIds",
+                "vtkOriginalPointId",
+                "vtkOriginalIds",
+            ):
+                array = point_data.GetArray(name) if point_data is not None else None
+                if array is not None:
+                    original_point_array = array
+                    break
+
+            if original_point_array is None and source_point_indexes is None:
+                if source_dataset is None or not hasattr(
+                    source_dataset, "GetNumberOfPoints"
+                ):
+                    return None
+                source_point_indexes = ParaViewBackend._point_coordinate_indexes(
+                    source_dataset
+                )
+
+            for cell_id in range(block.GetNumberOfCells()):
+                cell = block.GetCell(cell_id)
+                if cell is None or cell.GetNumberOfPoints() <= 0:
+                    continue
+                try:
+                    if original_point_array is not None:
+                        key = tuple(
+                            sorted(
+                                int(
+                                    original_point_array.GetTuple1(
+                                        cell.GetPointId(point_idx)
+                                    )
+                                )
+                                for point_idx in range(cell.GetNumberOfPoints())
+                            )
                         )
-                    )
-                else:
-                    mapped = []
-                    for point_idx in range(cell.GetNumberOfPoints()):
-                        point = selected_dataset.GetPoint(cell.GetPointId(point_idx))
-                        if point is None:
-                            mapped = []
-                            break
-                        coord_key = (
-                            round(float(point[0]), 12),
-                            round(float(point[1]), 12),
-                            round(float(point[2]), 12),
-                        )
-                        point_id = coordinate_to_source_point_id.get(coord_key)
-                        if point_id is None:
-                            mapped = []
-                            break
-                        mapped.append(int(point_id))
-                    key = tuple(sorted(mapped))
-            except Exception:
-                continue
-            if key:
-                keys.append(key)
+                    else:
+                        mapped = []
+                        for point_idx in range(cell.GetNumberOfPoints()):
+                            point = block.GetPoint(cell.GetPointId(point_idx))
+                            point_id = ParaViewBackend._lookup_point_coordinate(
+                                source_point_indexes, point
+                            )
+                            if point_id is None:
+                                mapped = []
+                                break
+                            mapped.append(int(point_id))
+                        key = tuple(sorted(mapped))
+                except Exception:
+                    continue
+                if key:
+                    keys.append(key)
 
         # Preserve deterministic order while deduplicating.
         seen = set()
@@ -1500,8 +1830,10 @@ class ParaViewBackend:
         if not boundary:
             return keys
 
-        boundary_keys = list(boundary.keys())
-        boundary_sets = [(key, set(key)) for key in boundary_keys]
+        point_to_boundary_keys = {}
+        for boundary_key in boundary:
+            for point_id in boundary_key:
+                point_to_boundary_keys.setdefault(int(point_id), set()).add(boundary_key)
 
         normalized = []
         for key in keys:
@@ -1515,18 +1847,20 @@ class ParaViewBackend:
 
             # ParaView may triangulate selected surface faces. Map those partial keys
             # back to the original boundary face key by subset match.
-            candidates = [
-                boundary_key
-                for boundary_key, boundary_set in boundary_sets
-                if key_set.issubset(boundary_set)
+            candidate_sets = [
+                point_to_boundary_keys.get(int(point_id), set()) for point_id in key_set
             ]
+            candidates = (
+                set.intersection(*candidate_sets)
+                if candidate_sets
+                else set()
+            )
             if not candidates:
                 normalized.append(key)
                 continue
 
             # Prefer the smallest superset (e.g. triangle -> quad) and keep deterministic.
-            candidates.sort(key=lambda candidate: (len(candidate), candidate))
-            normalized.append(candidates[0])
+            normalized.append(sorted(candidates, key=lambda candidate: (len(candidate), candidate))[0])
 
         # Preserve order with dedupe.
         deduped = []
@@ -1920,40 +2254,23 @@ class ParaViewBackend:
         target_dataset = getattr(self, "_edit_target_dataset", None)
         if target_dataset is None or source_dataset is None or not picked_keys:
             return picked_keys
+        if source_dataset is target_dataset:
+            return picked_keys
 
-        target_point_map = self._point_coordinate_index(target_dataset)
-        if not target_point_map:
+        point_id_map = self._point_id_map_between_datasets(source_dataset, target_dataset)
+        if not point_id_map:
             return picked_keys
 
         remapped = []
         for key in picked_keys:
-            mapped = []
-            failed = False
-            for source_point_id in key:
-                point = self._safe_dataset_point(source_dataset, source_point_id)
-                if point is None:
-                    failed = True
-                    break
-                target_point_id = target_point_map.get(point)
-                if target_point_id is None:
-                    failed = True
-                    break
-                mapped.append(int(target_point_id))
-            if failed or not mapped:
+            mapped = [point_id_map.get(int(source_point_id)) for source_point_id in key]
+            if any(point_id is None for point_id in mapped):
                 continue
             remapped.append(tuple(sorted(mapped)))
 
         if not remapped:
             return picked_keys
-        normalized = self._normalize_surface_keys_to_source_boundary(
-            remapped, source_dataset=target_dataset
-        )
-        try:
-            boundary = self._boundary_codim_elements(target_dataset)
-        except Exception:
-            boundary = {}
-        if boundary:
-            normalized = [key for key in normalized if key in boundary]
+        normalized = self._dedupe_ordered(remapped)
         print(
             "[selection-debug] backend.remap.surface "
             f"input_count={len(picked_keys)} input={self._preview_values(picked_keys)} "
@@ -1961,6 +2278,41 @@ class ParaViewBackend:
             f"normalized_count={len(normalized)} normalized={self._preview_values(normalized)}"
         )
         return normalized
+
+    @classmethod
+    def _point_id_map_between_datasets(cls, source_dataset, target_dataset):
+        """Map source point IDs to target point IDs by tolerant coordinates."""
+        if source_dataset is None or target_dataset is None:
+            return {}
+        try:
+            source_count = source_dataset.GetNumberOfPoints()
+            target_indexes = cls._point_coordinate_indexes(target_dataset)
+        except Exception:
+            return {}
+        if not target_indexes:
+            return {}
+
+        point_id_map = {}
+        for source_point_id in range(source_count):
+            try:
+                point = source_dataset.GetPoint(source_point_id)
+            except Exception:
+                continue
+            target_point_id = cls._lookup_point_coordinate(target_indexes, point)
+            if target_point_id is not None:
+                point_id_map[int(source_point_id)] = int(target_point_id)
+        return point_id_map
+
+    @staticmethod
+    def _dedupe_ordered(values):
+        deduped = []
+        seen = set()
+        for value in values or []:
+            if value in seen:
+                continue
+            seen.add(value)
+            deduped.append(value)
+        return deduped
 
     @staticmethod
     def _safe_dataset_point(dataset, point_id):
@@ -1970,23 +2322,72 @@ class ParaViewBackend:
             return None
         if point is None:
             return None
-        return (
-            round(float(point[0]), 12),
-            round(float(point[1]), 12),
-            round(float(point[2]), 12),
-        )
+        return ParaViewBackend._rounded_point_key(point)
 
     @staticmethod
     def _point_coordinate_index(dataset):
+        indexes = ParaViewBackend._point_coordinate_indexes(dataset)
+        return indexes[0] if indexes else {}
+
+    @staticmethod
+    def _point_coordinate_indexes(dataset):
         if dataset is None or not hasattr(dataset, "GetNumberOfPoints"):
-            return {}
-        index = {}
+            return []
+        indexes = [{} for _decimal_places in POINT_COORDINATE_DECIMALS]
         for point_id in range(dataset.GetNumberOfPoints()):
-            point = ParaViewBackend._safe_dataset_point(dataset, point_id)
+            try:
+                point = dataset.GetPoint(point_id)
+            except Exception:
+                continue
             if point is None:
                 continue
-            index[point] = int(point_id)
-        return index
+            for index, decimal_places in zip(indexes, POINT_COORDINATE_DECIMALS):
+                key = ParaViewBackend._rounded_point_key(point, decimal_places)
+                index.setdefault(key, int(point_id))
+        return indexes
+
+    @staticmethod
+    def _lookup_point_coordinate(indexes, point):
+        if not indexes or point is None:
+            return None
+        for index, decimal_places in zip(indexes, POINT_COORDINATE_DECIMALS):
+            key = ParaViewBackend._rounded_point_key(point, decimal_places)
+            point_id = index.get(key)
+            if point_id is not None:
+                return int(point_id)
+        return None
+
+    @staticmethod
+    def _rounded_point_key(point, decimals=12):
+        return (
+            round(float(point[0]), decimals),
+            round(float(point[1]), decimals),
+            round(float(point[2]), decimals),
+        )
+
+    @staticmethod
+    def _iter_leaf_datasets(dataset):
+        if dataset is None:
+            return []
+        if hasattr(dataset, "GetNumberOfBlocks"):
+            blocks = []
+            try:
+                block_count = dataset.GetNumberOfBlocks()
+            except Exception:
+                return []
+            for block_id in range(block_count):
+                try:
+                    block = dataset.GetBlock(block_id)
+                except Exception:
+                    continue
+                blocks.extend(ParaViewBackend._iter_leaf_datasets(block))
+            return blocks
+        if not hasattr(dataset, "GetNumberOfCells"):
+            return []
+        try:
+            return [dataset] if dataset.GetNumberOfCells() > 0 else []
+        except Exception:
+            return []
 
     @staticmethod
     def _cell_coordinate_key(dataset, cell):
@@ -2062,31 +2463,21 @@ class ParaViewBackend:
         """Best-effort map selected cells back to source cell ids by geometry."""
         if selected_dataset is None or source_dataset is None:
             return []
-        if not hasattr(selected_dataset, "GetNumberOfCells") or not hasattr(
-            source_dataset, "GetNumberOfCells"
-        ):
+        if not hasattr(source_dataset, "GetNumberOfCells"):
             return []
-        if not hasattr(selected_dataset, "GetPoint") or not hasattr(
-            source_dataset, "GetPoint"
-        ):
+        if not hasattr(source_dataset, "GetPoint"):
+            return []
+        selected_blocks = ParaViewBackend._iter_leaf_datasets(selected_dataset)
+        if not selected_blocks:
             return []
 
-        coordinate_to_source_point_id = {}
         try:
             source_point_count = source_dataset.GetNumberOfPoints()
         except Exception:
             return []
-
-        for source_point_id in range(source_point_count):
-            point = source_dataset.GetPoint(source_point_id)
-            if point is None:
-                continue
-            key = (
-                round(float(point[0]), 12),
-                round(float(point[1]), 12),
-                round(float(point[2]), 12),
-            )
-            coordinate_to_source_point_id[key] = int(source_point_id)
+        if source_point_count <= 0:
+            return []
+        source_point_indexes = ParaViewBackend._point_coordinate_indexes(source_dataset)
 
         source_cell_count = source_dataset.GetNumberOfCells()
         source_cell_map = {}
@@ -2144,52 +2535,52 @@ class ParaViewBackend:
                     )
 
         mapped = []
-        for selected_cell_id in range(selected_dataset.GetNumberOfCells()):
-            selected_cell = selected_dataset.GetCell(selected_cell_id)
-            if selected_cell is None:
+        for block in selected_blocks:
+            if not hasattr(block, "GetPoint") or not hasattr(block, "GetCell"):
                 continue
+            for selected_cell_id in range(block.GetNumberOfCells()):
+                selected_cell = block.GetCell(selected_cell_id)
+                if selected_cell is None:
+                    continue
 
-            mapped_point_ids = []
-            failed = False
-            for point_idx in range(selected_cell.GetNumberOfPoints()):
-                point = selected_dataset.GetPoint(selected_cell.GetPointId(point_idx))
-                if point is None:
-                    failed = True
-                    break
-                point_key = (
-                    round(float(point[0]), 12),
-                    round(float(point[1]), 12),
-                    round(float(point[2]), 12),
-                )
-                source_point_id = coordinate_to_source_point_id.get(point_key)
-                if source_point_id is None:
-                    failed = True
-                    break
-                mapped_point_ids.append(int(source_point_id))
+                mapped_point_ids = []
+                failed = False
+                for point_idx in range(selected_cell.GetNumberOfPoints()):
+                    point = block.GetPoint(selected_cell.GetPointId(point_idx))
+                    if point is None:
+                        failed = True
+                        break
+                    source_point_id = ParaViewBackend._lookup_point_coordinate(
+                        source_point_indexes, point
+                    )
+                    if source_point_id is None:
+                        failed = True
+                        break
+                    mapped_point_ids.append(int(source_point_id))
 
-            if failed or not mapped_point_ids:
-                continue
-            cell_key = tuple(sorted(mapped_point_ids))
-            source_cell_id = source_cell_map.get(cell_key)
-            if source_cell_id is not None:
-                mapped.append(int(source_cell_id))
-                continue
+                if failed or not mapped_point_ids:
+                    continue
+                cell_key = tuple(sorted(mapped_point_ids))
+                source_cell_id = source_cell_map.get(cell_key)
+                if source_cell_id is not None:
+                    mapped.append(int(source_cell_id))
+                    continue
 
-            owners = boundary_to_top_cells.get(cell_key)
-            if owners:
-                mapped.extend(sorted(int(owner) for owner in owners))
-                continue
+                owners = boundary_to_top_cells.get(cell_key)
+                if owners:
+                    mapped.extend(sorted(int(owner) for owner in owners))
+                    continue
 
-            # Selected surface can be triangulated while source boundary remains
-            # polygonal; resolve by subset match.
-            key_set = set(cell_key)
-            if key_set:
-                matched = []
-                for boundary_key, owner_ids in boundary_to_top_cells.items():
-                    if key_set.issubset(boundary_key):
-                        matched.extend(int(owner) for owner in owner_ids)
-                if matched:
-                    mapped.extend(sorted(set(matched)))
+                # Selected surface can be triangulated while source boundary remains
+                # polygonal; resolve by subset match.
+                key_set = set(cell_key)
+                if key_set:
+                    matched = []
+                    for boundary_key, owner_ids in boundary_to_top_cells.items():
+                        if key_set.issubset(boundary_key):
+                            matched.extend(int(owner) for owner in owner_ids)
+                    if matched:
+                        mapped.extend(sorted(set(matched)))
 
         # Deduplicate while preserving order.
         deduped = []
@@ -2344,6 +2735,8 @@ class ParaViewBackend:
                 "active_visibility": True,
                 "selected_array": ARRAY_SOLID,
                 "representation": "Surface with Edges",
+                "show_volume_cells": True,
+                "show_surface_cells": True,
                 "color_controls_enabled": False,
                 "color_range_min": "",
                 "color_range_max": "",
@@ -2386,6 +2779,10 @@ class ParaViewBackend:
         )
 
         color_state = self.get_color_control_state()
+        dimension_visibility = active_node.get("cell_dimension_visibility") or {
+            "volume": True,
+            "surface": True,
+        }
         return {
             "pipeline_items": [
                 {
@@ -2394,7 +2791,8 @@ class ParaViewBackend:
                     "node_icon": self._pipeline_icon(node),
                     "visibility_icon": (
                         "mdi-eye-outline"
-                        if node["display"] is not None and node["display"].Visibility
+                        if node["display"] is not None
+                        and bool(node.get("visibility", node["display"].Visibility))
                         else "mdi-eye-off-outline"
                     ),
                     "depth": self._pipeline_depth(node),
@@ -2423,9 +2821,13 @@ class ParaViewBackend:
             "calculator_attribute_type": self._calculator_attribute_type(),
             "calculator_input_variables": self._calculator_input_variables(),
             "calculator_coordinate_variables": ["coordsX", "coordsY", "coordsZ"],
-            "active_visibility": bool(self.display.Visibility) if self.display else True,
+            "active_visibility": self.get_visibility(self.active_node_id)
+            if self.active_node_id
+            else True,
             "selected_array": self._get_selected_array(),
             "representation": self._get_representation(),
+            "show_volume_cells": bool(dimension_visibility.get("volume", True)),
+            "show_surface_cells": bool(dimension_visibility.get("surface", True)),
             **color_state,
             **self.get_time_state(),
         }
@@ -2723,6 +3125,9 @@ class ParaViewBackend:
         """Set the current time in the animation scene."""
         scene = self.simple.GetAnimationScene()
         scene.AnimationTime = float(time_value)
+        self._clear_surface_selection_helper()
+        self._boundary_cache.clear()
+
 
     def set_time_step(self, step_delta):
         """Move the current time by a number of steps."""
@@ -2799,6 +3204,11 @@ class ParaViewBackend:
             "label": label,
             "parent_id": parent_id,
             "filter_key": filter_key,
+            "visibility": bool(getattr(display, "Visibility", True))
+            if display is not None
+            else True,
+            "cell_dimension_visibility": {"volume": True, "surface": True},
+            "cell_dimension_extracts": {},
         }
 
     def _pipeline_label(self, node):
