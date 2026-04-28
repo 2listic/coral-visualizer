@@ -44,7 +44,7 @@ def test_paraview_non_edit_mode_rotates_on_drag(shared_browser):
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -62,8 +62,7 @@ def test_paraview_non_edit_mode_rotates_on_drag(shared_browser):
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(
-            viewport={"width": 1200, "height": 800})
+        context = shared_browser.new_context(viewport={"width": 1200, "height": 800})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
 
@@ -87,7 +86,9 @@ def test_paraview_non_edit_mode_rotates_on_drag(shared_browser):
 
         screenshot_after_rotate_drag = viewport.screenshot()
 
-        assert screenshot_initial != screenshot_after_rotate_drag, "Screenshots are identical! The view did NOT rotate during drag in non-edit mode."
+        assert (
+            screenshot_initial != screenshot_after_rotate_drag
+        ), "Screenshots are identical! The view did NOT rotate during drag in non-edit mode."
 
         context.close()
     finally:

@@ -65,8 +65,7 @@ def _wait_for_selection_count(page, predicate, timeout_s=4):
 
 
 def _select_vselect_option(page, label, option):
-    selector = page.locator(
-        f"div.v-input:has(label:has-text('{label}'))").first
+    selector = page.locator(f"div.v-input:has(label:has-text('{label}'))").first
     selector.click()
     page.click(f"div.v-list-item__title:has-text('{option}')")
     time.sleep(0.3)
@@ -74,10 +73,14 @@ def _select_vselect_option(page, label, option):
 
 def _open_create_field_dialog_from_select(page):
     _select_vselect_option(page, "Select field", "Create new...")
-    page.wait_for_selector("div.v-dialog--active:has-text('Create New Field')", timeout=40000)
+    page.wait_for_selector(
+        "div.v-dialog--active:has-text('Create New Field')", timeout=40000
+    )
 
 
-def _create_new_edit_field(page, field_name, array_type="Cell data array", default_value="0"):
+def _create_new_edit_field(
+    page, field_name, array_type="Cell data array", default_value="0"
+):
     _open_create_field_dialog_from_select(page)
     if array_type:
         _select_vselect_option(page, "Array type", array_type)
@@ -90,7 +93,11 @@ def _create_new_edit_field(page, field_name, array_type="Cell data array", defau
         default_value,
     )
     page.click("div.v-dialog--active button:has-text('Create')")
-    page.wait_for_selector("div.v-dialog--active:has-text('Create New Field')", state="hidden", timeout=40000)
+    page.wait_for_selector(
+        "div.v-dialog--active:has-text('Create New Field')",
+        state="hidden",
+        timeout=40000,
+    )
     time.sleep(0.4)
 
 
@@ -156,9 +163,7 @@ def _drain_proc_stdout(proc):
         "true",
         "True",
     }
-    threading.Thread(
-        target=_stream_proc_stdout, args=(proc, echo), daemon=True
-    ).start()
+    threading.Thread(target=_stream_proc_stdout, args=(proc, echo), daemon=True).start()
 
 
 def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser):
@@ -173,7 +178,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -192,12 +197,10 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(
-            viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector(
-            "button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
 
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
@@ -212,7 +215,9 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
 
         view = page.locator('[style*="cursor: crosshair"]').first
         box = view.bounding_box()
-        assert box is not None and box["x"] >= 0 and box["width"] > 0 and box["height"] > 0
+        assert (
+            box is not None and box["x"] >= 0 and box["width"] > 0 and box["height"] > 0
+        )
 
         x_click = box["x"] + box["width"] * 0.5
         y_click = box["y"] + box["height"] * 0.5
@@ -258,7 +263,7 @@ def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -277,8 +282,7 @@ def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(
-            viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("text=Display", timeout=40000)
@@ -315,7 +319,9 @@ def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser
                 proc.kill()
 
 
-def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(shared_browser):
+def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(
+    shared_browser,
+):
     if not is_paraview_available():
         pytest.skip("ParaView backend is not available in this environment")
 
@@ -327,7 +333,7 @@ def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(shar
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -346,12 +352,10 @@ def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(shar
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(
-            viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector(
-            "button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
 
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
@@ -410,7 +414,9 @@ def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(shar
                 proc.kill()
 
 
-def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(shared_browser):
+def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
+    shared_browser,
+):
     if not is_paraview_available():
         pytest.skip("ParaView backend is not available in this environment")
 
@@ -427,7 +433,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -446,19 +452,18 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(
-            viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector(
-            "button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
 
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
         time.sleep(1.0)
 
         geometry_mode = page.locator(
-            "div.v-input:has(label:has-text('Geometry mode'))").first
+            "div.v-input:has(label:has-text('Geometry mode'))"
+        ).first
         geometry_mode.click()
         page.click("div.v-list-item__title:has-text('Surface')")
         time.sleep(0.4)
@@ -508,8 +513,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
                 break
 
         if selected_count == 0:
-            left_clicks = [(0.20, 0.50), (0.28, 0.46),
-                           (0.24, 0.58), (0.34, 0.52)]
+            left_clicks = [(0.20, 0.50), (0.28, 0.46), (0.24, 0.58), (0.34, 0.52)]
             for fx, fy in left_clicks:
                 page.click("button:has-text('Clear Selection')")
                 time.sleep(0.4)
@@ -534,9 +538,12 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
             "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input",
             output_name,
         )
-        resolved_name = page.input_value(
-            "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input"
-        ).strip() or output_name
+        resolved_name = (
+            page.input_value(
+                "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input"
+            ).strip()
+            or output_name
+        )
         resolved_path = TEST_DATA_DIR / resolved_name
         page.click("button:has-text('Save Edit Result')")
         save_status = page.locator("text=Saved edited dataset to")
@@ -564,7 +571,11 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(sh
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        for path in {output_path, TEST_DATA_DIR / "new.vtu", TEST_DATA_DIR / "square_edited.vtu"}:
+        for path in {
+            output_path,
+            TEST_DATA_DIR / "new.vtu",
+            TEST_DATA_DIR / "square_edited.vtu",
+        }:
             if path.exists():
                 path.unlink()
 
@@ -581,7 +592,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -600,12 +611,10 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(
-            viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector(
-            "button:has-text('Enter Edit Mode')", timeout=40000)
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
 
         page.click("button:has-text('Enter Edit Mode')")
         page.wait_for_selector("text=Edit Tools", timeout=40000)
@@ -614,7 +623,8 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
         time.sleep(0.2)
 
         geometry_mode = page.locator(
-            "div.v-input:has(label:has-text('Geometry mode'))").first
+            "div.v-input:has(label:has-text('Geometry mode'))"
+        ).first
         geometry_mode.click()
         page.click("div.v-list-item__title:has-text('Surface')")
         time.sleep(0.4)
@@ -657,8 +667,17 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
                 f"px=({x:.1f},{y:.1f}) count={count}",
                 flush=True,
             )
-            attempts.append({"kind": "click", "label": label,
-                            "fx": fx, "fy": fy, "x": x, "y": y, "count": count})
+            attempts.append(
+                {
+                    "kind": "click",
+                    "label": label,
+                    "fx": fx,
+                    "fy": fy,
+                    "x": x,
+                    "y": y,
+                    "count": count,
+                }
+            )
             return count or 0
 
         def _try_box(fx0, fy0, fx1, fy1, label):
@@ -762,9 +781,9 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
                     "[grow-e2e] manual recorder did not capture a drag inside view.",
                     flush=True,
                 )
-                assert selected >= 4, (
-                    f"Manual grow selection expected >=4, got {selected}. Attempts: {attempts}"
-                )
+                assert (
+                    selected >= 4
+                ), f"Manual grow selection expected >=4, got {selected}. Attempts: {attempts}"
                 context.close()
                 return
 
@@ -773,7 +792,11 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             "E2E_SURFACE_GROW_BOX",
             (0.146393, 0.412025, 0.425668, 0.473942),
         )
-        flip_y = os.environ.get("E2E_SURFACE_GROW_FLIP_Y", "0").strip() in {"1", "true", "True"}
+        flip_y = os.environ.get("E2E_SURFACE_GROW_FLIP_Y", "0").strip() in {
+            "1",
+            "true",
+            "True",
+        }
         if flip_y:
             fy0, fy1 = 1.0 - fy0, 1.0 - fy1
         selected = _try_box(fx0, fy0, fx1, fy1, "deterministic-box")

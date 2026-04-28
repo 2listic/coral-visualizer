@@ -29,6 +29,14 @@ fi
 "${CONDA_BIN}" run -n "${ENV_NAME}" python -c \
     "import sys, paraview, trame; print(f'python: {sys.version.split()[0]}'); print(f'paraview: {paraview.__file__}'); print(f'trame: {trame.__file__}')"
 
+echo "Installing Python dev dependencies..."
+"${CONDA_BIN}" run -n "${ENV_NAME}" python -m pip install --no-cache-dir \
+    -r "${REPO_ROOT}/setup/requirements.txt" \
+    -r "${REPO_ROOT}/setup/requirements-dev.txt"
+
+echo "Installing Playwright browser..."
+"${CONDA_BIN}" run -n "${ENV_NAME}" python -m playwright install chromium
+
 echo
 echo "Conda environment '${ENV_NAME}' is ready."
 echo "Run the app with:"

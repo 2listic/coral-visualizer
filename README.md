@@ -7,9 +7,57 @@ rendering backends:
   selection, saving, and advanced display/color controls.
 - `vtk`: legacy backend kept for lightweight local rendering and compatibility.
 
-## Installation
+## Installation (ParaView backend)
 
-### Local VTK/Unit-Test Environment
+The app now supports `--backend vtk|paraview|auto`.
+
+The default `auto` mode uses ParaView when ParaView and the Trame ParaView
+widget are available in the current Python environment; otherwise it falls back
+to the legacy VTK backend.
+
+The recommended way to run the ParaView backend is a dedicated conda
+environment from `conda-forge`.
+
+### Prerequisites: install conda
+
+`setup_pv_env.sh` requires `conda` on your PATH. If you do not have it yet,
+install **Miniforge** — a minimal, open-source installer that defaults to
+`conda-forge` and includes `mamba` for faster environment solving:
+
+```bash
+wget "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
+bash Miniforge3-Linux-x86_64.sh
+# follow the prompts; answer yes to "initialize conda"
+# restart your shell or: source ~/.bashrc
+```
+
+> **Micromamba alternative:** if you prefer a single-binary install with no base
+> environment, run `"${SHELL}" <(curl -L micro.mamba.pm/install.sh)` and set
+> `CONDA_BIN=micromamba` when calling `setup_pv_env.sh`. Note that the rest of
+> this README uses `conda run ...`; replace it with `micromamba run ...`
+> throughout if you go this route.
+
+### Create the environment
+
+```bash
+./tools/setup_pv_env.sh
+```
+
+### Usage
+
+```bash
+conda run -n coral-paraview python app.py --backend paraview
+```
+
+You can override the defaults if needed:
+
+```bash
+ENV_NAME=my-pv-env PYTHON_VERSION=3.10 ./tools/setup_pv_env.sh
+```
+
+Mesh editing is supported on both VTK and ParaView backends.
+
+## Legacy local VTK Installation / Unit-Test Environment
 
 ```bash
 uv venv
@@ -24,7 +72,7 @@ Python packages after provisioning ParaView from `setup/environment-docker.yml`.
 This environment is suitable for the VTK backend and most unit tests. It is not
 the recommended way to run the ParaView backend.
 
-### Usage
+### Usage (legacy VTK backend)
 
 ```bash
 source .venv/bin/activate
@@ -41,37 +89,6 @@ Developer diagnostics are enabled by default for now through `--devtools`.
 This also enables Trame hot reload and ParaView view/selection debug logs.
 Use `--no-devtools` for a quieter production-like local run.
 
-### ParaView backend
-
-The app now supports `--backend vtk|paraview|auto`.
-
-The default `auto` mode uses ParaView when ParaView and the Trame ParaView
-widget are available in the current Python environment; otherwise it falls back
-to the legacy VTK backend.
-
-The recommended way to run the ParaView backend is a dedicated conda
-environment from `conda-forge`.
-
-Create it non-interactively with:
-
-```bash
-./tools/setup_pv_env.sh
-```
-
-Then run:
-
-```bash
-conda run -n coral-paraview python app.py --backend paraview
-```
-
-You can override the defaults if needed:
-
-```bash
-ENV_NAME=my-pv-env PYTHON_VERSION=3.10 ./tools/setup_pv_env.sh
-```
-
-Mesh editing is supported on both VTK and ParaView backends.
-
 ## Dependency Matrix
 
 Verified on this development machine and in the Docker image on 2026-04-25.
@@ -86,13 +103,13 @@ Verified on this development machine and in the Docker image on 2026-04-25.
 | trame-vuetify | 3.2.1 | 3.2.1 |
 | pytest | 9.0.3 | 9.0.3 |
 | Playwright | 1.58.0 | 1.58.0 |
-| pytest-playwright | pinned in dev requirements; not required by current local suite | 0.7.2 |
+| pytest-playwright | 0.7.2 (used by e2e tests in conda env) | 0.7.2 |
 | Pillow | pinned in dev requirements; not required by local runtime | 12.2.0 |
 
 Local version probe:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/python - <<'PY'
+conda run -n coral-paraview python - <<'PY'
 import importlib.metadata as md
 import sys
 print("python", sys.version.split()[0])
@@ -163,7 +180,43 @@ warnings such as `bad X server connection` or `Could not initialize a device`.
 In the current setup those warnings are non-fatal: the app still starts and
 ParaView can produce screenshots offscreen.
 
-## Development
+## Tests
+
+### Unit tests
+
+Activate the uv venv, then run:
+
+```bash
+source .venv/bin/activate
+pytest          # run all unit tests
+pytest -v       # verbose output
+```
+
+### E2E tests
+
+E2E tests require the `coral-paraview` conda environment (ParaView + Playwright).
+Run all tests (unit + e2e):
+
+```bash
+conda run -n coral-paraview pytest -q
+```
+
+By default, E2E tests run in headless mode. To run them with a visible browser:
+
+```bash
+conda run -n coral-paraview pytest tests/ --show-browser
+```
+
+Test meshes live in `test_data/` so tests do not depend on the `data/` directory.
+
+Useful focused e2e tests:
+
+```bash
+conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_point_field_replace_box_selection_does_not_toggle_overlap
+conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
+```
+
+## CI/CD
 
 ### Pre-commit hooks
 
@@ -173,7 +226,13 @@ After installing dev dependencies, install the git hooks once:
 pre-commit install
 ```
 
-After that, `black` and `ruff` run automatically on every `git commit`. To run them manually against all files:
+After that, formatting (`black`), linting (`ruff`), and unit tests (`pytest`) run automatically on every `git commit`.  
+**NOTE:**  
+E2E tests are excluded from the pre-commit hook — run them manually with the
+conda environment when needed.  
+Either the uv venv or the conda environment must be active so that `pytest` is on the path.
+
+To run hooks manually against all files:
 
 ```bash
 pre-commit run --all-files
@@ -189,48 +248,24 @@ ruff check .        # lint
 ruff check --fix .  # lint + auto-fix
 ```
 
-### Tests
+### GitHub Actions
 
-```bash
-pytest          # run all smoke tests
-pytest -v       # verbose output
-```
+Two workflows run on push and pull requests to `main`:
 
-For the full suite, including ParaView e2e tests, use the conda environment:
-
-```bash
-~/anaconda3/envs/coral-paraview/bin/pytest -q
-```
-
-The standard suite includes headless e2e tests for ParaView. Install the browser
-once in your dev environment if it is missing:
-
-```bash
-~/anaconda3/envs/coral-paraview/bin/python -m playwright install chromium
-```
-
-By default, E2E tests run in headless mode. To run them with a visible browser, use:
-
-```bash
-~/anaconda3/envs/coral-paraview/bin/pytest tests/ --show-browser
-```
-
-Test meshes used by the suite live in `test_data/` (for example
-`test_data/square.vtk`) so tests do not depend on the regular `data/`
-working directory.
-
-Useful focused e2e tests:
-
-```bash
-~/anaconda3/envs/coral-paraview/bin/pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_point_field_replace_box_selection_does_not_toggle_overlap
-~/anaconda3/envs/coral-paraview/bin/pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
-```
+- **CI** (`.github/workflows/test.yml`): builds the Docker image and runs the full
+  test suite inside it via `micromamba run -n coral pytest -v tests/`.
+- **Publish** (`.github/workflows/docker-publish.yml`): builds and pushes the Docker
+  image to the GitHub Container Registry on pushes to `main` and on version tags (`v*.*.*`).
 
 ## Troubleshooting
 
 - `ModuleNotFoundError: No module named 'paraview'`: use the conda
   `coral-paraview` environment or rebuild the Docker image. The `.venv`/`uv`
   environment does not provide ParaView.
+- **ParaView backend not available even with `conda run`**: if the `.venv` is
+  active in your shell, `conda run` inherits its `PATH` and `python` resolves
+  to `.venv/bin/python` instead of the conda env. Run `deactivate` first, then
+  retry `conda run -n coral-paraview python app.py ...`.
 - `Page.wait_for_selector` failures in e2e: first verify the app can start with
   `--backend paraview`; then rerun with `--show-browser` or
   `E2E_STREAM_APP_LOGS=1`.
@@ -244,6 +279,6 @@ Useful focused e2e tests:
 `inspect_vtu.py` decodes and prints all cell types and data arrays from a `.vtu` file (binary/compressed and not human-readable).
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/python tools/inspect_vtu.py data/output.vtu            # print to console
-~/anaconda3/envs/coral-paraview/bin/python tools/inspect_vtu.py data/output.vtu -o out.txt # write to file
+conda run -n coral-paraview python tools/inspect_vtu.py data/output.vtu            # print to console
+conda run -n coral-paraview python tools/inspect_vtu.py data/output.vtu -o out.txt # write to file
 ```

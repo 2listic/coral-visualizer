@@ -143,7 +143,7 @@ def test_paraview_cube_center_box_selection_in_available_edit_modes(
             "app.py",
             "--backend",
             "paraview",
-            "--no-browser",
+            "--server",
             "--data-directory",
             str(TEST_DATA_DIR),
             "--file",
@@ -187,9 +187,9 @@ def test_paraview_cube_center_box_selection_in_available_edit_modes(
 
         _drag_center_box(page, box)
         selected = _wait_for_selection_count(page, lambda count: count > 0, timeout_s=6)
-        assert selected is not None and selected > 0, (
-            f"Center box selection returned no entities in mode={mode_label}"
-        )
+        assert (
+            selected is not None and selected > 0
+        ), f"Center box selection returned no entities in mode={mode_label}"
 
         context.close()
     finally:

@@ -15,36 +15,25 @@ Most recent feature work is in the ParaView backend. When reproducing user-repor
 
 ### Recommended ParaView Environment
 
-Use the conda environment `coral-paraview`. On this machine it is normally available at:
-
-```bash
-~/anaconda3/envs/coral-paraview/bin/python
-~/anaconda3/envs/coral-paraview/bin/pytest
-```
-
-Create it if missing:
+Use the conda environment `coral-paraview`. Create it if missing:
 
 ```bash
 ./tools/setup_pv_env.sh
 ```
 
-This installs ParaView from `conda-forge`. Do not expect ParaView to work from the lightweight `.venv`/`uv` setup.
+This installs ParaView from `conda-forge`, pip-installs all Python dev dependencies, and installs the Playwright Chromium browser. Do not expect ParaView to work from the lightweight `.venv`/`uv` setup.
+
+Use `conda run -n coral-paraview <command>` or find the env root with `conda info --envs` to get the full path.
 
 Run the ParaView app:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/python app.py --backend paraview --file test_data/square.vtk --data-directory test_data --host 127.0.0.1 --port 8008
+conda run -n coral-paraview python app.py --backend paraview --data-directory test_data --host 127.0.0.1 --port 8008
 ```
 
 `--devtools` is enabled by default for now. It enables Trame hot reload and
 ParaView view/selection diagnostics. Use `--no-devtools` for quiet
 production-like runs. The older `--dev` flag is a compatibility alias.
-
-Or with conda:
-
-```bash
-conda run -n coral-paraview python app.py --backend paraview
-```
 
 ### Lightweight VTK/Unit-Test Environment
 
@@ -60,22 +49,23 @@ Use this only for non-ParaView work. If a test imports `paraview` or uses Playwr
 
 ### Playwright
 
-E2E tests use Chromium through Playwright. If browser binaries are missing:
+E2E tests use Chromium through Playwright. The browser is installed automatically
+by `./tools/setup_pv_env.sh`. If it needs to be reinstalled:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/python -m playwright install chromium
+conda run -n coral-paraview python -m playwright install chromium
 ```
 
 Visible browser debugging:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/pytest tests/test_e2e_edit_selection_playwright.py --show-browser
+conda run -n coral-paraview pytest tests/test_e2e_edit_selection_playwright.py --show-browser
 ```
 
 Optional app log streaming during e2e:
 
 ```bash
-E2E_STREAM_APP_LOGS=1 ~/anaconda3/envs/coral-paraview/bin/pytest -q tests/test_e2e_edit_selection_playwright.py
+E2E_STREAM_APP_LOGS=1 conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py
 ```
 
 ## Common Commands
@@ -89,13 +79,13 @@ pytest -q tests/test_paraview_backend.py tests/test_paraview_runtime.py tests/te
 Run ParaView e2e tests:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/pytest -q tests/test_e2e_edit_selection_playwright.py
+conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py
 ```
 
 Run a single e2e:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
+conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
 ```
 
 Formatting/linting, when requested:
@@ -112,6 +102,13 @@ Docker:
 docker build -t coral-visualizer-standalone .
 docker run -it --rm -p 8008:8080 coral-visualizer-standalone
 ```
+
+### Pre-commit
+
+On every `git commit`, pre-commit runs formatting (`black`), linting (`ruff`),
+and unit tests (`pytest`). E2E tests are excluded from the hook — run them
+manually with the conda env. Either the uv venv or conda env must be active so
+`pytest` is on the path.
 
 ## Git Conventions
 
@@ -200,13 +197,13 @@ The color-scale visibility is user state. Range/preset/category updates must pre
 For field creation and replace selection:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_point_field_replace_box_selection_does_not_toggle_overlap
+conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_point_field_replace_box_selection_does_not_toggle_overlap
 ```
 
 For color bar controls:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
+conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
 ```
 
 For backend/controller coverage:
@@ -217,13 +214,14 @@ pytest -q tests/test_paraview_backend.py tests/test_paraview_runtime.py tests/te
 
 ## Debugging Notes
 
+- If `conda run -n coral-paraview python` resolves to `.venv/bin/python` (ParaView unavailable despite using the conda env): the `.venv` is active and its `PATH` entry wins. Run `deactivate` first, then retry.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.
 - Selection e2e logs can include `[selection-record] ...`; use `E2E_STREAM_APP_LOGS=1` to see app output live.
 - `tools/inspect_vtu.py` can inspect binary/compressed VTU output:
 
 ```bash
-~/anaconda3/envs/coral-paraview/bin/python tools/inspect_vtu.py test_data/output.vtu
+conda run -n coral-paraview python tools/inspect_vtu.py test_data/output.vtu
 ```
 
 ## File Format Notes
