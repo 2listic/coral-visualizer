@@ -94,6 +94,8 @@ def initialize_state(
     state.upload_status = ""
     state.upload_status_type = "info"
     state.remote_browser_dialog = False
+    state.remote_search_term = ""
+    state.filtered_available_files = available_files
     state.filter_supported_options = filter_catalog["supported"]
     state.filter_experimental_options = filter_catalog["experimental"]
     state.show_experimental_filters = bool(state.filter_experimental_options)

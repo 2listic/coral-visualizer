@@ -111,3 +111,43 @@ def register_state_handlers(
             pv_backend.set_interactor_rotation(True)
 
         sync_edit_session_state()
+
+    @state.change("remote_search_term", "available_files")
+    def on_remote_search_change(remote_search_term, available_files, **kwargs):
+        """Filter the available files based on the search term."""
+        if not remote_search_term:
+            state.filtered_available_files = available_files
+            return
+
+        term = remote_search_term.lower()
+        filtered = []
+
+        # Group items by their preceding header
+        groups = []  # list of (header_item_or_None, list_of_data_items)
+        current_header = None
+        current_items = []
+
+        for item in available_files:
+            if item.get("header"):
+                groups.append((current_header, current_items))
+                current_header = item
+                current_items = []
+            elif item.get("divider"):
+                continue
+            elif item.get("value"):
+                text_match = term in item.get("text", "").lower()
+                path_match = term in item.get("path", "").lower()
+                if text_match or path_match:
+                    current_items.append(item)
+        groups.append((current_header, current_items))
+
+        # Reconstruct filtered list
+        for header, items in groups:
+            if items:
+                if filtered:
+                    filtered.append({"divider": True})
+                if header:
+                    filtered.append(header)
+                filtered.extend(items)
+
+        state.filtered_available_files = filtered

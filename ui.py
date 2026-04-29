@@ -105,7 +105,7 @@ def _build_toolbar(ctrl, backend):
         "Open Remote",
         small=True,
         outlined=True,
-        click="remote_browser_dialog = true",
+        click="remote_search_term = ''; remote_browser_dialog = true",
         classes="mr-2",
     )
     if backend == "paraview":
@@ -241,6 +241,16 @@ def _build_remote_browser_dialog(ctrl):
         with vuetify.VCard():
             vuetify.VCardTitle("Open Remote Data")
             with vuetify.VCardText():
+                vuetify.VTextField(
+                    v_model=("remote_search_term",),
+                    placeholder="Search files...",
+                    clearable=True,
+                    dense=True,
+                    outlined=True,
+                    prepend_inner_icon="mdi-magnify",
+                    classes="mb-2",
+                    autofocus=True,
+                )
                 vuetify.VAlert(
                     dense=True,
                     text=True,
@@ -253,7 +263,7 @@ def _build_remote_browser_dialog(ctrl):
                     dense=True,
                     style="max-height: 420px; overflow-y: auto; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
                 ):
-                    with vuetify.Template(v_for="item in available_files"):
+                    with vuetify.Template(v_for="item in filtered_available_files"):
                         vuetify.VSubheader(
                             "{{ item.header }}",
                             v_if="item.header",
