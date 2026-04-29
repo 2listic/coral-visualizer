@@ -820,6 +820,10 @@ class EditSession:
                     existing_keys = self._existing_codim_keys(top_dim - 1)
                 if key in existing_keys:
                     keys.add(key)
+                    continue
+                # Native ParaView surface picks may already provide canonical
+                # boundary-like keys even when local topology checks diverge.
+                keys.add(key)
                 continue
 
             if not isinstance(item, (int, float)):

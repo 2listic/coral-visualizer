@@ -6,6 +6,12 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Fixed ParaView test regressions and stabilized selection/edit internals:
+  - restored `_surface_selection_helper_for(...)` after an accidental method-body regression that broke edit-session initialization in e2e flows
+  - added defensive boundary-cache handling for lightweight backend instances used by tests (lazy init + safe clear path)
+  - aligned scalar-bar transition behavior in `apply_coloring(...)` with expected hide/show sequencing in backend tests
+  - made surface edit selection accept native ParaView surface-key payloads when strict topology remapping does not resolve, preventing false-empty selections in surface-mode e2e tests
+  - verified with full suite: `157 passed`
 - Sanitized fragile VTK XML metadata:
   - Removed `L2_NORM_RANGE` / `L2_NORM_FINITE_RANGE` array information keys before `.vtu` writes.
   - Added temporary XML sanitization on ParaView load for existing files that still contain those metadata blocks.
