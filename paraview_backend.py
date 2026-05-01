@@ -429,19 +429,32 @@ class ParaViewBackend:
             return None
         return bool(node.get("visibility", node["display"].Visibility))
 
-    def set_cell_dimension_visibility(self, volume_visible=True, surface_visible=True):
-        """Show/hide intrinsic 3D volume and 2D surface cells on the active node."""
+    def set_cell_face_visibility(self, cells_visible=True, faces_visible=True):
+        """Show/hide semantic cells and faces on the active node.
+
+        ParaView/VTK call every top-level entity a cell, regardless of whether
+        it is a vertex, segment, triangle, quad, tet, hex, and so on. In this
+        UI, "cell" means the highest intrinsic cell dimension present in the
+        active dataset, while "face" means explicit top-level cells one
+        dimension lower. Faces are never generated from higher-dimensional
+        cells here; they are shown only when the file/source already exposes
+        cells with the face dimension.
+        """
         node = self._get_active_node()
         if node is None or node["display"] is None:
             return False
 
         node["cell_dimension_visibility"] = {
-            "volume": bool(volume_visible),
-            "surface": bool(surface_visible),
+            "cells": bool(cells_visible),
+            "faces": bool(faces_visible),
         }
         self._apply_cell_dimension_visibility(node)
         self.render()
         return True
+
+    def set_cell_dimension_visibility(self, volume_visible=True, surface_visible=True):
+        """Backward-compatible wrapper for older controller/test names."""
+        return self.set_cell_face_visibility(volume_visible, surface_visible)
 
     def delete_node(self, node_id):
         """Delete a pipeline node and adjust active selection."""
@@ -973,47 +986,65 @@ class ParaViewBackend:
         return displays
 
     def _apply_cell_dimension_visibility(self, node):
-        """Apply stored volume/surface flags using per-dimension extract displays."""
+        """Apply stored cell/face flags using per-dimension extract displays."""
         if node is None or node.get("display") is None:
             return
 
         node_visible = bool(node.get("visibility", True))
         flags = node.get("cell_dimension_visibility") or {
-            "volume": True,
-            "surface": True,
+            "cells": True,
+            "faces": True,
         }
-        volume_visible = bool(flags.get("volume", True))
-        surface_visible = bool(flags.get("surface", True))
-        available_dimensions = self._available_cell_dimension_keys(node)
+        cells_visible = bool(flags.get("cells", flags.get("volume", True)))
+        faces_visible = bool(flags.get("faces", flags.get("surface", True)))
+        dataset_dimensions = self._available_cell_dimensions(node["source"])
+        dimension_roles = self._semantic_cell_dimension_roles(
+            node, dataset_dimensions)
         requested_dimensions = set()
-        if volume_visible and "volume" in available_dimensions:
-            requested_dimensions.add("volume")
-        if surface_visible and "surface" in available_dimensions:
-            requested_dimensions.add("surface")
+        if cells_visible and "cells" in dimension_roles:
+            requested_dimensions.add(dimension_roles["cells"])
+        if faces_visible and "faces" in dimension_roles:
+            requested_dimensions.add(dimension_roles["faces"])
 
-        if requested_dimensions == available_dimensions:
+        if requested_dimensions and requested_dimensions == dataset_dimensions:
             self._set_proxy_visibility(node["display"], node_visible)
             self._set_extract_displays_visibility(node, False)
             return
 
         self._set_proxy_visibility(node["display"], False)
-        self._set_extract_visibility_for_dimension(
-            node, "volume", node_visible and volume_visible and "volume" in available_dimensions
-        )
-        self._set_extract_visibility_for_dimension(
-            node, "surface", node_visible and surface_visible and "surface" in available_dimensions
-        )
+        self._set_extract_displays_visibility(node, False)
+        for role, dimension in dimension_roles.items():
+            visible = (
+                node_visible
+                and (
+                    (role == "cells" and cells_visible)
+                    or (role == "faces" and faces_visible)
+                )
+            )
+            self._set_extract_visibility_for_dimension(node, dimension, visible)
 
-    def _available_cell_dimension_keys(self, node):
-        """Return available volume/surface dimensions for a pipeline node."""
+    def _semantic_cell_dimension_roles(self, node, dimensions=None):
+        """Return UI cell/face roles mapped to intrinsic VTK cell dimensions."""
         if node is None:
-            return set()
-        available = set()
-        if self._cell_type_names_for_dimension(node["source"], 3):
-            available.add("volume")
-        if self._cell_type_names_for_dimension(node["source"], 2):
-            available.add("surface")
-        return available
+            return {}
+        if dimensions is None:
+            dimensions = self._available_cell_dimensions(node["source"])
+        if not dimensions:
+            return {}
+        cell_dimension = max(dimensions)
+        roles = {"cells": cell_dimension}
+        face_dimension = cell_dimension - 1
+        if face_dimension in dimensions:
+            roles["faces"] = face_dimension
+        return roles
+
+    def _available_cell_dimensions(self, source):
+        """Return intrinsic dimensions for top-level cells exposed by a source."""
+        dimensions = set()
+        for dimension in range(4):
+            if self._cell_type_names_for_dimension(source, dimension):
+                dimensions.add(dimension)
+        return dimensions
 
     def _set_extract_visibility_for_dimension(self, node, dimension_key, visible):
         """Ensure a cell-dimension extract exists when it needs to be visible."""
@@ -1037,9 +1068,8 @@ class ParaViewBackend:
             raise RuntimeError(
                 "This ParaView build does not expose ExtractCellsByType.")
 
-        target_dimension = 3 if dimension_key == "volume" else 2
         cell_types = self._cell_type_names_for_dimension(
-            node["source"], target_dimension)
+            node["source"], dimension_key)
         if not cell_types:
             return None
 
@@ -1121,16 +1151,40 @@ class ParaViewBackend:
             dataset = self.servermanager.Fetch(source)
         except Exception:
             return []
-        if dataset is None or not hasattr(dataset, "GetCellTypes"):
+        if dataset is None:
             return []
+
+        names = []
+        self._collect_cell_type_names_for_dimension(dataset, target_dimension, names)
+        return names
+
+    def _collect_cell_type_names_for_dimension(self, dataset, target_dimension, names):
+        """Append ExtractCellsByType names from dataset or composite children."""
+        if hasattr(dataset, "GetNumberOfBlocks"):
+            for index in range(dataset.GetNumberOfBlocks()):
+                block = dataset.GetBlock(index)
+                if block is not None:
+                    self._collect_cell_type_names_for_dimension(
+                        block, target_dimension, names)
+            return
+        if hasattr(dataset, "IsA") and dataset.IsA("vtkCompositeDataSet"):
+            iterator = dataset.NewIterator()
+            iterator.InitTraversal()
+            while not iterator.IsDoneWithTraversal():
+                block = iterator.GetCurrentDataObject()
+                if block is not None:
+                    self._collect_cell_type_names_for_dimension(
+                        block, target_dimension, names)
+                iterator.Next()
+            return
+        if not hasattr(dataset, "GetCellTypes"):
+            return
 
         cell_types = vtkCellTypes()
         try:
             dataset.GetCellTypes(cell_types)
         except Exception:
-            return []
-
-        names = []
+            return
         for index in range(cell_types.GetNumberOfTypes()):
             cell_type = cell_types.GetCellType(index)
             try:
@@ -1154,7 +1208,6 @@ class ParaViewBackend:
             name = self._cell_type_name_aliases.get(name, name)
             if name not in names:
                 names.append(name)
-        return names
 
     def apply_representation(self, representation):
         """Update the representation used by the active display."""
@@ -2868,8 +2921,8 @@ class ParaViewBackend:
                 "active_visibility": True,
                 "selected_array": ARRAY_SOLID,
                 "representation": "Surface with Edges",
-                "show_volume_cells": True,
-                "show_surface_cells": True,
+                "show_cells": True,
+                "show_faces": True,
                 "color_controls_enabled": False,
                 "color_range_min": "",
                 "color_range_max": "",
@@ -2915,9 +2968,15 @@ class ParaViewBackend:
 
         color_state = self.get_color_control_state()
         dimension_visibility = active_node.get("cell_dimension_visibility") or {
-            "volume": True,
-            "surface": True,
+            "cells": True,
+            "faces": True,
         }
+        show_cells = bool(
+            dimension_visibility.get("cells", dimension_visibility.get("volume", True))
+        )
+        show_faces = bool(
+            dimension_visibility.get("faces", dimension_visibility.get("surface", True))
+        )
         return {
             "pipeline_items": [
                 {
@@ -2962,8 +3021,8 @@ class ParaViewBackend:
             else True,
             "selected_array": self._get_selected_array(),
             "representation": self._get_representation(),
-            "show_volume_cells": bool(dimension_visibility.get("volume", True)),
-            "show_surface_cells": bool(dimension_visibility.get("surface", True)),
+            "show_cells": show_cells,
+            "show_faces": show_faces,
             **color_state,
             **self.get_time_state(),
         }
@@ -3348,7 +3407,7 @@ class ParaViewBackend:
             "visibility": bool(getattr(display, "Visibility", True))
             if display is not None
             else True,
-            "cell_dimension_visibility": {"volume": True, "surface": True},
+            "cell_dimension_visibility": {"cells": True, "faces": True},
             "cell_dimension_extracts": {},
         }
 

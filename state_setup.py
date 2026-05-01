@@ -40,8 +40,8 @@ def initialize_state(
     state.available_arrays = initial_arrays
     state.selected_array = ARRAY_SOLID
     state.representation = DEFAULT_REPRESENTATION
-    state.show_volume_cells = True
-    state.show_surface_cells = True
+    state.show_cells = True
+    state.show_faces = True
     state.has_boundary = False
     state.backend = backend
     state.backend_message = backend_message

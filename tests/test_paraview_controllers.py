@@ -137,18 +137,18 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     assert state.save_status_type == "error"
 
 
-def test_pv_set_cell_visibility_updates_backend_and_refreshes_view():
+def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():
     ctrl = FakeCtrl()
     calls = []
     state = SimpleNamespace(
         active_pipeline_item="node-1",
-        show_volume_cells=False,
-        show_surface_cells=True,
+        show_cells=False,
+        show_faces=True,
         error_message="",
     )
     pv_backend = SimpleNamespace(
-        set_cell_dimension_visibility=lambda volume, surface: calls.append(
-            ("cell_visibility", volume, surface)
+        set_cell_face_visibility=lambda cells, faces: calls.append(
+            ("cell_visibility", cells, faces)
         )
     )
 
@@ -172,23 +172,23 @@ def test_pv_set_cell_visibility_updates_backend_and_refreshes_view():
         normalize_edit_selection_ids=lambda ids: ids,
     )
 
-    ctrl.handlers["pv_set_cell_visibility"]()
+    ctrl.handlers["pv_set_cell_face_visibility"]()
 
     assert calls == [("cell_visibility", False, True), "update_ui", "render"]
 
 
-def test_pv_set_cell_visibility_accepts_checkbox_pair_payload():
+def test_pv_set_cell_face_visibility_accepts_checkbox_pair_payload():
     ctrl = FakeCtrl()
     calls = []
     state = SimpleNamespace(
         active_pipeline_item="node-1",
-        show_volume_cells=True,
-        show_surface_cells=True,
+        show_cells=True,
+        show_faces=True,
         error_message="",
     )
     pv_backend = SimpleNamespace(
-        set_cell_dimension_visibility=lambda volume, surface: calls.append(
-            ("cell_visibility", volume, surface)
+        set_cell_face_visibility=lambda cells, faces: calls.append(
+            ("cell_visibility", cells, faces)
         )
     )
 
@@ -212,7 +212,7 @@ def test_pv_set_cell_visibility_accepts_checkbox_pair_payload():
         normalize_edit_selection_ids=lambda ids: ids,
     )
 
-    ctrl.handlers["pv_set_cell_visibility"]([False, True])
+    ctrl.handlers["pv_set_cell_face_visibility"]([False, True])
 
     assert calls == [("cell_visibility", False, True), "update_ui", "render"]
 
@@ -233,8 +233,8 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
         color_range_max="8",
         color_map_preset="Cool to Warm",
         categorical_coloring=True,
-        show_volume_cells=False,
-        show_surface_cells=True,
+        show_cells=False,
+        show_faces=True,
         source_properties=[{"name": "SomeReaderProperty", "pending_value": 2}],
         display_properties=[
             {"name": "Opacity", "pending_value": 0.4},
@@ -250,8 +250,8 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
             ("representation", representation)
         ),
         apply_coloring=lambda array: calls.append(("coloring", array)),
-        set_cell_dimension_visibility=lambda volume, surface: calls.append(
-            ("cell_visibility", volume, surface)
+        set_cell_face_visibility=lambda cells, faces: calls.append(
+            ("cell_visibility", cells, faces)
         ),
         apply_property_changes=lambda source, display: calls.append(
             ("properties", source, display)

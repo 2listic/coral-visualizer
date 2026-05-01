@@ -761,7 +761,7 @@ def test_apply_representation_and_apply_property_changes_render():
     assert ("apply", display, [{"name": "B"}]) in backend.property_inspector.calls
 
 
-def test_set_cell_dimension_visibility_uses_extracts_and_preserves_node_visibility():
+def test_set_cell_face_visibility_uses_extracts_and_preserves_node_visibility():
     backend = make_backend()
     backend.simple = FakeSimpleWithExtractCells()
     backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([12, 5])
@@ -771,22 +771,22 @@ def test_set_cell_dimension_visibility_uses_extracts_and_preserves_node_visibili
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
-    backend.set_cell_dimension_visibility(True, False)
+    backend.set_cell_face_visibility(True, False)
 
     assert display.Visibility == 0
     assert backend.get_visibility(node["id"]) is True
     assert backend.simple.extracts[0].CellTypes == ["Hexahedron"]
-    volume_display = node["cell_dimension_extracts"]["volume"]["display"]
-    assert volume_display.Visibility == 1
-    assert ("ColorBy", volume_display, ("CELLS", "M")) in backend.simple.calls
+    cells_display = node["cell_dimension_extracts"][3]["display"]
+    assert cells_display.Visibility == 1
+    assert ("ColorBy", cells_display, ("CELLS", "M")) in backend.simple.calls
 
-    backend.set_cell_dimension_visibility(True, True)
+    backend.set_cell_face_visibility(True, True)
 
     assert display.Visibility == 1
-    assert volume_display.Visibility == 0
+    assert cells_display.Visibility == 0
 
 
-def test_set_cell_dimension_visibility_treats_volume_as_unavailable_on_2d_meshes():
+def test_set_cell_face_visibility_shows_only_explicit_faces_on_2d_meshes():
     backend = make_backend()
     backend.simple = FakeSimpleWithExtractCells()
     backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([5])
@@ -796,15 +796,52 @@ def test_set_cell_dimension_visibility_treats_volume_as_unavailable_on_2d_meshes
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
-    backend.set_cell_dimension_visibility(False, True)
+    backend.set_cell_face_visibility(False, True)
+
+    assert display.Visibility == 0
+    assert backend.simple.extracts == []
+
+    backend.set_cell_face_visibility(True, False)
 
     assert display.Visibility == 1
     assert backend.simple.extracts == []
 
-    backend.set_cell_dimension_visibility(True, False)
+
+def test_set_cell_face_visibility_keeps_standalone_edges_as_faces_on_2d_meshes():
+    backend = make_backend()
+    backend.simple = FakeSimpleWithExtractCells()
+    backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([5, 3])
+    source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
+    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
+    node = backend._make_node(source, display, "/tmp/data/square.vtu", "source", "square")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.set_cell_face_visibility(False, True)
 
     assert display.Visibility == 0
-    assert backend.simple.extracts == []
+    assert backend.simple.extracts[0].CellTypes == ["Line"]
+    faces_display = node["cell_dimension_extracts"][1]["display"]
+    assert faces_display.Visibility == 1
+
+
+def test_cell_face_visibility_reads_dimensions_from_multiblock_sources():
+    backend = make_backend()
+    backend.simple = FakeSimpleWithExtractCells()
+    backend.servermanager.Fetch = lambda _source: FakeMultiBlockDataset(
+        [FakeCellTypesDataset([5]), FakeCellTypesDataset([3])]
+    )
+    source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
+    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
+    node = backend._make_node(source, display, "/tmp/data/blocks.vtm", "source", "blocks")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.set_cell_face_visibility(False, True)
+
+    assert display.Visibility == 0
+    assert backend.simple.extracts[0].CellTypes == ["Line"]
+    assert node["cell_dimension_extracts"][1]["display"].Visibility == 1
 
 
 def test_save_active_data_uses_legacy_writer_for_vtk(tmp_path, monkeypatch):
@@ -901,8 +938,8 @@ def test_get_ui_state_reports_defaults_without_active_source():
     ]
     assert ui_state["selected_array"] == ARRAY_SOLID
     assert ui_state["representation"] == "Surface with Edges"
-    assert ui_state["show_volume_cells"] is True
-    assert ui_state["show_surface_cells"] is True
+    assert ui_state["show_cells"] is True
+    assert ui_state["show_faces"] is True
 
 
 def test_get_ui_state_reports_pipeline_metadata_for_active_source():

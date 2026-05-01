@@ -510,26 +510,26 @@ def register_paraview_controllers(
         update_paraview_ui_state()
         render_and_push()
 
-    @ctrl.add("pv_set_cell_visibility")
-    def pv_set_cell_visibility(volume_visible=None, surface_visible=None):
-        """Show or hide intrinsic volume/surface cells for the active node."""
+    @ctrl.add("pv_set_cell_face_visibility")
+    def pv_set_cell_face_visibility(cells_visible=None, faces_visible=None):
+        """Show or hide semantic cells/faces for the active ParaView node."""
         if not is_paraview_backend() or not state.active_pipeline_item:
             return
 
         if (
-            surface_visible is None
-            and isinstance(volume_visible, (list, tuple))
-            and len(volume_visible) >= 2
+            faces_visible is None
+            and isinstance(cells_visible, (list, tuple))
+            and len(cells_visible) >= 2
         ):
-            volume_visible, surface_visible = volume_visible[:2]
-        if volume_visible is None:
-            volume_visible = getattr(state, "show_volume_cells", True)
-        if surface_visible is None:
-            surface_visible = getattr(state, "show_surface_cells", True)
+            cells_visible, faces_visible = cells_visible[:2]
+        if cells_visible is None:
+            cells_visible = getattr(state, "show_cells", True)
+        if faces_visible is None:
+            faces_visible = getattr(state, "show_faces", True)
 
         try:
-            pv_backend.set_cell_dimension_visibility(
-                bool(volume_visible), bool(surface_visible)
+            pv_backend.set_cell_face_visibility(
+                bool(cells_visible), bool(faces_visible)
             )
             update_paraview_ui_state()
             render_and_push()
@@ -548,8 +548,8 @@ def register_paraview_controllers(
             color_bar_visible = bool(getattr(state, "color_bar_visible", False))
             color_range_min = getattr(state, "color_range_min", "")
             color_range_max = getattr(state, "color_range_max", "")
-            show_volume_cells = bool(getattr(state, "show_volume_cells", True))
-            show_surface_cells = bool(getattr(state, "show_surface_cells", True))
+            show_cells = bool(getattr(state, "show_cells", True))
+            show_faces = bool(getattr(state, "show_faces", True))
             source_properties = [
                 dict(item) for item in getattr(state, "source_properties", []) or []
             ]
@@ -562,9 +562,9 @@ def register_paraview_controllers(
             )
             pv_backend.apply_representation(state.representation)
             pv_backend.apply_coloring(selected_array or default_array)
-            set_cell_visibility = getattr(pv_backend, "set_cell_dimension_visibility", None)
+            set_cell_visibility = getattr(pv_backend, "set_cell_face_visibility", None)
             if callable(set_cell_visibility):
-                set_cell_visibility(show_volume_cells, show_surface_cells)
+                set_cell_visibility(show_cells, show_faces)
             apply_properties = getattr(pv_backend, "apply_property_changes", None)
             if callable(apply_properties):
                 try:

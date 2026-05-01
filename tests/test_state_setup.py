@@ -60,8 +60,8 @@ def test_initialize_state_populates_defaults_for_paraview_backend():
     assert state.available_arrays == [{"text": "Solid Color", "value": ARRAY_SOLID}]
     assert state.selected_array == ARRAY_SOLID
     assert state.representation == "Surface with Edges"
-    assert state.show_volume_cells is True
-    assert state.show_surface_cells is True
+    assert state.show_cells is True
+    assert state.show_faces is True
     assert state.edit_target == BOUNDARY
     assert state.filter_supported_options == [
         {"text": "Clip", "value": "clip", "icon": "mdi-content-cut"}

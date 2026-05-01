@@ -816,20 +816,20 @@ def _build_paraview_inspector_panel(ctrl):
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
                                 vuetify.VCheckbox(
-                                    v_model=("show_volume_cells",),
-                                    label="Show volume cells",
+                                    v_model=("show_cells",),
+                                    label="Show cells",
                                     dense=True,
                                     hide_details=True,
                                     classes="mt-0",
-                                    change=(ctrl.pv_set_cell_visibility, "[show_volume_cells, show_surface_cells]"),
+                                    change=(ctrl.pv_set_cell_face_visibility, "[show_cells, show_faces]"),
                                 )
                                 vuetify.VCheckbox(
-                                    v_model=("show_surface_cells",),
-                                    label="Show surface cells",
+                                    v_model=("show_faces",),
+                                    label="Show faces",
                                     dense=True,
                                     hide_details=True,
                                     classes="mt-0",
-                                    change=(ctrl.pv_set_cell_visibility, "[show_volume_cells, show_surface_cells]"),
+                                    change=(ctrl.pv_set_cell_face_visibility, "[show_cells, show_faces]"),
                                 )
                     vuetify.VDivider(classes="my-4")
                     vuetify.VSubheader(classes="px-0", children=["Advanced Display Controls"])

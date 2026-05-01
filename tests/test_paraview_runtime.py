@@ -87,8 +87,8 @@ class FakeParaViewBackend:
             "active_visibility": True,
             "selected_array": "cell:M",
             "representation": "Wireframe",
-            "show_volume_cells": True,
-            "show_surface_cells": False,
+            "show_cells": True,
+            "show_faces": False,
             "time_values": [0.0, 1.0, 2.0, 3.0],
             "current_time": 0.0,
             "time_index": 0,
@@ -265,8 +265,8 @@ def test_update_ui_state_applies_backend_metadata_and_editability_flags():
     ]
     assert state.selected_array == "cell:M"
     assert state.representation == "Wireframe"
-    assert state.show_volume_cells is True
-    assert state.show_surface_cells is False
+    assert state.show_cells is True
+    assert state.show_faces is False
     assert state.time_values == [0.0, 1.0, 2.0, 3.0]
     assert state.current_time == 0.0
     assert state.time_index == 0
@@ -294,8 +294,8 @@ def test_update_ui_state_tolerates_missing_backend_keys():
     assert state.available_arrays == [{"text": "Solid Color", "value": ARRAY_SOLID}]
     assert state.selected_array == ARRAY_SOLID
     assert state.representation == "Surface with Edges"
-    assert state.show_volume_cells is True
-    assert state.show_surface_cells is True
+    assert state.show_cells is True
+    assert state.show_faces is True
     assert state.time_values == []
     assert state.total_timesteps == 0
     assert state.is_time_dependent is False
