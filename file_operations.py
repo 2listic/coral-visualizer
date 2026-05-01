@@ -1,5 +1,6 @@
 """File and save helpers shared by Trame controllers."""
 
+import errno
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,12 +23,13 @@ class FileOperationService:
     def persist_uploaded_file(self, client_file):
         return persist_uploaded_file(self.data_directory, client_file)
 
-    def save_paraview_output(self):
+    def save_paraview_output(self, overwrite=False):
         return save_paraview_output(
             state=self.state,
             data_directory=self.data_directory,
             pv_backend=self.pv_backend,
             edit_session=self.edit_session,
+            overwrite=overwrite,
         )
 
 
@@ -67,14 +69,15 @@ def persist_uploaded_file(data_directory, client_file):
     return str(candidate)
 
 
-def save_paraview_output(*, state, data_directory, pv_backend, edit_session):
-    """Save the active ParaView output or edit-session dataset and return its path."""
+def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_session):
+    """Resolve the active ParaView save target and classify the output kind."""
     if pv_backend.source is None and not edit_session.active:
         raise RuntimeError("No active pipeline item to save")
 
     if edit_session.active:
         fallback_name = edit_session.default_output_filename()
-        output_path = resolve_output_path(data_directory, state.save_filename, fallback_name)
+        output_path = resolve_output_path(
+            data_directory, state.save_filename, fallback_name)
         suffix = os.path.splitext(output_path)[1].lower()
         if not suffix:
             output_path += ".vtu"
@@ -82,20 +85,42 @@ def save_paraview_output(*, state, data_directory, pv_backend, edit_session):
             raise ValueError(
                 "Unsupported edit output format. Use .vtu or .vtk for edit-session saves."
             )
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        edit_session.save(output_path)
         saved_kind = "edited dataset"
     else:
         fallback_name = pv_backend.default_output_filename()
-        output_path = resolve_output_path(data_directory, state.save_filename, fallback_name)
+        output_path = resolve_output_path(
+            data_directory, state.save_filename, fallback_name)
         if not os.path.splitext(output_path)[1]:
             output_path += pv_backend.default_output_extension()
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        pv_backend.save_active_data(output_path)
         saved_kind = "pipeline result"
 
-    refresh_available_files(state, data_directory)
+    return output_path, saved_kind
+
+
+def save_paraview_output(*, state, data_directory, pv_backend, edit_session, overwrite=False):
+    """Save the active ParaView output or edit-session dataset and return its path."""
+    output_path, saved_kind = resolve_paraview_output_path(
+        state=state,
+        data_directory=data_directory,
+        pv_backend=pv_backend,
+        edit_session=edit_session,
+    )
     relative_output = os.path.relpath(output_path, data_directory)
+
+    if os.path.exists(output_path) and not overwrite:
+        raise FileExistsError(
+            errno.EEXIST,
+            "Output file already exists",
+            relative_output,
+        )
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    if edit_session.active:
+        edit_session.save(output_path)
+    else:
+        pv_backend.save_active_data(output_path)
+
+    refresh_available_files(state, data_directory)
     state.save_filename = relative_output
     state.save_status = f"Saved {saved_kind} to {relative_output}"
     state.save_status_type = "success"

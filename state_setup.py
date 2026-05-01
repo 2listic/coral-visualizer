@@ -185,6 +185,9 @@ def initialize_state(
     state.save_filename = "output"
     state.save_status = ""
     state.save_status_type = "success"
+    state.save_overwrite_dialog = False
+    state.save_overwrite_target = ""
+    state.save_overwrite_action = ""
     state.pick_mode = False
     state.selection_behavior = "touch"
     state.selection_behavior_options = [

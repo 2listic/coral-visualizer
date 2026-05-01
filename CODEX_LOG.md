@@ -218,6 +218,10 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Extracted ParaView generated-property inspection/editing into `paraview_property_inspector.py`.
   - Removed unused local-view helper functions that were no longer on the active path.
   - Centralized interaction-quality presets in `constants.py`.
+  - Added overwrite confirmation before replacing existing save targets.
+    - ParaView `Save Result` and `Save And Add To Pipeline` now open a confirmation dialog when the destination file already exists.
+    - VTK `.vtu` saves now use the same confirmation flow instead of silently overwriting files.
+    - Centralized overwrite guards in `file_operations.py` and added controller/UI regression coverage.
 - Added broad unit-test coverage for the refactored support modules.
   - Added dedicated tests for `state_setup.py`, `file_operations.py`, `handler_registration.py`,
     `paraview_filter_catalog.py`, and `paraview_property_inspector.py`.

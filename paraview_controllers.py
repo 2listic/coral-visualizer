@@ -57,6 +57,45 @@ def register_paraview_controllers(
             return "", ""
         return association, name
 
+    def _close_save_overwrite_dialog():
+        state.save_overwrite_dialog = False
+        state.save_overwrite_target = ""
+        state.save_overwrite_action = ""
+
+    def _open_save_overwrite_dialog(action, exc):
+        state.save_overwrite_action = action
+        state.save_overwrite_target = getattr(
+            exc, "filename", "") or state.save_filename
+        state.save_overwrite_dialog = True
+        state.save_status = ""
+
+    def _save_active_data(overwrite=False):
+        save_paraview_output(overwrite=overwrite)
+
+    def _commit_edit_session(overwrite=False):
+        debug_view("pv_commit_edit_session.start", mode=state.mainViewMode)
+        output_path = save_paraview_output(overwrite=overwrite)
+        edit_session.clear()
+        clear_edit_target = getattr(
+            pv_backend, "clear_edit_target_dataset", None)
+        if callable(clear_edit_target):
+            clear_edit_target()
+        sync_edit_session_state()
+        sync_paraview_edit_selection_overlay()
+        state.inspector_tab = 0
+        call_view_set_remote_rendering(True)
+        state.edit_status = "Edit session saved and added to the pipeline"
+        state.edit_status_type = "success"
+
+        arrays, default_array = pv_backend.load_file(output_path)
+        pv_backend.apply_representation(state.representation)
+        pv_backend.apply_coloring(default_array)
+        update_paraview_ui_state()
+        state.available_arrays = arrays
+        state.selected_array = default_array
+        render_and_push()
+        debug_view("pv_commit_edit_session.end", mode=state.mainViewMode)
+
     def _apply_geometry_options_for_association(association):
         if association == "point":
             state.edit_geometry_mode_options = list(
@@ -131,7 +170,8 @@ def register_paraview_controllers(
         if mode == "surface":
             if len(picked_ids or []) > 50:
                 return []
-            resolver = getattr(edit_session, "_surface_keys_from_top_cells", None)
+            resolver = getattr(
+                edit_session, "_surface_keys_from_top_cells", None)
             if callable(resolver):
                 try:
                     resolved = resolver(picked_ids)
@@ -179,7 +219,8 @@ def register_paraview_controllers(
                 try:
                     apply_preset(preset)
                 except Exception as exc:
-                    _set_color_status(f"Color map restore skipped: {exc}", "warning")
+                    _set_color_status(
+                        f"Color map restore skipped: {exc}", "warning")
 
         if range_min != "" and range_max != "":
             apply_range = getattr(pv_backend, "apply_color_range", None)
@@ -187,12 +228,14 @@ def register_paraview_controllers(
                 try:
                     apply_range(range_min, range_max)
                 except Exception as exc:
-                    _set_color_status(f"Color range restore skipped: {exc}", "warning")
+                    _set_color_status(
+                        f"Color range restore skipped: {exc}", "warning")
 
         set_categorical = getattr(pv_backend, "set_categorical_coloring", None)
         if callable(set_categorical):
             try:
-                set_categorical(bool(getattr(state, "categorical_coloring", False)))
+                set_categorical(
+                    bool(getattr(state, "categorical_coloring", False)))
             except Exception as exc:
                 _set_color_status(
                     f"Categorical coloring restore skipped: {exc}", "warning"
@@ -203,7 +246,8 @@ def register_paraview_controllers(
             try:
                 set_bar_visible(visible)
             except Exception as exc:
-                _set_color_status(f"Color scale restore skipped: {exc}", "warning")
+                _set_color_status(
+                    f"Color scale restore skipped: {exc}", "warning")
 
     def _set_color_status(message, status_type="success"):
         state.color_controls_status = message
@@ -296,11 +340,14 @@ def register_paraview_controllers(
         )
         state.edit_selection_status_type = "success"
         if mode == "surface":
-            selected_now = sorted(getattr(edit_session, "selected_surface_keys", set()))
+            selected_now = sorted(
+                getattr(edit_session, "selected_surface_keys", set()))
         elif mode == "point":
-            selected_now = sorted(getattr(edit_session, "selected_point_ids", set()))
+            selected_now = sorted(
+                getattr(edit_session, "selected_point_ids", set()))
         else:
-            selected_now = sorted(getattr(edit_session, "selected_cell_ids", set()))
+            selected_now = sorted(
+                getattr(edit_session, "selected_cell_ids", set()))
         print(
             "[selection-debug] controller.apply.end "
             f"mode={mode} selection_mode={selection_mode} "
@@ -545,7 +592,8 @@ def register_paraview_controllers(
         try:
             property_restore_error = ""
             selected_array = getattr(state, "selected_array", "") or ""
-            color_bar_visible = bool(getattr(state, "color_bar_visible", False))
+            color_bar_visible = bool(
+                getattr(state, "color_bar_visible", False))
             color_range_min = getattr(state, "color_range_min", "")
             color_range_max = getattr(state, "color_range_max", "")
             show_cells = bool(getattr(state, "show_cells", True))
@@ -562,10 +610,12 @@ def register_paraview_controllers(
             )
             pv_backend.apply_representation(state.representation)
             pv_backend.apply_coloring(selected_array or default_array)
-            set_cell_visibility = getattr(pv_backend, "set_cell_face_visibility", None)
+            set_cell_visibility = getattr(
+                pv_backend, "set_cell_face_visibility", None)
             if callable(set_cell_visibility):
                 set_cell_visibility(show_cells, show_faces)
-            apply_properties = getattr(pv_backend, "apply_property_changes", None)
+            apply_properties = getattr(
+                pv_backend, "apply_property_changes", None)
             if callable(apply_properties):
                 try:
                     apply_properties(source_properties, display_properties)
@@ -626,10 +676,38 @@ def register_paraview_controllers(
             return
 
         try:
-            save_paraview_output()
+            _save_active_data()
+        except FileExistsError as exc:
+            _open_save_overwrite_dialog("save", exc)
         except Exception as exc:
             state.save_status = f"Error: {exc}"
             state.save_status_type = "error"
+
+    @ctrl.add("pv_confirm_save_overwrite")
+    def pv_confirm_save_overwrite():
+        """Confirm overwrite for ParaView save operations."""
+        if not is_paraview_backend():
+            return
+
+        action = getattr(state, "save_overwrite_action", "")
+        try:
+            _close_save_overwrite_dialog()
+            if action == "commit":
+                _commit_edit_session(overwrite=True)
+            else:
+                _save_active_data(overwrite=True)
+        except Exception as exc:
+            if action == "commit":
+                state.edit_status = f"Could not add edited result to pipeline: {exc}"
+                state.edit_status_type = "error"
+            else:
+                state.save_status = f"Error: {exc}"
+                state.save_status_type = "error"
+
+    @ctrl.add("pv_cancel_save_overwrite")
+    def pv_cancel_save_overwrite():
+        """Dismiss save overwrite confirmation without saving."""
+        _close_save_overwrite_dialog()
 
     @ctrl.add("pv_begin_edit_session")
     def pv_begin_edit_session():
@@ -646,7 +724,8 @@ def register_paraview_controllers(
                 exported["filename"],
                 exported["dataset"],
             )
-            set_edit_target = getattr(pv_backend, "set_edit_target_dataset", None)
+            set_edit_target = getattr(
+                pv_backend, "set_edit_target_dataset", None)
             if callable(set_edit_target):
                 set_edit_target(edit_session.working_dataset)
 
@@ -687,7 +766,8 @@ def register_paraview_controllers(
         """Discard the current edit session."""
         debug_view("pv_discard_edit_session.start", mode=state.mainViewMode)
         edit_session.clear()
-        clear_edit_target = getattr(pv_backend, "clear_edit_target_dataset", None)
+        clear_edit_target = getattr(
+            pv_backend, "clear_edit_target_dataset", None)
         if callable(clear_edit_target):
             clear_edit_target()
         sync_edit_session_state()
@@ -718,27 +798,9 @@ def register_paraview_controllers(
             return
 
         try:
-            debug_view("pv_commit_edit_session.start", mode=state.mainViewMode)
-            output_path = save_paraview_output()
-            edit_session.clear()
-            clear_edit_target = getattr(pv_backend, "clear_edit_target_dataset", None)
-            if callable(clear_edit_target):
-                clear_edit_target()
-            sync_edit_session_state()
-            sync_paraview_edit_selection_overlay()
-            state.inspector_tab = 0
-            call_view_set_remote_rendering(True)
-            state.edit_status = "Edit session saved and added to the pipeline"
-            state.edit_status_type = "success"
-
-            arrays, default_array = pv_backend.load_file(output_path)
-            pv_backend.apply_representation(state.representation)
-            pv_backend.apply_coloring(default_array)
-            update_paraview_ui_state()
-            state.available_arrays = arrays
-            state.selected_array = default_array
-            render_and_push()
-            debug_view("pv_commit_edit_session.end", mode=state.mainViewMode)
+            _commit_edit_session()
+        except FileExistsError as exc:
+            _open_save_overwrite_dialog("commit", exc)
         except Exception as exc:
             state.edit_status = f"Could not add edited result to pipeline: {exc}"
             state.edit_status_type = "error"
@@ -748,7 +810,8 @@ def register_paraview_controllers(
         """Apply the selected color-map preset to the active scalar coloring."""
         if not is_paraview_backend() or pv_backend.display is None:
             return
-        preset = (preset or getattr(state, "color_map_preset", "") or "").strip()
+        preset = (preset or getattr(
+            state, "color_map_preset", "") or "").strip()
         if not preset:
             return
         try:
@@ -797,7 +860,8 @@ def register_paraview_controllers(
             _set_color_status("Rescaled color range over time.")
             state.rescale_over_time_dialog = False
         except Exception as exc:
-            _set_color_status(f"Color range rescale over time failed: {exc}", "error")
+            _set_color_status(
+                f"Color range rescale over time failed: {exc}", "error")
 
     @ctrl.add("pv_set_time")
     def pv_set_time(time_value):
@@ -885,14 +949,14 @@ def register_paraview_controllers(
         """Perform a single animation step if playing."""
         if not state.time_playing:
             return
-        
+
         try:
             old_index = state.time_index
             pv_backend.set_time_step(1)
             update_paraview_ui_state()
             render_and_push()
             _flush_time_state()
-            
+
             # Loop if we didn't advance (at end)
             if state.time_index == old_index and state.total_timesteps > 1:
                 if bool(getattr(state, "time_loop", True)):
@@ -904,13 +968,14 @@ def register_paraview_controllers(
                     state.time_playing = False
                     _flush_time_state()
                     return
-            
+
             # Schedule next step
             import asyncio
+
             async def _next():
                 await asyncio.sleep(0.1)
                 ctrl.pv_animate_step()
-            
+
             asyncio.create_task(_next())
         except Exception as exc:
             state.time_playing = False
@@ -955,7 +1020,8 @@ def register_paraview_controllers(
                 "Orientation axes shown." if visible else "Orientation axes hidden."
             )
         except Exception as exc:
-            _set_color_status(f"Orientation axes update failed: {exc}", "error")
+            _set_color_status(
+                f"Orientation axes update failed: {exc}", "error")
 
     @ctrl.add("pv_set_categorical_coloring")
     def pv_set_categorical_coloring(enabled=None):
@@ -977,7 +1043,8 @@ def register_paraview_controllers(
                 else "Categorical colors disabled."
             )
         except Exception as exc:
-            _set_color_status(f"Categorical color update failed: {exc}", "error")
+            _set_color_status(
+                f"Categorical color update failed: {exc}", "error")
 
     @ctrl.add("pv_on_edit_field_choice")
     def pv_on_edit_field_choice(choice=None):
@@ -1139,11 +1206,13 @@ def register_paraview_controllers(
             if coords is not None:
                 selection_debug.log("click", x=coords[0], y=coords[1])
                 with timing.phase("backend_pick"):
-                    picked_ids = _pick_edit_ids_at_coords(mode, coords[0], coords[1])
+                    picked_ids = _pick_edit_ids_at_coords(
+                        mode, coords[0], coords[1])
                 _append_backend_timing(timing)
             else:
                 with timing.phase("payload_pick"):
-                    picked_ids = [item for item in normalized if isinstance(item, int)]
+                    picked_ids = [
+                        item for item in normalized if isinstance(item, int)]
 
             if not picked_ids:
                 with timing.phase("empty_status"):
@@ -1190,7 +1259,8 @@ def register_paraview_controllers(
         try:
             with timing.phase("summarize_event"):
                 state.edit_selection_event = summarize_edit_event(event)
-            selection = event.get("selection") if isinstance(event, dict) else None
+            selection = event.get("selection") if isinstance(
+                event, dict) else None
             if not isinstance(selection, (list, tuple)) or len(selection) != 4:
                 with timing.phase("invalid_status"):
                     state.edit_selection_status = (
@@ -1244,7 +1314,8 @@ def register_paraview_controllers(
                 timing.update(mode=mode, picked_count=0)
                 return
 
-            _apply_selection_ids(picked_ids, "box selection", timing=timing, mode=mode)
+            _apply_selection_ids(picked_ids, "box selection",
+                                 timing=timing, mode=mode)
         except Exception:
             status = "error"
             raise

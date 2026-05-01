@@ -5,6 +5,7 @@ import traceback
 
 from constants import BOUNDARY, MATERIAL_ID_ARRAY, VOLUME
 from diagnostics import debug_log, devtools_enabled
+from file_operations import resolve_output_path
 
 
 def register_vtk_handlers(
@@ -28,6 +29,40 @@ def register_vtk_handlers(
     apply_vtk_representation_to_scene,
 ):
     """Register VTK-only state callbacks and controller callbacks."""
+
+    def _close_save_overwrite_dialog():
+        state.save_overwrite_dialog = False
+        state.save_overwrite_target = ""
+        state.save_overwrite_action = ""
+
+    def _build_vtu_output_path():
+        filename = state.save_filename.strip()
+        if not filename:
+            filename = "output"
+        output_path = resolve_output_path(data_directory, filename, "output")
+        if not output_path.endswith(".vtu"):
+            output_path += ".vtu"
+        return output_path
+
+    def _save_vtu(overwrite=False):
+        output_path = _build_vtu_output_path()
+        relative_output = os.path.relpath(output_path, data_directory)
+        if os.path.exists(output_path) and not overwrite:
+            state.save_overwrite_target = relative_output
+            state.save_overwrite_action = "vtk_save"
+            state.save_overwrite_dialog = True
+            state.save_status = ""
+            return
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        save_as_vtu(edit_state, output_path)
+
+        state.save_filename = relative_output
+        state.save_status = f"Saved to {os.path.relpath(output_path)}"
+        state.save_status_type = "success"
+
+        refresh_available_files()
+        debug_log(f"  Saved to {output_path}")
 
     @state.change("edit_mode")
     def on_edit_mode_change(edit_mode, **kwargs):
@@ -226,24 +261,31 @@ def register_vtk_handlers(
             return
 
         try:
-            filename = state.save_filename.strip()
-            if not filename:
-                filename = "output"
-            if not filename.endswith(".vtu"):
-                filename += ".vtu"
-            os.makedirs(data_directory, exist_ok=True)
-            output_path = os.path.join(data_directory, filename)
-
-            save_as_vtu(edit_state, output_path)
-
-            state.save_status = f"Saved to {os.path.relpath(output_path)}"
-            state.save_status_type = "success"
-
-            refresh_available_files()
-            debug_log(f"  Saved to {output_path}")
+            _save_vtu()
         except Exception as exc:
             state.save_status = f"Error: {str(exc)}"
             state.save_status_type = "error"
             debug_log(f"Save error: {exc}")
             if devtools_enabled():
                 traceback.print_exc()
+
+    @ctrl.add("confirm_save_overwrite_vtu")
+    def confirm_save_overwrite_vtu():
+        """Confirm overwrite for VTK save operations."""
+        if not is_vtk_backend():
+            return
+
+        try:
+            _close_save_overwrite_dialog()
+            _save_vtu(overwrite=True)
+        except Exception as exc:
+            state.save_status = f"Error: {str(exc)}"
+            state.save_status_type = "error"
+            debug_log(f"Save error: {exc}")
+            if devtools_enabled():
+                traceback.print_exc()
+
+    @ctrl.add("cancel_save_overwrite_vtu")
+    def cancel_save_overwrite_vtu():
+        """Dismiss overwrite confirmation without saving."""
+        _close_save_overwrite_dialog()

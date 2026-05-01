@@ -47,8 +47,10 @@ def test_pv_update_property_updates_pending_value_and_dirty_flag():
     ctrl.handlers["pv_update_property"]("source", "Opacity", 0.5)
     ctrl.handlers["pv_update_property"]("display", "LineWidth", 3.0)
 
-    assert state.source_properties == [{"name": "Opacity", "pending_value": 0.5}]
-    assert state.display_properties == [{"name": "LineWidth", "pending_value": 3.0}]
+    assert state.source_properties == [
+        {"name": "Opacity", "pending_value": 0.5}]
+    assert state.display_properties == [
+        {"name": "LineWidth", "pending_value": 3.0}]
     assert state.pv_properties_dirty is True
 
 
@@ -71,7 +73,8 @@ def test_pv_apply_and_reset_properties_refresh_ui_and_render():
         is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
-        refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
+        refresh_runtime_message=lambda **kwargs: calls.append(
+            ("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
@@ -106,7 +109,8 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     )
     pv_backend = SimpleNamespace(
         get_visibility=lambda node_id: True if node_id == "node-1" else None,
-        set_visibility=lambda node_id, visible: calls.append((node_id, visible)),
+        set_visibility=lambda node_id, visible: calls.append(
+            (node_id, visible)),
     )
 
     register_paraview_controllers(
@@ -118,7 +122,8 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: calls.append("update_ui"),
         render_and_push=lambda: calls.append("render"),
-        save_paraview_output=lambda: (_ for _ in ()).throw(RuntimeError("cannot save")),
+        save_paraview_output=lambda **kwargs: (
+            _ for _ in ()).throw(RuntimeError("cannot save")),
         debug_view=lambda *args, **kwargs: None,
         call_view_update_geometry=lambda **kwargs: None,
         call_view_set_remote_rendering=lambda enabled: None,
@@ -135,6 +140,135 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     assert calls[:3] == [("node-1", False), "update_ui", "render"]
     assert state.save_status == "Error: cannot save"
     assert state.save_status_type == "error"
+
+
+def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        active_visibility=True,
+        save_status="",
+        save_status_type="info",
+        save_overwrite_dialog=False,
+        save_overwrite_target="",
+        save_overwrite_action="",
+    )
+
+    def save_with_confirmation(*, overwrite=False):
+        calls.append(overwrite)
+        if not overwrite:
+            raise FileExistsError(17, "exists", "exports/final.vtu")
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=SimpleNamespace(active=False),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=save_with_confirmation,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_save_active_data"]()
+
+    assert calls == [False]
+    assert state.save_overwrite_dialog is True
+    assert state.save_overwrite_target == "exports/final.vtu"
+    assert state.save_overwrite_action == "save"
+
+    ctrl.handlers["pv_confirm_save_overwrite"]()
+
+    assert calls == [False, True]
+    assert state.save_overwrite_dialog is False
+    assert state.save_overwrite_target == ""
+    assert state.save_overwrite_action == ""
+
+
+def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        mainViewMode="remote",
+        save_status="",
+        save_status_type="info",
+        save_overwrite_dialog=False,
+        save_overwrite_target="",
+        save_overwrite_action="",
+        inspector_tab=3,
+        edit_status="",
+        edit_status_type="info",
+        representation="Surface",
+        available_arrays=[],
+        selected_array="__solid__",
+    )
+    edit_session = SimpleNamespace(
+        active=True, clear=lambda: calls.append("clear"))
+    pv_backend = SimpleNamespace(
+        clear_edit_target_dataset=lambda: calls.append("clear_target"),
+        load_file=lambda output_path: (
+            [{"text": "Solid Color", "value": "__solid__"}], "__solid__"),
+        apply_representation=lambda representation: calls.append(
+            ("representation", representation)),
+        apply_coloring=lambda array_name: calls.append(
+            ("coloring", array_name)),
+    )
+
+    def save_with_confirmation(*, overwrite=False):
+        calls.append(("save", overwrite))
+        if not overwrite:
+            raise FileExistsError(17, "exists", "results/edited_mesh.vtu")
+        return "/tmp/data/results/edited_mesh.vtu"
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: calls.append("update_ui"),
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=save_with_confirmation,
+        debug_view=lambda *args, **kwargs: calls.append(("debug", args[0])),
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: calls.append(
+            ("remote", enabled)),
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: calls.append("sync_edit"),
+        sync_paraview_edit_selection_overlay=lambda: calls.append(
+            "sync_overlay"),
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_commit_edit_session"]()
+
+    assert state.save_overwrite_dialog is True
+    assert state.save_overwrite_target == "results/edited_mesh.vtu"
+    assert state.save_overwrite_action == "commit"
+
+    ctrl.handlers["pv_confirm_save_overwrite"]()
+
+    assert ("save", True) in calls
+    assert "clear" in calls
+    assert "sync_edit" in calls
+    assert "sync_overlay" in calls
+    assert ("remote", True) in calls
+    assert "update_ui" in calls
+    assert "render" in calls
+    assert state.edit_status == "Edit session saved and added to the pipeline"
+    assert state.edit_status_type == "success"
 
 
 def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():
@@ -258,7 +392,8 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
         ),
         apply_color_map_preset=lambda preset: calls.append(("preset", preset)),
         apply_color_range=lambda low, high: calls.append(("range", low, high)),
-        set_categorical_coloring=lambda enabled: calls.append(("categorical", enabled)),
+        set_categorical_coloring=lambda enabled: calls.append(
+            ("categorical", enabled)),
         set_scalar_bar_visible=lambda visible: calls.append(("bar", visible)),
     )
 
@@ -268,7 +403,8 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
         is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
-        refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
+        refresh_runtime_message=lambda **kwargs: calls.append(
+            ("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
@@ -336,7 +472,8 @@ def test_pv_reload_active_file_skips_invalid_restored_preset():
         apply_color_map_preset=lambda preset: (_ for _ in ()).throw(
             RuntimeError("missing preset")
         ),
-        set_categorical_coloring=lambda enabled: calls.append(("categorical", enabled)),
+        set_categorical_coloring=lambda enabled: calls.append(
+            ("categorical", enabled)),
         set_scalar_bar_visible=lambda visible: calls.append(("bar", visible)),
     )
 
@@ -346,7 +483,8 @@ def test_pv_reload_active_file_skips_invalid_restored_preset():
         is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
-        refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
+        refresh_runtime_message=lambda **kwargs: calls.append(
+            ("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
@@ -420,7 +558,8 @@ def test_pv_add_filter_success_and_failure_paths():
         error_message="",
     )
 
-    backend_success = SimpleNamespace(add_filter=lambda key: calls.append(("add_filter", key)))
+    backend_success = SimpleNamespace(
+        add_filter=lambda key: calls.append(("add_filter", key)))
 
     register_paraview_controllers(
         ctrl,
@@ -428,7 +567,8 @@ def test_pv_add_filter_success_and_failure_paths():
         is_paraview_backend=lambda: True,
         pv_backend=backend_success,
         edit_session=SimpleNamespace(),
-        refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
+        refresh_runtime_message=lambda **kwargs: calls.append(
+            ("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
@@ -455,7 +595,8 @@ def test_pv_add_filter_success_and_failure_paths():
 
     state.filter_menu = True
     failing_backend = SimpleNamespace(
-        add_filter=lambda key: (_ for _ in ()).throw(RuntimeError("bad filter"))
+        add_filter=lambda key: (_ for _ in ()).throw(
+            RuntimeError("bad filter"))
     )
 
     register_paraview_controllers(
@@ -501,7 +642,8 @@ def test_pv_apply_edit_field_requires_field_choice():
         expression="",
         default_value="",
         assign_to_selected=lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("assign_to_selected should not run without field choice")
+            AssertionError(
+                "assign_to_selected should not run without field choice")
         ),
         selected_count=lambda: 0,
     )
@@ -553,8 +695,10 @@ def test_pv_color_control_handlers_apply_backend_updates():
         apply_color_range=lambda low, high: calls.append(("range", low, high)),
         rescale_color_range_to_data=lambda: calls.append("rescale"),
         set_scalar_bar_visible=lambda visible: calls.append(("bar", visible)),
-        set_orientation_axes_visible=lambda visible: calls.append(("axes", visible)),
-        set_categorical_coloring=lambda enabled: calls.append(("categorical", enabled)),
+        set_orientation_axes_visible=lambda visible: calls.append(
+            ("axes", visible)),
+        set_categorical_coloring=lambda enabled: calls.append(
+            ("categorical", enabled)),
     )
 
     register_paraview_controllers(
@@ -651,7 +795,8 @@ def test_pv_create_edit_field_existing_name_opens_overwrite_dialog():
         geometry_mode="",
         has_field=lambda name, association: True,
         create_field=lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("create_field should not run before overwrite confirm")
+            AssertionError(
+                "create_field should not run before overwrite confirm")
         ),
         selected_count=lambda: 3,
     )
@@ -699,7 +844,8 @@ def test_pv_confirm_overwrite_edit_field_creates_with_overwrite_true():
         edit_apply_status_type="info",
         edit_overwrite_dialog=True,
         edit_overwrite_field_name="A field",
-        edit_cell_geometry_mode_options=[{"text": "Volume", "value": "volume"}],
+        edit_cell_geometry_mode_options=[
+            {"text": "Volume", "value": "volume"}],
         edit_point_geometry_mode_options=[{"text": "Point", "value": "point"}],
     )
     edit_session = SimpleNamespace(
@@ -750,7 +896,8 @@ def test_pv_apply_edit_field_surface_mode_assigns_to_selected():
         edit_apply_status_type="info",
         edit_overwrite_dialog=False,
         edit_overwrite_field_name="",
-        edit_cell_geometry_mode_options=[{"text": "Surface", "value": "surface"}],
+        edit_cell_geometry_mode_options=[
+            {"text": "Surface", "value": "surface"}],
         edit_point_geometry_mode_options=[{"text": "Point", "value": "point"}],
     )
     edit_session = SimpleNamespace(
@@ -874,9 +1021,11 @@ def test_degenerate_box_selection_uses_click_picker():
         state,
         is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids=lambda x, y: calls.append(("click", x, y)) or [7],
+            pick_visible_cell_ids=lambda x, y: calls.append(("click", x, y)) or [
+                7],
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: (_ for _ in ()).throw(
-                AssertionError("degenerate box should not use rectangle picker")
+                AssertionError(
+                    "degenerate box should not use rectangle picker")
             ),
         ),
         edit_session=edit_session,
@@ -1027,7 +1176,8 @@ def test_surface_mode_click_selection_uses_surface_picker_keys():
     actions = []
     edit_session = SimpleNamespace(active=True, geometry_mode="surface")
     edit_session.replace_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("replace", list(ids), grow)) or 1
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("replace", list(ids), grow)) or 1
     )
     edit_session.add_selection = lambda ids, grow=False, angle_threshold=None: 1
     edit_session.subtract_selection = lambda ids, grow=False, angle_threshold=None: 0
@@ -1080,7 +1230,8 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
     actions = []
     edit_session = SimpleNamespace(active=True, geometry_mode="surface")
     edit_session.replace_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("replace", list(ids), grow)) or 2
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("replace", list(ids), grow)) or 2
     )
     edit_session.add_selection = lambda ids, grow=False, angle_threshold=None: 2
     edit_session.subtract_selection = lambda ids, grow=False, angle_threshold=None: 0
@@ -1091,7 +1242,8 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
         state,
         is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
-            pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [(4, 5, 6), (7, 8, 9)],
+            pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [
+                (4, 5, 6), (7, 8, 9)],
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12],
         ),
         edit_session=edit_session,
@@ -1137,7 +1289,8 @@ def test_surface_mode_box_selection_falls_back_from_inside_to_touch():
     actions = []
     edit_session = SimpleNamespace(active=True, geometry_mode="surface")
     edit_session.replace_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("replace", list(ids), grow)) or 1
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("replace", list(ids), grow)) or 1
     )
     edit_session.add_selection = lambda ids, grow=False, angle_threshold=None: 1
     edit_session.subtract_selection = lambda ids, grow=False, angle_threshold=None: 0
@@ -1198,13 +1351,16 @@ def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
     actions = []
     edit_session = SimpleNamespace(active=True)
     edit_session.replace_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("replace", list(ids), grow)) or 2
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("replace", list(ids), grow)) or 2
     )
     edit_session.add_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("add", list(ids), grow)) or 5
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("add", list(ids), grow)) or 5
     )
     edit_session.subtract_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("subtract", list(ids), grow)) or 3
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("subtract", list(ids), grow)) or 3
     )
 
     register_paraview_controllers(
@@ -1255,16 +1411,20 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
     actions = []
     edit_session = SimpleNamespace(active=True)
     edit_session.replace_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("replace", list(ids), grow)) or 1
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("replace", list(ids), grow)) or 1
     )
     edit_session.add_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("add", list(ids), grow)) or 1
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("add", list(ids), grow)) or 1
     )
     edit_session.subtract_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("subtract", list(ids), grow)) or 0
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("subtract", list(ids), grow)) or 0
     )
     edit_session.flip_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("flip", list(ids), grow)) or 1
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("flip", list(ids), grow)) or 1
     )
 
     register_paraview_controllers(
@@ -1272,7 +1432,8 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
         state,
         is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids=lambda x, y: [41] if (x, y) == (12, 34) else []
+            pick_visible_cell_ids=lambda x, y: [
+                41] if (x, y) == (12, 34) else []
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1346,7 +1507,8 @@ def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payloa
         state,
         is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids=lambda x, y: [1, 2, 3] if (x, y) == (12, 34) else []
+            pick_visible_cell_ids=lambda x, y: [
+                1, 2, 3] if (x, y) == (12, 34) else []
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1392,16 +1554,20 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
     actions = []
     edit_session = SimpleNamespace(active=True)
     edit_session.replace_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("replace", list(ids), grow)) or 2
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("replace", list(ids), grow)) or 2
     )
     edit_session.add_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("add", list(ids), grow)) or 5
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("add", list(ids), grow)) or 5
     )
     edit_session.subtract_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("subtract", list(ids), grow)) or 3
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("subtract", list(ids), grow)) or 3
     )
     edit_session.flip_selection = (
-        lambda ids, grow=False, angle_threshold=None: actions.append(("flip", list(ids), grow)) or 4
+        lambda ids, grow=False, angle_threshold=None: actions.append(
+            ("flip", list(ids), grow)) or 4
     )
 
     register_paraview_controllers(
@@ -1481,7 +1647,8 @@ def test_surface_selection_passes_angle_threshold_to_edit_session():
         state,
         is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
-            pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [(1, 2, 3)],
+            pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [
+                (1, 2, 3)],
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [10],
         ),
         edit_session=edit_session,

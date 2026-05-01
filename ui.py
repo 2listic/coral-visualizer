@@ -28,7 +28,8 @@ def _build_view_widget(backend, render_target, ctrl=None):
             box_selection_change=(ctrl.pv_edit_box_selection, "[$event]"),
             on_ready=ctrl.view_update,
             classes="coral-main-viewport",
-            style=("edit_view_style", "width: 100%; height: 100%; cursor: crosshair; outline: none;"),
+            style=("edit_view_style",
+                   "width: 100%; height: 100%; cursor: crosshair; outline: none;"),
         )
 
     from trame.widgets import vtk
@@ -173,7 +174,8 @@ def _build_toolbar(ctrl, backend):
                 color=("time_loop ? 'primary' : ''",),
             ):
                 vuetify.VIcon("mdi-repeat")
-            html.Div("{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})", classes="ml-2 grey--text text--darken-2", style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;")
+            html.Div("{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})",
+                     classes="ml-2 grey--text text--darken-2", style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;")
             vuetify.VSlider(
                 v_model=("time_index",),
                 min=0,
@@ -225,7 +227,8 @@ def _build_toolbar(ctrl, backend):
         )
         vuetify.VSelect(
             v_model=("representation",),
-            items=([REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POINTS],),
+            items=([REPR_SURFACE, REPR_SURFACE_EDGES,
+                   REPR_WIREFRAME, REPR_POINTS],),
             label="Representation",
             hide_details=True,
             dense=True,
@@ -357,7 +360,8 @@ def _build_inspector_tab_selector():
                         block=True,
                         text=True,
                         tile=True,
-                        color=("inspector_tab === 0 ? 'primary' : 'grey darken-1'",),
+                        color=(
+                            "inspector_tab === 0 ? 'primary' : 'grey darken-1'",),
                         click="inspector_tab = 0",
                         style="border-radius: 0; height: 56px; font-size: 0.95rem; letter-spacing: 0; text-transform: none; padding: 0 4px;",
                     )
@@ -372,7 +376,8 @@ def _build_inspector_tab_selector():
                         block=True,
                         text=True,
                         tile=True,
-                        color=("inspector_tab === 1 ? 'primary' : 'grey darken-1'",),
+                        color=(
+                            "inspector_tab === 1 ? 'primary' : 'grey darken-1'",),
                         click="inspector_tab = 1",
                         style="border-radius: 0; height: 56px; font-size: 0.95rem; letter-spacing: 0; text-transform: none; padding: 0 4px;",
                     )
@@ -387,7 +392,8 @@ def _build_inspector_tab_selector():
                         block=True,
                         text=True,
                         tile=True,
-                        color=("inspector_tab === 2 ? 'primary' : 'grey darken-1'",),
+                        color=(
+                            "inspector_tab === 2 ? 'primary' : 'grey darken-1'",),
                         click="inspector_tab = 2",
                         style="border-radius: 0; height: 56px; font-size: 0.95rem; letter-spacing: 0; text-transform: none; padding: 0 4px;",
                     )
@@ -402,7 +408,8 @@ def _build_inspector_tab_selector():
                         block=True,
                         text=True,
                         tile=True,
-                        color=("inspector_tab === 3 ? 'primary' : 'grey darken-1'",),
+                        color=(
+                            "inspector_tab === 3 ? 'primary' : 'grey darken-1'",),
                         click="inspector_tab = 3",
                         style="border-radius: 0; height: 56px; font-size: 0.95rem; letter-spacing: 0; text-transform: none; padding: 0 4px;",
                     )
@@ -427,7 +434,8 @@ def _build_paraview_pipeline_panel(ctrl):
                 classes="mb-1",
             ):
                 with vuetify.VCol():
-                    vuetify.VSubheader(classes="px-0", children=["Pipeline Browser"])
+                    vuetify.VSubheader(
+                        classes="px-0", children=["Pipeline Browser"])
                 with vuetify.VCol(cols="auto"):
                     with vuetify.VTooltip(bottom=True):
                         with vuetify.Template(v_slot_activator="{ on, attrs }"):
@@ -455,17 +463,20 @@ def _build_paraview_pipeline_panel(ctrl):
                         with vuetify.VListItem(
                             key=("item.value",),
                             value=("item.value",),
-                            style=("item.depth ? 'margin-left: ' + (item.depth * 16) + 'px;' : ''",),
+                            style=(
+                                "item.depth ? 'margin-left: ' + (item.depth * 16) + 'px;' : ''",),
                         ):
                             with vuetify.VListItemIcon():
-                                vuetify.VIcon("{{ item.node_icon || 'mdi-database-outline' }}")
+                                vuetify.VIcon(
+                                    "{{ item.node_icon || 'mdi-database-outline' }}")
                             with vuetify.VListItemContent():
                                 vuetify.VListItemTitle("{{ item.text }}")
                             with vuetify.VListItemAction():
                                 with vuetify.VBtn(
                                     icon=True,
                                     small=True,
-                                    click=(ctrl.pv_toggle_visibility_for, "[item.value]"),
+                                    click=(ctrl.pv_toggle_visibility_for,
+                                           "[item.value]"),
                                 ):
                                     vuetify.VIcon(
                                         "{{ item.visibility_icon || 'mdi-eye-outline' }}",
@@ -474,7 +485,8 @@ def _build_paraview_pipeline_panel(ctrl):
                                     )
 
             vuetify.VDivider(classes="my-4")
-            vuetify.VSubheader(classes="px-0", children=["Selected Pipeline Item"])
+            vuetify.VSubheader(
+                classes="px-0", children=["Selected Pipeline Item"])
             with vuetify.VList(
                 dense=True,
                 style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
@@ -482,11 +494,13 @@ def _build_paraview_pipeline_panel(ctrl):
                 with vuetify.VListItem():
                     with vuetify.VListItemContent():
                         vuetify.VListItemSubtitle("Selected")
-                        vuetify.VListItemTitle("{{ active_source_label || 'No source loaded' }}")
+                        vuetify.VListItemTitle(
+                            "{{ active_source_label || 'No source loaded' }}")
                 with vuetify.VListItem():
                     with vuetify.VListItemContent():
                         vuetify.VListItemSubtitle("{{ active_source_kind }}")
-                        vuetify.VListItemTitle("{{ active_source_type || 'N/A' }}")
+                        vuetify.VListItemTitle(
+                            "{{ active_source_type || 'N/A' }}")
                 with vuetify.VListItem():
                     with vuetify.VListItemContent():
                         with vuetify.VRow(dense=True, classes="px-2"):
@@ -496,7 +510,8 @@ def _build_paraview_pipeline_panel(ctrl):
                                     block=True,
                                     outlined=True,
                                     click=ctrl.pv_toggle_visibility,
-                                    children=["{{ active_visibility ? 'Hide' : 'Show' }}"],
+                                    children=[
+                                        "{{ active_visibility ? 'Hide' : 'Show' }}"],
                                     disabled=("!active_pipeline_item",),
                                     classes="mb-2",
                                 )
@@ -512,7 +527,8 @@ def _build_paraview_pipeline_panel(ctrl):
                                             small=True,
                                             block=True,
                                             outlined=True,
-                                            disabled=("!active_pipeline_item",),
+                                            disabled=(
+                                                "!active_pipeline_item",),
                                             v_bind="attrs",
                                             v_on="on",
                                             classes="mb-2",
@@ -539,12 +555,15 @@ def _build_paraview_pipeline_panel(ctrl):
                                                 v_for="item in filter_supported_options.filter((entry) => !filter_search || entry.text.toLowerCase().includes(filter_search.toLowerCase()))"
                                             ):
                                                 with vuetify.VListItem(
-                                                    click=(ctrl.pv_add_filter, "[item.value]")
+                                                    click=(
+                                                        ctrl.pv_add_filter, "[item.value]")
                                                 ):
                                                     with vuetify.VListItemIcon():
-                                                        vuetify.VIcon("{{ item.icon }}")
+                                                        vuetify.VIcon(
+                                                            "{{ item.icon }}")
                                                     with vuetify.VListItemContent():
-                                                        vuetify.VListItemTitle("{{ item.text }}")
+                                                        vuetify.VListItemTitle(
+                                                            "{{ item.text }}")
                                             vuetify.VDivider(
                                                 v_if="show_experimental_filters && filter_supported_options.filter((entry) => !filter_search || entry.text.toLowerCase().includes(filter_search.toLowerCase())).length && filter_experimental_options.filter((entry) => !filter_search || entry.text.toLowerCase().includes(filter_search.toLowerCase())).length"
                                             )
@@ -557,12 +576,15 @@ def _build_paraview_pipeline_panel(ctrl):
                                                 v_if="show_experimental_filters"
                                             ):
                                                 with vuetify.VListItem(
-                                                    click=(ctrl.pv_add_filter, "[item.value]")
+                                                    click=(
+                                                        ctrl.pv_add_filter, "[item.value]")
                                                 ):
                                                     with vuetify.VListItemIcon():
-                                                        vuetify.VIcon("{{ item.icon }}")
+                                                        vuetify.VIcon(
+                                                            "{{ item.icon }}")
                                                     with vuetify.VListItemContent():
-                                                        vuetify.VListItemTitle("{{ item.text }}")
+                                                        vuetify.VListItemTitle(
+                                                            "{{ item.text }}")
                             with vuetify.VCol(cols=12):
                                 vuetify.VBtn(
                                     "Delete Selected",
@@ -633,21 +655,26 @@ def _build_paraview_pipeline_panel(ctrl):
                         ):
                             with vuetify.VListItem():
                                 with vuetify.VListItemContent():
-                                    vuetify.VListItemSubtitle("Available cell variables")
+                                    vuetify.VListItemSubtitle(
+                                        "Available cell variables")
                                     vuetify.VAlert(
                                         v_if="edit_available_variables.length === 0",
                                         type="info",
                                         dense=True,
                                         text=True,
-                                        children=["No cell-data variables are available on the edit-session dataset."],
+                                        children=[
+                                            "No cell-data variables are available on the edit-session dataset."],
                                     )
                                     with vuetify.VChipGroup(column=True, v_if="edit_available_variables.length > 0"):
                                         with vuetify.Template(v_for="item in edit_available_variables"):
-                                            vuetify.VChip("{{ item }}", x_small=True, classes="ma-1")
+                                            vuetify.VChip(
+                                                "{{ item }}", x_small=True, classes="ma-1")
                             with vuetify.VListItem():
                                 with vuetify.VListItemContent():
-                                    vuetify.VListItemSubtitle("Vector component syntax")
-                                    vuetify.VListItemTitle("{{ edit_vector_syntax }}")
+                                    vuetify.VListItemSubtitle(
+                                        "Vector component syntax")
+                                    vuetify.VListItemTitle(
+                                        "{{ edit_vector_syntax }}")
                         vuetify.VBtn(
                             "Assign to Selected",
                             small=True,
@@ -665,8 +692,10 @@ def _build_paraview_pipeline_panel(ctrl):
                                 vuetify.VCardTitle("Create New Field")
                                 with vuetify.VCardText():
                                     vuetify.VSelect(
-                                        v_model=("edit_new_field_association",),
-                                        items=("edit_new_field_association_options",),
+                                        v_model=(
+                                            "edit_new_field_association",),
+                                        items=(
+                                            "edit_new_field_association_options",),
                                         item_text="text",
                                         item_value="value",
                                         label="Array type",
@@ -684,7 +713,8 @@ def _build_paraview_pipeline_panel(ctrl):
                                         classes="mb-2",
                                     )
                                     vuetify.VTextField(
-                                        v_model=("edit_new_field_default_value",),
+                                        v_model=(
+                                            "edit_new_field_default_value",),
                                         label="Default value",
                                         dense=True,
                                         outlined=True,
@@ -792,7 +822,8 @@ def _build_paraview_inspector_panel(ctrl):
                     )
                     vuetify.VSelect(
                         v_model=("representation",),
-                        items=([REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POINTS],),
+                        items=([REPR_SURFACE, REPR_SURFACE_EDGES,
+                               REPR_WIREFRAME, REPR_POINTS],),
                         label="Representation",
                         dense=True,
                         outlined=True,
@@ -821,7 +852,8 @@ def _build_paraview_inspector_panel(ctrl):
                                     dense=True,
                                     hide_details=True,
                                     classes="mt-0",
-                                    change=(ctrl.pv_set_cell_face_visibility, "[show_cells, show_faces]"),
+                                    change=(ctrl.pv_set_cell_face_visibility,
+                                            "[show_cells, show_faces]"),
                                 )
                                 vuetify.VCheckbox(
                                     v_model=("show_faces",),
@@ -829,10 +861,12 @@ def _build_paraview_inspector_panel(ctrl):
                                     dense=True,
                                     hide_details=True,
                                     classes="mt-0",
-                                    change=(ctrl.pv_set_cell_face_visibility, "[show_cells, show_faces]"),
+                                    change=(ctrl.pv_set_cell_face_visibility,
+                                            "[show_cells, show_faces]"),
                                 )
                     vuetify.VDivider(classes="my-4")
-                    vuetify.VSubheader(classes="px-0", children=["Advanced Display Controls"])
+                    vuetify.VSubheader(
+                        classes="px-0", children=["Advanced Display Controls"])
                     vuetify.VSubheader(classes="px-0", children=["Color Bar"])
                     with vuetify.VList(
                         dense=True,
@@ -852,7 +886,8 @@ def _build_paraview_inspector_panel(ctrl):
                                     outlined=True,
                                     hide_details=True,
                                     disabled=("!color_controls_enabled",),
-                                    change=(ctrl.pv_apply_color_map_preset, "[$event]"),
+                                    change=(
+                                        ctrl.pv_apply_color_map_preset, "[$event]"),
                                 )
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
@@ -864,7 +899,8 @@ def _build_paraview_inspector_panel(ctrl):
                                             dense=True,
                                             outlined=True,
                                             hide_details=True,
-                                            disabled=("!color_controls_enabled",),
+                                            disabled=(
+                                                "!color_controls_enabled",),
                                         )
                                     with vuetify.VCol(cols=6):
                                         vuetify.VTextField(
@@ -873,7 +909,8 @@ def _build_paraview_inspector_panel(ctrl):
                                             dense=True,
                                             outlined=True,
                                             hide_details=True,
-                                            disabled=("!color_controls_enabled",),
+                                            disabled=(
+                                                "!color_controls_enabled",),
                                         )
                                 with vuetify.VRow(dense=True, classes="mt-1"):
                                     with vuetify.VCol(cols=6):
@@ -882,7 +919,8 @@ def _build_paraview_inspector_panel(ctrl):
                                             small=True,
                                             block=True,
                                             outlined=True,
-                                            disabled=("!color_controls_enabled",),
+                                            disabled=(
+                                                "!color_controls_enabled",),
                                             click=ctrl.pv_apply_color_range,
                                         )
                                     with vuetify.VCol(cols=6):
@@ -891,7 +929,8 @@ def _build_paraview_inspector_panel(ctrl):
                                             small=True,
                                             block=True,
                                             outlined=True,
-                                            disabled=("!color_controls_enabled",),
+                                            disabled=(
+                                                "!color_controls_enabled",),
                                             click=ctrl.pv_rescale_color_range_to_data,
                                         )
                                 with vuetify.VRow(dense=True, classes="mt-1", v_if="is_time_dependent"):
@@ -902,7 +941,8 @@ def _build_paraview_inspector_panel(ctrl):
                                             block=True,
                                             outlined=True,
                                             color="warning",
-                                            disabled=("!color_controls_enabled",),
+                                            disabled=(
+                                                "!color_controls_enabled",),
                                             click="rescale_over_time_dialog = true",
                                         )
                         with vuetify.VListItem():
@@ -913,14 +953,16 @@ def _build_paraview_inspector_panel(ctrl):
                                     dense=True,
                                     hide_details=True,
                                     disabled=("!color_controls_enabled",),
-                                    change=(ctrl.pv_set_scalar_bar_visible, "[$event]"),
+                                    change=(
+                                        ctrl.pv_set_scalar_bar_visible, "[$event]"),
                                 )
                                 vuetify.VSwitch(
                                     v_model=("orientation_axes_visible",),
                                     label="Show orientation axes",
                                     dense=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_set_orientation_axes_visible, "[$event]"),
+                                    change=(
+                                        ctrl.pv_set_orientation_axes_visible, "[$event]"),
                                 )
                                 vuetify.VSwitch(
                                     v_model=("categorical_coloring",),
@@ -928,7 +970,8 @@ def _build_paraview_inspector_panel(ctrl):
                                     dense=True,
                                     hide_details=True,
                                     disabled=("!color_controls_enabled",),
-                                    change=(ctrl.pv_set_categorical_coloring, "[$event]"),
+                                    change=(
+                                        ctrl.pv_set_categorical_coloring, "[$event]"),
                                 )
                         with vuetify.VListItem(v_show=("color_controls_status",)):
                             with vuetify.VListItemContent():
@@ -961,19 +1004,24 @@ def _build_paraview_inspector_panel(ctrl):
                     ):
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemTitle("{{ active_source_label || 'No source selected' }}")
+                                vuetify.VListItemTitle(
+                                    "{{ active_source_label || 'No source selected' }}")
                                 vuetify.VListItemSubtitle("Active source")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemTitle("{{ active_source_type || 'N/A' }}")
-                                vuetify.VListItemSubtitle("{{ active_source_kind }}")
+                                vuetify.VListItemTitle(
+                                    "{{ active_source_type || 'N/A' }}")
+                                vuetify.VListItemSubtitle(
+                                    "{{ active_source_kind }}")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemTitle("{{ source_path || 'N/A' }}")
+                                vuetify.VListItemTitle(
+                                    "{{ source_path || 'N/A' }}")
                                 vuetify.VListItemSubtitle("Source path")
                         with vuetify.VListItem(v_if="active_parent_label"):
                             with vuetify.VListItemContent():
-                                vuetify.VListItemTitle("{{ active_parent_label }}")
+                                vuetify.VListItemTitle(
+                                    "{{ active_parent_label }}")
                                 vuetify.VListItemSubtitle("Applied to")
                     with vuetify.VList(
                         v_if="show_calculator_help",
@@ -984,31 +1032,40 @@ def _build_paraview_inspector_panel(ctrl):
                     ):
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemTitle("{{ calculator_attribute_type || 'Point Data' }}")
-                                vuetify.VListItemSubtitle("Calculator association")
+                                vuetify.VListItemTitle(
+                                    "{{ calculator_attribute_type || 'Point Data' }}")
+                                vuetify.VListItemSubtitle(
+                                    "Calculator association")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemSubtitle("Coordinate variables")
+                                vuetify.VListItemSubtitle(
+                                    "Coordinate variables")
                                 with vuetify.VChipGroup(column=True):
                                     with vuetify.Template(v_for="item in calculator_coordinate_variables"):
-                                        vuetify.VChip("{{ item }}", x_small=True, classes="ma-1")
+                                        vuetify.VChip(
+                                            "{{ item }}", x_small=True, classes="ma-1")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemSubtitle("Vector component syntax")
-                                vuetify.VListItemTitle("Use arrayName[0], arrayName[1], arrayName[2]")
+                                vuetify.VListItemSubtitle(
+                                    "Vector component syntax")
+                                vuetify.VListItemTitle(
+                                    "Use arrayName[0], arrayName[1], arrayName[2]")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemSubtitle("Input array variables")
+                                vuetify.VListItemSubtitle(
+                                    "Input array variables")
                                 vuetify.VAlert(
                                     v_if="calculator_input_variables.length === 0",
                                     type="info",
                                     dense=True,
                                     text=True,
-                                    children=["No arrays available for the current Calculator association."],
+                                    children=[
+                                        "No arrays available for the current Calculator association."],
                                 )
                                 with vuetify.VChipGroup(column=True, v_if="calculator_input_variables.length > 0"):
                                     with vuetify.Template(v_for="item in calculator_input_variables"):
-                                        vuetify.VChip("{{ item }}", x_small=True, classes="ma-1")
+                                        vuetify.VChip(
+                                            "{{ item }}", x_small=True, classes="ma-1")
                     vuetify.VAlert(
                         v_if="source_default_property_count + source_advanced_property_count === 0",
                         type="info",
@@ -1030,7 +1087,8 @@ def _build_paraview_inspector_panel(ctrl):
                     )
 
                 with vuetify.VContainer(fluid=True, classes="pa-4", v_show="inspector_tab === 2"):
-                    vuetify.VSubheader(classes="px-0", children=["Information"])
+                    vuetify.VSubheader(
+                        classes="px-0", children=["Information"])
                     with vuetify.VList(
                         dense=True,
                         two_line=True,
@@ -1040,10 +1098,12 @@ def _build_paraview_inspector_panel(ctrl):
                             with vuetify.VListItem():
                                 with vuetify.VListItemContent():
                                     vuetify.VListItemTitle("{{ item.value }}")
-                                    vuetify.VListItemSubtitle("{{ item.label }}")
+                                    vuetify.VListItemSubtitle(
+                                        "{{ item.label }}")
 
                     vuetify.VDivider(classes="my-4")
-                    vuetify.VSubheader(classes="px-0", children=["Point Arrays"])
+                    vuetify.VSubheader(
+                        classes="px-0", children=["Point Arrays"])
                     with vuetify.VChipGroup(column=True):
                         with vuetify.Template(v_for="item in point_arrays"):
                             vuetify.VChip(
@@ -1052,7 +1112,8 @@ def _build_paraview_inspector_panel(ctrl):
                                 classes="ma-1",
                             )
                     vuetify.VDivider(classes="my-4")
-                    vuetify.VSubheader(classes="px-0", children=["Cell Arrays"])
+                    vuetify.VSubheader(
+                        classes="px-0", children=["Cell Arrays"])
                     with vuetify.VChipGroup(column=True):
                         with vuetify.Template(v_for="item in cell_arrays"):
                             vuetify.VChip(
@@ -1077,7 +1138,8 @@ def _build_paraview_inspector_panel(ctrl):
                                             "Pick",
                                             small=True,
                                             block=True,
-                                            color=("pick_mode ? 'primary' : ''",),
+                                            color=(
+                                                "pick_mode ? 'primary' : ''",),
                                             outlined=("!pick_mode",),
                                             click=ctrl.pv_set_pick_mode,
                                         )
@@ -1086,7 +1148,8 @@ def _build_paraview_inspector_panel(ctrl):
                                             "Rotate",
                                             small=True,
                                             block=True,
-                                            color=("!pick_mode ? 'primary' : ''",),
+                                            color=(
+                                                "!pick_mode ? 'primary' : ''",),
                                             outlined=("pick_mode",),
                                             click=ctrl.pv_set_rotate_mode,
                                         )
@@ -1149,8 +1212,10 @@ def _build_paraview_inspector_panel(ctrl):
                                 )
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
-                                vuetify.VListItemTitle("{{ selection_count }} selected")
-                                vuetify.VListItemSubtitle("{{ edit_selection_mode }} mode")
+                                vuetify.VListItemTitle(
+                                    "{{ selection_count }} selected")
+                                vuetify.VListItemSubtitle(
+                                    "{{ edit_selection_mode }} mode")
                         with vuetify.VListItem():
                             with vuetify.VListItemContent():
                                 with vuetify.VRow(
@@ -1184,11 +1249,14 @@ def _build_paraview_inspector_panel(ctrl):
                                 )
                         with vuetify.VListItem(v_show=("selection_timing_last",)):
                             with vuetify.VListItemContent():
-                                vuetify.VListItemSubtitle("Last selection timing")
+                                vuetify.VListItemSubtitle(
+                                    "Last selection timing")
                                 vuetify.VListItemTitle(
                                     "{{ selection_timing_last }}",
                                     style="font-family: monospace; white-space: normal; font-size: 0.78rem;",
                                 )
+
+
 def _build_property_list(ctrl, state_key):
     with vuetify.VExpansionPanels(accordion=True, flat=True, style="background: transparent;"):
         with vuetify.VExpansionPanel():
@@ -1213,7 +1281,8 @@ def _build_property_list(ctrl, state_key):
                                 vuetify.VListItemTitle("{{ item.label }}")
                                 vuetify.VListItemSubtitle("{{ item.type }}")
                             with vuetify.VListItemAction(v_if="item.type"):
-                                vuetify.VChip("{{ item.type }}", x_small=True, label=True)
+                                vuetify.VChip("{{ item.type }}",
+                                              x_small=True, label=True)
                         with vuetify.VListItem(v_if="item.editable && item.type === 'StringListProperty'"):
                             with vuetify.VListItemContent():
                                 vuetify.VSelect(
@@ -1223,7 +1292,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'BooleanProperty'"):
                             with vuetify.VListItemContent():
@@ -1232,7 +1302,8 @@ def _build_property_list(ctrl, state_key):
                                     label="Enabled",
                                     hide_details=True,
                                     dense=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'ProxySelectionProperty'"):
                             with vuetify.VListItemContent():
@@ -1243,7 +1314,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'EnumerationProperty'"):
                             with vuetify.VListItemContent():
@@ -1254,7 +1326,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'ArraySelectionProperty'"):
                             with vuetify.VListItemContent():
@@ -1267,7 +1340,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'ArrayListProperty'"):
                             with vuetify.VListItemContent():
@@ -1282,7 +1356,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'VectorProperty'"):
                             with vuetify.VListItemContent():
@@ -1294,11 +1369,13 @@ def _build_property_list(ctrl, state_key):
                                     hide_details=True,
                                     hint="Use comma-separated values for vectors",
                                     persistent_hint=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="!item.editable"):
                             with vuetify.VListItemContent():
-                                vuetify.VListItemSubtitle("{{ item.value || ' ' }}")
+                                vuetify.VListItemSubtitle(
+                                    "{{ item.value || ' ' }}")
 
         with vuetify.VExpansionPanel():
             with vuetify.VExpansionPanelHeader(children=["Advanced"]):
@@ -1322,7 +1399,8 @@ def _build_property_list(ctrl, state_key):
                                 vuetify.VListItemTitle("{{ item.label }}")
                                 vuetify.VListItemSubtitle("{{ item.type }}")
                             with vuetify.VListItemAction(v_if="item.type"):
-                                vuetify.VChip("{{ item.type }}", x_small=True, label=True)
+                                vuetify.VChip("{{ item.type }}",
+                                              x_small=True, label=True)
                         with vuetify.VListItem(v_if="item.editable && item.type === 'StringListProperty'"):
                             with vuetify.VListItemContent():
                                 vuetify.VSelect(
@@ -1332,7 +1410,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'BooleanProperty'"):
                             with vuetify.VListItemContent():
@@ -1341,7 +1420,8 @@ def _build_property_list(ctrl, state_key):
                                     label="Enabled",
                                     hide_details=True,
                                     dense=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'ProxySelectionProperty'"):
                             with vuetify.VListItemContent():
@@ -1352,7 +1432,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'EnumerationProperty'"):
                             with vuetify.VListItemContent():
@@ -1363,7 +1444,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'ArraySelectionProperty'"):
                             with vuetify.VListItemContent():
@@ -1376,7 +1458,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'ArrayListProperty'"):
                             with vuetify.VListItemContent():
@@ -1391,7 +1474,8 @@ def _build_property_list(ctrl, state_key):
                                     dense=True,
                                     outlined=True,
                                     hide_details=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="item.editable && item.type === 'VectorProperty'"):
                             with vuetify.VListItemContent():
@@ -1403,11 +1487,13 @@ def _build_property_list(ctrl, state_key):
                                     hide_details=True,
                                     hint="Use comma-separated values for vectors",
                                     persistent_hint=True,
-                                    change=(ctrl.pv_update_property, "[item.scope, item.name, $event]"),
+                                    change=(ctrl.pv_update_property,
+                                            "[item.scope, item.name, $event]"),
                                 )
                         with vuetify.VListItem(v_if="!item.editable"):
                             with vuetify.VListItemContent():
-                                vuetify.VListItemSubtitle("{{ item.value || ' ' }}")
+                                vuetify.VListItemSubtitle(
+                                    "{{ item.value || ' ' }}")
 
 
 def _build_vtk_edit_panel(ctrl):
@@ -1451,7 +1537,8 @@ def _build_vtk_edit_panel(ctrl):
                                 "Boundary",
                                 small=True,
                                 block=True,
-                                color=("edit_target === 'boundary' ? 'primary' : ''",),
+                                color=(
+                                    "edit_target === 'boundary' ? 'primary' : ''",),
                                 outlined=("edit_target !== 'boundary'",),
                                 click="edit_target = 'boundary'",
                             )
@@ -1460,14 +1547,16 @@ def _build_vtk_edit_panel(ctrl):
                                 "Volume",
                                 small=True,
                                 block=True,
-                                color=("edit_target === 'volume' ? 'primary' : ''",),
+                                color=(
+                                    "edit_target === 'volume' ? 'primary' : ''",),
                                 outlined=("edit_target !== 'volume'",),
                                 click="edit_target = 'volume'",
                             )
             vuetify.VSubheader("Selection")
             with vuetify.VListItem():
                 with vuetify.VListItemContent():
-                    vuetify.VListItemTitle("{{ selection_count }} cells selected")
+                    vuetify.VListItemTitle(
+                        "{{ selection_count }} cells selected")
             with vuetify.VListItem():
                 with vuetify.VListItemContent():
                     with vuetify.VRow(dense=True, classes="px-2"):
@@ -1514,13 +1603,15 @@ def _build_vtk_edit_panel(ctrl):
                             step=1,
                             hide_details=True,
                             dense=True,
-                            disabled=("!group_select || edit_target === 'volume'",),
+                            disabled=(
+                                "!group_select || edit_target === 'volume'",),
                         )
                     with vuetify.VCol(cols="auto"):
                         vuetify.VChip(
                             "{{ angle_threshold }}°",
                             x_small=True,
-                            disabled=("!group_select || edit_target === 'volume'",),
+                            disabled=(
+                                "!group_select || edit_target === 'volume'",),
                         )
 
             vuetify.VSubheader(
@@ -1588,14 +1679,66 @@ def build_ui(server, render_target, backend):
         # Rescale over time confirmation dialog
         with vuetify.VDialog(v_model=("rescale_over_time_dialog",), max_width=450):
             with vuetify.VCard():
-                vuetify.VCardTitle("Rescale Range over Time", classes="headline")
+                vuetify.VCardTitle(
+                    "Rescale Range over Time", classes="headline")
                 with vuetify.VCardText():
                     html.Div("Rescaling the color range over all timesteps may take a significant amount of time as ParaView must process every frame of the simulation.", classes="mb-4")
                     html.Div("Do you want to proceed?")
                 with vuetify.VCardActions():
                     vuetify.VSpacer()
-                    vuetify.VBtn("Cancel", click="rescale_over_time_dialog = false", text=True)
-                    vuetify.VBtn("Rescale", click=ctrl.pv_rescale_color_range_over_time, color="warning", text=True)
+                    vuetify.VBtn(
+                        "Cancel", click="rescale_over_time_dialog = false", text=True)
+                    vuetify.VBtn(
+                        "Rescale", click=ctrl.pv_rescale_color_range_over_time, color="warning", text=True)
+
+        if backend == "paraview":
+            with vuetify.VDialog(v_model=("save_overwrite_dialog",), max_width=560):
+                with vuetify.VCard():
+                    vuetify.VCardTitle("Overwrite Existing File?")
+                    with vuetify.VCardText():
+                        vuetify.VAlert(
+                            type="warning",
+                            dense=True,
+                            outlined=True,
+                            children=[
+                                "The file '{{ save_overwrite_target }}' already exists. "
+                                "Overwrite it with the newly saved result?"
+                            ],
+                        )
+                    with vuetify.VCardActions():
+                        vuetify.VSpacer()
+                        vuetify.VBtn(
+                            "Cancel", click=ctrl.pv_cancel_save_overwrite, text=True)
+                        vuetify.VBtn(
+                            "Overwrite",
+                            click=ctrl.pv_confirm_save_overwrite,
+                            color="warning",
+                            text=True,
+                        )
+        elif backend == "vtk":
+            with vuetify.VDialog(v_model=("save_overwrite_dialog",), max_width=560):
+                with vuetify.VCard():
+                    vuetify.VCardTitle("Overwrite Existing File?")
+                    with vuetify.VCardText():
+                        vuetify.VAlert(
+                            type="warning",
+                            dense=True,
+                            outlined=True,
+                            children=[
+                                "The file '{{ save_overwrite_target }}' already exists. "
+                                "Overwrite it with the newly saved result?"
+                            ],
+                        )
+                    with vuetify.VCardActions():
+                        vuetify.VSpacer()
+                        vuetify.VBtn(
+                            "Cancel", click=ctrl.cancel_save_overwrite_vtu, text=True)
+                        vuetify.VBtn(
+                            "Overwrite",
+                            click=ctrl.confirm_save_overwrite_vtu,
+                            color="warning",
+                            text=True,
+                        )
 
         with layout.toolbar:
             _build_toolbar(ctrl, backend)
