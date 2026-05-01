@@ -106,6 +106,7 @@ class EditSession:
 
         if self.geometry_mode == "surface":
             self.materialize_surface_selection()
+        self._remove_internal_edit_arrays()
 
         suffix = Path(output_path).suffix.lower()
         if suffix == ".vtk":
@@ -625,6 +626,7 @@ class EditSession:
         if top_dim < 2:
             return 0
 
+        self._remove_internal_edit_arrays()
         boundary_map = self._surface_boundary_map_for_top_cells()
         existing = self._existing_codim_keys(top_dim - 1)
         missing_keys = [
@@ -634,14 +636,16 @@ class EditSession:
             return 0
 
         old_cell_count = dataset.GetNumberOfCells()
+        owner_cell_ids = {}
         for key in missing_keys:
-            cell_type, point_ids = boundary_map[key]
+            cell_type, point_ids, owner_cell_id = boundary_map[key]
             id_list = vtkIdList()
             for point_id in point_ids:
                 id_list.InsertNextId(int(point_id))
             dataset.InsertNextCell(int(cell_type), id_list)
+            owner_cell_ids[dataset.GetNumberOfCells() - 1] = int(owner_cell_id)
 
-        self._extend_cell_data_for_new_cells(dataset, old_cell_count)
+        self._extend_cell_data_for_new_cells(dataset, old_cell_count, owner_cell_ids)
 
         dataset.Modified()
         self.dirty = True
@@ -786,7 +790,7 @@ class EditSession:
                         int(subcell.GetPointId(point_id))
                         for point_id in range(subcell.GetNumberOfPoints())
                     )
-                    metadata[key] = (int(subcell.GetCellType()), point_ids)
+                    metadata[key] = (int(subcell.GetCellType()), point_ids, int(cell_id))
 
         self._surface_boundary_map = {
             key: metadata[key] for key, count in counts.items() if count == 1
@@ -885,7 +889,7 @@ class EditSession:
         output = vtkUnstructuredGrid()
         output.SetPoints(dataset.GetPoints())
         for key in selected:
-            cell_type, point_ids = boundary_map[key]
+            cell_type, point_ids, _owner_cell_id = boundary_map[key]
             id_list = vtkIdList()
             for point_id in point_ids:
                 id_list.InsertNextId(int(point_id))
@@ -1058,12 +1062,13 @@ class EditSession:
 
 
     @staticmethod
-    def _extend_cell_data_for_new_cells(dataset, old_cell_count):
-        """Resize existing cell-data arrays after appending new cells."""
+    def _extend_cell_data_for_new_cells(dataset, old_cell_count, owner_cell_ids=None):
+        """Resize cell-data arrays after appending cells and inherit owner tuples."""
         new_cell_count = dataset.GetNumberOfCells()
         if new_cell_count <= old_cell_count:
             return
 
+        owner_cell_ids = owner_cell_ids or {}
         cell_data = dataset.GetCellData()
         for array_index in range(cell_data.GetNumberOfArrays()):
             array = cell_data.GetArray(array_index)
@@ -1071,8 +1076,25 @@ class EditSession:
                 continue
 
             components = max(int(array.GetNumberOfComponents()), 1)
+            original_tuples = [
+                array.GetTuple(cell_id)
+                for cell_id in range(min(old_cell_count, array.GetNumberOfTuples()))
+            ]
             array.SetNumberOfTuples(new_cell_count)
+            for cell_id, values in enumerate(original_tuples):
+                try:
+                    array.SetTuple(cell_id, values)
+                except Exception:
+                    for component, value in enumerate(values[:components]):
+                        array.SetComponent(cell_id, component, value)
             for cell_id in range(old_cell_count, new_cell_count):
+                owner_cell_id = owner_cell_ids.get(cell_id)
+                if owner_cell_id is not None and 0 <= owner_cell_id < len(original_tuples):
+                    try:
+                        array.SetTuple(cell_id, original_tuples[owner_cell_id])
+                        continue
+                    except Exception:
+                        pass
                 for component in range(components):
                     try:
                         array.SetComponent(cell_id, component, 0.0)
@@ -1145,8 +1167,15 @@ class EditSession:
             return
 
         cell_data = self.working_dataset.GetCellData()
-        if cell_data.GetArray("CellCenters") is not None:
+        existing = cell_data.GetArray("CellCenters")
+        if (
+            existing is not None
+            and existing.GetNumberOfComponents() == 3
+            and existing.GetNumberOfTuples() == self.working_dataset.GetNumberOfCells()
+        ):
             return
+        if existing is not None:
+            cell_data.RemoveArray("CellCenters")
 
         array = vtkDoubleArray()
         array.SetName("CellCenters")
@@ -1164,6 +1193,15 @@ class EditSession:
 
         cell_data.AddArray(array)
         self.working_dataset.Modified()
+
+    def _remove_internal_edit_arrays(self):
+        """Drop edit-only helper arrays before persisting user data."""
+        if self.working_dataset is None:
+            return
+        cell_data = self.working_dataset.GetCellData()
+        if cell_data.GetArray("CellCenters") is not None:
+            cell_data.RemoveArray("CellCenters")
+            self.working_dataset.Modified()
 
     @staticmethod
     def is_supported_dataset(dataset):

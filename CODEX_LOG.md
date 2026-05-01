@@ -6,6 +6,12 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Fixed ParaView surface-edit and face-only display regressions:
+  - mapped invalid native ParaView surface-pick point IDs back to source boundary keys by coordinate, so surface selections on `cube.vtk` can be assigned successfully
+  - preserved existing `CellData` values when materializing new face/edge cells by copying tuples from the owning top-dimensional cell, including multi-component arrays
+  - removed the internal `CellCenters` helper array before save and regenerated it only when needed for calculator evaluation
+  - added the ParaView `Quad` -> `Quadrilateral` cell-type alias so `Show cells` off / `Show faces` on displays explicit quad faces from `cube_with_boundary_id.vtk`
+  - verified with targeted tests and Playwright e2e: `99 passed`, `7 passed`
 - Added Playwright e2e coverage for explicit face-only display:
   - added `test_data/square_with_boundary.vtk` with 2D quad cells plus standalone 1D boundary cells on the left edge
   - added an e2e that turns `Show cells` off and `Show faces` on, then verifies the viewport shows only the explicit left boundary cells

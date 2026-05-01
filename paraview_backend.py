@@ -95,6 +95,7 @@ class ParaViewBackend:
         self._last_selection_backend_timing = []
         self._boundary_cache = {}
         self._cell_type_name_aliases = {
+            "Quad": "Quadrilateral",
             "Tetra": "Tetrahedron",
             "QuadraticTetra": "QuadraticTetrahedron",
         }
@@ -1935,6 +1936,54 @@ class ParaViewBackend:
             return []
 
         source_point_indexes = None
+        source_boundary = (
+            ParaViewBackend._boundary_codim_elements(source_dataset)
+            if source_dataset is not None
+            and hasattr(source_dataset, "GetNumberOfCells")
+            else {}
+        )
+        boundary_point_to_keys = {}
+        for boundary_key in source_boundary:
+            for point_id in boundary_key:
+                boundary_point_to_keys.setdefault(
+                    int(point_id), set()).add(boundary_key)
+
+        def key_matches_source_boundary(key):
+            if not key or not source_boundary:
+                return True
+            if key in source_boundary:
+                return True
+            key_set = set(key)
+            candidate_sets = [
+                boundary_point_to_keys.get(int(point_id), set())
+                for point_id in key_set
+            ]
+            return bool(
+                set.intersection(*candidate_sets)
+                if candidate_sets
+                else set()
+            )
+
+        def coordinate_key(block, cell):
+            nonlocal source_point_indexes
+            if source_dataset is None or not hasattr(
+                source_dataset, "GetNumberOfPoints"
+            ):
+                return None
+            if source_point_indexes is None:
+                source_point_indexes = ParaViewBackend._point_coordinate_indexes(
+                    source_dataset
+                )
+            mapped = []
+            for point_idx in range(cell.GetNumberOfPoints()):
+                point = block.GetPoint(cell.GetPointId(point_idx))
+                point_id = ParaViewBackend._lookup_point_coordinate(
+                    source_point_indexes, point
+                )
+                if point_id is None:
+                    return None
+                mapped.append(int(point_id))
+            return tuple(sorted(mapped))
 
         keys = []
         for block in selected_blocks:
@@ -1980,18 +2029,12 @@ class ParaViewBackend:
                                 for point_idx in range(cell.GetNumberOfPoints())
                             )
                         )
+                        if not key_matches_source_boundary(key):
+                            mapped_key = coordinate_key(block, cell)
+                            if mapped_key is not None:
+                                key = mapped_key
                     else:
-                        mapped = []
-                        for point_idx in range(cell.GetNumberOfPoints()):
-                            point = block.GetPoint(cell.GetPointId(point_idx))
-                            point_id = ParaViewBackend._lookup_point_coordinate(
-                                source_point_indexes, point
-                            )
-                            if point_id is None:
-                                mapped = []
-                                break
-                            mapped.append(int(point_id))
-                        key = tuple(sorted(mapped))
+                        key = coordinate_key(block, cell) or ()
                 except Exception:
                     continue
                 if key:

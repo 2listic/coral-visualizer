@@ -19,6 +19,7 @@ ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = ROOT_DIR / "test_data"
 TEST_GRID = TEST_DATA_DIR / "square.vtk"
 TEST_GRID_WITH_BOUNDARY = TEST_DATA_DIR / "square_with_boundary.vtk"
+TEST_CUBE = TEST_DATA_DIR / "cube.vtk"
 
 
 def _free_tcp_port():
@@ -682,6 +683,96 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
         }:
             if path.exists():
                 path.unlink()
+
+
+def test_paraview_cube_surface_selection_assigns_created_cell_field(shared_browser):
+    if not is_paraview_available():
+        pytest.skip("ParaView backend is not available in this environment")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--server",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_CUBE),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
+
+        page.click("button:has-text('Enter Edit Mode')")
+        page.wait_for_selector("text=Edit Tools", timeout=40000)
+        time.sleep(1.0)
+
+        _create_new_edit_field(
+            page,
+            "BoundaryID",
+            array_type="Cell data array",
+            default_value="0",
+        )
+
+        _select_vselect_option(page, "Geometry mode", "Surface")
+
+        view = page.locator('[style*="cursor: crosshair"]').first
+        box = view.bounding_box()
+        assert box is not None and box["width"] > 0 and box["height"] > 0
+
+        selected_count = 0
+        for fx, fy in ((0.50, 0.50), (0.40, 0.42), (0.60, 0.42), (0.42, 0.58)):
+            page.click("button:has-text('Clear Selection')")
+            time.sleep(0.3)
+            page.mouse.click(
+                box["x"] + box["width"] * fx,
+                box["y"] + box["height"] * fy,
+            )
+            selected = _wait_for_selection_count(page, lambda count: count > 0)
+            selected_count = selected or 0
+            if selected_count > 0:
+                break
+
+        assert selected_count > 0
+
+        page.fill(
+            "xpath=//label[contains(.,'Value / Calculator')]/ancestor::div[contains(@class,'v-input')]//input",
+            "1",
+        )
+        page.click("button:has-text('Assign to Selected')")
+        page.wait_for_selector(
+            "text=Assigned 'BoundaryID' on",
+            state="visible",
+            timeout=40000,
+        )
+        assert page.locator("text=Edit apply failed").count() == 0
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
 
 def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):

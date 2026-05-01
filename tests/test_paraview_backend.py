@@ -455,6 +455,7 @@ def make_backend():
     backend._scalar_bar_visible = False
     backend._edit_target_dataset = None
     backend._cell_type_name_aliases = {
+        "Quad": "Quadrilateral",
         "Tetra": "Tetrahedron",
         "QuadraticTetra": "QuadraticTetrahedron",
     }
@@ -784,6 +785,24 @@ def test_set_cell_face_visibility_uses_extracts_and_preserves_node_visibility():
 
     assert display.Visibility == 1
     assert cells_display.Visibility == 0
+
+
+def test_set_cell_face_visibility_uses_paraview_quadrilateral_alias_for_3d_faces():
+    backend = make_backend()
+    backend.simple = FakeSimpleWithExtractCells()
+    backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([12, 9])
+    source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
+    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
+    node = backend._make_node(source, display, "/tmp/data/cube.vtk", "source", "cube")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.set_cell_face_visibility(False, True)
+
+    assert display.Visibility == 0
+    assert backend.simple.extracts[0].CellTypes == ["Quadrilateral"]
+    faces_display = node["cell_dimension_extracts"][2]["display"]
+    assert faces_display.Visibility == 1
 
 
 def test_set_cell_face_visibility_shows_only_explicit_faces_on_2d_meshes():
@@ -1358,6 +1377,70 @@ def test_surface_keys_from_selected_dataset_maps_triangle_to_quad_boundary_key()
 
     keys = ParaViewBackend._surface_keys_from_selected_dataset(
         selected, source_dataset=source
+    )
+
+    assert keys == [(0, 1, 2, 3)]
+
+
+def test_surface_keys_from_selected_dataset_uses_coordinates_when_original_ids_are_invalid():
+    selected = FakeSelectedSurfaceDataset(
+        points=[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ],
+        cells=[(0, 1, 2, 3)],
+        original_point_ids=[10, 11, 12, 13],
+    )
+
+    class FakeFace:
+        def __init__(self, point_ids):
+            self._point_ids = tuple(point_ids)
+
+        def GetNumberOfPoints(self):
+            return len(self._point_ids)
+
+        def GetPointId(self, index):
+            return self._point_ids[index]
+
+    class FakeVolumeCell:
+        def __init__(self):
+            self._faces = [FakeFace((0, 1, 2, 3))]
+
+        def GetCellDimension(self):
+            return 3
+
+        def GetNumberOfFaces(self):
+            return len(self._faces)
+
+        def GetFace(self, index):
+            return self._faces[index]
+
+    class FakeSourceDataset:
+        def __init__(self):
+            self._cells = [FakeVolumeCell()]
+            self._points = [
+                (0.0, 0.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (1.0, 1.0, 0.0),
+                (0.0, 1.0, 0.0),
+            ]
+
+        def GetNumberOfCells(self):
+            return len(self._cells)
+
+        def GetCell(self, index):
+            return self._cells[index]
+
+        def GetNumberOfPoints(self):
+            return len(self._points)
+
+        def GetPoint(self, index):
+            return self._points[index]
+
+    keys = ParaViewBackend._surface_keys_from_selected_dataset(
+        selected, source_dataset=FakeSourceDataset()
     )
 
     assert keys == [(0, 1, 2, 3)]

@@ -1,8 +1,9 @@
 import pytest
 
 from edit_session import EditSession
-from vtkmodules.vtkCommonCore import vtkIntArray, vtkPoints
+from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIntArray, vtkPoints
 from vtkmodules.vtkCommonDataModel import vtkTetra, vtkTriangle, vtkUnstructuredGrid, vtkVertex
+from vtkmodules.vtkIOLegacy import vtkUnstructuredGridReader
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 
 
@@ -111,6 +112,35 @@ def test_surface_mode_materialize_skips_existing_codim_one_cells():
     assert session.materialize_surface_selection() == 3
 
 
+def test_surface_mode_materialize_copies_cell_data_from_owner_cell():
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+
+    material_id = vtkIntArray()
+    material_id.SetName("MaterialID")
+    material_id.SetNumberOfComponents(1)
+    material_id.SetNumberOfTuples(1)
+    material_id.SetValue(0, 7)
+    session.working_dataset.GetCellData().AddArray(material_id)
+
+    vector_field = vtkDoubleArray()
+    vector_field.SetName("VectorField")
+    vector_field.SetNumberOfComponents(3)
+    vector_field.SetNumberOfTuples(1)
+    vector_field.SetTuple3(0, 1.0, 2.0, 3.0)
+    session.working_dataset.GetCellData().AddArray(vector_field)
+
+    assert session.replace_selection([(0, 1, 2)]) == 1
+    assert session.materialize_surface_selection() == 1
+
+    copied_material = session.working_dataset.GetCellData().GetArray("MaterialID")
+    copied_vector = session.working_dataset.GetCellData().GetArray("VectorField")
+
+    assert copied_material.GetTuple1(1) == pytest.approx(7.0)
+    assert copied_vector.GetTuple3(1) == pytest.approx((1.0, 2.0, 3.0))
+
+
 def test_surface_mode_accepts_explicit_surface_key_tuples():
     session = EditSession()
     session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
@@ -186,6 +216,37 @@ def test_surface_mode_save_keeps_cell_data_lengths_consistent(tmp_path):
     assert loaded.GetNumberOfPoints() == 4
     assert loaded.GetNumberOfCells() == 5
     assert loaded.GetCellData().GetArray("BoundaryID") is not None
+
+
+def test_surface_mode_save_legacy_vtk_omits_internal_cell_centers(tmp_path):
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
+    session.geometry_mode = "surface"
+
+    material_id = vtkIntArray()
+    material_id.SetName("MaterialID")
+    material_id.SetNumberOfComponents(1)
+    material_id.SetNumberOfTuples(1)
+    material_id.SetValue(0, 42)
+    session.working_dataset.GetCellData().AddArray(material_id)
+
+    session.create_field("BoundaryID", "cell", "0", overwrite=True)
+    session.replace_selection([(0, 1, 2)])
+    session.assign_to_selected("BoundaryID", "cell", "1")
+
+    output_path = tmp_path / "surface_saved.vtk"
+    session.save(str(output_path))
+
+    reader = vtkUnstructuredGridReader()
+    reader.SetFileName(str(output_path))
+    reader.Update()
+    loaded = reader.GetOutput()
+
+    assert loaded.GetNumberOfPoints() == 4
+    assert loaded.GetNumberOfCells() == 2
+    assert loaded.GetCellData().GetArray("BoundaryID") is not None
+    assert loaded.GetCellData().GetArray("MaterialID").GetTuple1(1) == pytest.approx(42.0)
+    assert loaded.GetCellData().GetArray("CellCenters") is None
 
 
 def test_apply_surface_field_sets_default_on_all_cells_and_expression_on_selected_surface():
