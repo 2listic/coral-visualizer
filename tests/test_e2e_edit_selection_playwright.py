@@ -20,6 +20,7 @@ TEST_DATA_DIR = ROOT_DIR / "test_data"
 TEST_GRID = TEST_DATA_DIR / "square.vtk"
 TEST_GRID_WITH_BOUNDARY = TEST_DATA_DIR / "square_with_boundary.vtk"
 TEST_CUBE = TEST_DATA_DIR / "cube.vtk"
+TEST_CUBE_WITH_BOUNDARY_ID = TEST_DATA_DIR / "cube_with_boundary_id.vtk"
 
 
 def _free_tcp_port():
@@ -413,6 +414,73 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
         assert faces_bbox["width"] <= full_bbox["width"] * 0.12
         assert abs(faces_bbox["x0"] - full_bbox["x0"]) <= full_bbox["width"] * 0.08
         assert faces_bbox["x1"] <= full_bbox["x0"] + full_bbox["width"] * 0.20
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def test_paraview_show_faces_only_keeps_explicit_cube_boundary_faces(shared_browser):
+    if not is_paraview_available():
+        pytest.skip("ParaView backend is not available in this environment")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--server",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_CUBE_WITH_BOUNDARY_ID),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("text=Display", timeout=40000)
+        page.wait_for_selector(".coral-main-viewport", timeout=40000)
+
+        _select_vselect_option(page, "Color by", "BoundaryID")
+        _set_switch(page, "Show color scale", False)
+        _set_switch(page, "Show orientation axes", False)
+        _set_switch(page, "Show cells", False)
+        _set_switch(page, "Show faces", False)
+        time.sleep(1.0)
+
+        viewport = page.locator(".coral-main-viewport")
+        empty_bbox = _foreground_bbox(viewport.screenshot())
+        assert empty_bbox is None
+
+        _set_switch(page, "Show faces", True)
+        time.sleep(1.0)
+
+        faces_bbox = _foreground_bbox(viewport.screenshot())
+        assert faces_bbox is not None
+        assert faces_bbox["width"] > 50
+        assert faces_bbox["height"] > 50
+        assert faces_bbox["count"] > 500
 
         context.close()
     finally:
