@@ -6,6 +6,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Added Playwright e2e coverage for explicit face-only display:
+  - added `test_data/square_with_boundary.vtk` with 2D quad cells plus standalone 1D boundary cells on the left edge
+  - added an e2e that turns `Show cells` off and `Show faces` on, then verifies the viewport shows only the explicit left boundary cells
+  - preserved solid-color styling on generated cell/face extract displays so face-only extracts remain visible against the white background
+  - verified with targeted ParaView tests and the full edit-selection Playwright file: `83 passed`, `6 passed`
 - Made ParaView cell/face display controls dimension-aware:
   - renamed the UI/state controls to `Show cells` / `Show faces`
   - documented the app semantics: cells are the highest explicit intrinsic cell dimension present, faces are explicit cells one dimension lower

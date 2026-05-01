@@ -1124,6 +1124,7 @@ class ParaViewBackend:
         if selected_array == ARRAY_SOLID:
             self._disable_scalar_coloring(
                 target_display, hide_unused_scalar_bars=False)
+            self._copy_solid_display_style(source_display, target_display)
             return
         if selected_array.startswith(POINT_PREFIX):
             association = "POINTS"
@@ -1144,6 +1145,24 @@ class ParaViewBackend:
             except Exception:
                 pass
         self._ensure_display_lookup_table(target_display, name)
+
+    @staticmethod
+    def _copy_solid_display_style(source_display, target_display):
+        """Keep generated cell/face extracts visually consistent in solid color mode."""
+        for name in (
+            "DiffuseColor",
+            "AmbientColor",
+            "EdgeColor",
+            "Opacity",
+            "LineWidth",
+            "PointSize",
+        ):
+            if not hasattr(source_display, name) or not hasattr(target_display, name):
+                continue
+            try:
+                setattr(target_display, name, getattr(source_display, name))
+            except Exception:
+                pass
 
     def _cell_type_names_for_dimension(self, source, target_dimension):
         """Return ParaView ExtractCellsByType names present for a cell dimension."""

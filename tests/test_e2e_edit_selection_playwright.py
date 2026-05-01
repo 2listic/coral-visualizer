@@ -7,8 +7,10 @@ import time
 import urllib.request
 import os
 import threading
+import io
 
 import pytest
+from PIL import Image
 
 from paraview_backend import is_paraview_available
 
@@ -16,6 +18,7 @@ from paraview_backend import is_paraview_available
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = ROOT_DIR / "test_data"
 TEST_GRID = TEST_DATA_DIR / "square.vtk"
+TEST_GRID_WITH_BOUNDARY = TEST_DATA_DIR / "square_with_boundary.vtk"
 
 
 def _free_tcp_port():
@@ -145,6 +148,36 @@ def _parse_env_box(name, default):
         return tuple(float(p) for p in parts)
     except ValueError:
         return default
+
+
+def _foreground_bbox(png_bytes, *, threshold=245, margin=12):
+    image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    width, height = image.size
+    x0 = width
+    y0 = height
+    x1 = -1
+    y1 = -1
+    count = 0
+    for y in range(margin, max(margin, height - margin)):
+        for x in range(margin, max(margin, width - margin)):
+            r, g, b = image.getpixel((x, y))
+            if min(r, g, b) < threshold:
+                x0 = min(x0, x)
+                y0 = min(y0, y)
+                x1 = max(x1, x)
+                y1 = max(y1, y)
+                count += 1
+    if count == 0:
+        return None
+    return {
+        "x0": x0,
+        "y0": y0,
+        "x1": x1,
+        "y1": y1,
+        "width": x1 - x0 + 1,
+        "height": y1 - y0 + 1,
+        "count": count,
+    }
 
 
 def _stream_proc_stdout(proc, echo=False):
@@ -308,6 +341,77 @@ def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser
         assert _switch_checked(page, "Show orientation axes") is False
         _set_switch(page, "Show orientation axes", True)
         assert _switch_checked(page, "Show orientation axes") is True
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_browser):
+    if not is_paraview_available():
+        pytest.skip("ParaView backend is not available in this environment")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--server",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_GRID_WITH_BOUNDARY),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("text=Display", timeout=40000)
+        page.wait_for_selector(".coral-main-viewport", timeout=40000)
+
+        _select_vselect_option(page, "Color by", "BoundaryID")
+        _set_switch(page, "Show color scale", False)
+        _set_switch(page, "Show orientation axes", False)
+        _set_switch(page, "Show cells", True)
+        _set_switch(page, "Show faces", True)
+        time.sleep(1.0)
+
+        viewport = page.locator(".coral-main-viewport")
+        full_bbox = _foreground_bbox(viewport.screenshot())
+        assert full_bbox is not None
+        assert full_bbox["width"] > 100
+        assert full_bbox["height"] > 100
+
+        _set_switch(page, "Show cells", False)
+        _set_switch(page, "Show faces", True)
+        time.sleep(1.0)
+
+        faces_bbox = _foreground_bbox(viewport.screenshot())
+        assert faces_bbox is not None
+        assert faces_bbox["height"] >= full_bbox["height"] * 0.75
+        assert faces_bbox["width"] <= full_bbox["width"] * 0.12
+        assert abs(faces_bbox["x0"] - full_bbox["x0"]) <= full_bbox["width"] * 0.08
+        assert faces_bbox["x1"] <= full_bbox["x0"] + full_bbox["width"] * 0.20
 
         context.close()
     finally:
