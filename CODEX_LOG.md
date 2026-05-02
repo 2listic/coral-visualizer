@@ -12,6 +12,15 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - fix: gate `SetScalarBarVisibility` / `HideUnusedScalarBars` calls strictly on `had_lookup_table=True`; when the display has no explicitly bound LUT, only clear `ColorArrayName` and `LookupTable` directly, then call `ColorBy(display, None)`
   - imported `debug_log` from `diagnostics` into `paraview_backend` for the trace lines
   - verified with full unit + Playwright e2e suite: `94 passed`, `8 passed`
+- Added "Load State" remote browser dialog, "Upload State File" button, and fix for VectorProperty JSON serialization error on Save State:
+  - "Load State" button now opens a searchable remote file browser (state_browser_dialog) listing all `.coral.state.json` files under --data-directory, matching the pattern of the existing "Open Remote" dataset browser
+  - added "Upload State File" button with a hidden file input that accepts `.json` files, uploads them via `upload_state_file` controller, deduplicates filename, and selects the uploaded file automatically
+  - new state vars: `state_browser_dialog`, `state_browser_search_term`, `filtered_state_files`; new handler `on_state_browser_search_change`; new controller `upload_state_file`; new `persist_uploaded_state_file` in `FileOperationService`
+  - `pv_load_state` now closes the state browser dialog on success
+  - fixed `VectorProperty is not JSON serializable` error on Save State: `_normalize_property_value` in `paraview_property_inspector.py` now handles non-list VectorProperty objects defensively; `save_paraview_state` in `file_operations.py` adds a `_json_default` fallback encoder to `json.dumps` to catch any remaining non-serializable proxy values
+  - updated all affected test mocks in `test_common_controllers.py` and `test_handler_registration.py`
+  - verified: 114 unit tests pass
+
 - Fixed ParaView save/viewport regressions introduced around overwrite confirmation and face-only display:
   - preserved the active camera/view state while creating ParaView cell/face extract displays so `Show cells` off / `Show faces` on no longer shifts the viewport on explicit boundary-only datasets
   - flushed save feedback state after successful ParaView saves so save status updates are pushed to the client reliably

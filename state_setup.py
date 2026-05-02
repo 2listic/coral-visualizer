@@ -189,6 +189,9 @@ def initialize_state(
     state.state_filename = "session.coral.state.json"
     state.state_status = ""
     state.state_status_type = "info"
+    state.state_browser_dialog = False
+    state.state_browser_search_term = ""
+    state.filtered_state_files = []
     state.save_overwrite_dialog = False
     state.save_overwrite_target = ""
     state.save_overwrite_action = ""

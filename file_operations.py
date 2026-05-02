@@ -31,6 +31,9 @@ class FileOperationService:
     def persist_uploaded_file(self, client_file):
         return persist_uploaded_file(self.data_directory, client_file)
 
+    def persist_uploaded_state_file(self, client_file):
+        return persist_uploaded_state_file(self.data_directory, client_file)
+
     def save_paraview_output(self, overwrite=False):
         return save_paraview_output(
             state=self.state,
@@ -117,6 +120,26 @@ def persist_uploaded_file(data_directory, client_file):
 
     candidate.write_bytes(client_file.content)
     return str(candidate)
+
+
+def persist_uploaded_state_file(data_directory, client_file):
+    """Persist an uploaded state JSON file into the data directory and return its relative path."""
+    uploads_dir = Path(data_directory) / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    original_name = Path(
+        client_file.name or f"upload{STATE_FILE_EXTENSION}").name
+    if not original_name.endswith(STATE_FILE_EXTENSION):
+        original_name = Path(original_name).stem + STATE_FILE_EXTENSION
+    stem = original_name[: -len(STATE_FILE_EXTENSION)]
+    candidate = uploads_dir / original_name
+    counter = 1
+    while candidate.exists():
+        candidate = uploads_dir / f"{stem}_{counter}{STATE_FILE_EXTENSION}"
+        counter += 1
+
+    candidate.write_bytes(client_file.content)
+    return os.path.relpath(str(candidate), data_directory)
 
 
 def _flush_save_feedback(state):
@@ -219,9 +242,18 @@ def save_paraview_state(*, state, data_directory, pv_backend, overwrite=False):
     snapshot.setdefault("selected_file", getattr(
         state, "selected_file", "") or "")
 
+    def _json_default(obj):
+        """Fallback serializer: convert any non-JSON-serializable value to its string form."""
+        try:
+            return str(obj)
+        except Exception:
+            return None
+
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    Path(output_path).write_text(json.dumps(
-        snapshot, indent=2, sort_keys=True), encoding="utf-8")
+    Path(output_path).write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, default=_json_default),
+        encoding="utf-8",
+    )
 
     refresh_available_state_files(state, data_directory)
     state.state_filename = relative_output

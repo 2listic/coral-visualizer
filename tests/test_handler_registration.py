@@ -106,6 +106,8 @@ def test_register_app_handlers_wires_paraview_runtime(monkeypatch):
             refresh_available_files=lambda: None,
             persist_uploaded_file=lambda client_file: None,
             save_paraview_output=lambda: None,
+            persist_uploaded_state_file=lambda client_file: None,
+            refresh_available_state_files=lambda: None,
         ),
         interaction_quality_presets={"high": {"interactive_quality": 95}},
         view_controls=SimpleNamespace(
@@ -177,6 +179,8 @@ def test_register_app_handlers_falls_back_to_vtk_runtime(monkeypatch):
             refresh_available_files=lambda: None,
             persist_uploaded_file=lambda client_file: None,
             save_paraview_output=lambda: None,
+            persist_uploaded_state_file=lambda client_file: None,
+            refresh_available_state_files=lambda: None,
         ),
         interaction_quality_presets={"high": {"interactive_quality": 95}},
         view_controls=SimpleNamespace(

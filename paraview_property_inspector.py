@@ -16,7 +16,8 @@ class ParaViewPropertyInspector:
         for name in proxy.ListProperties():
             prop = proxy.GetProperty(name)
             type_name = type(prop).__name__
-            sm_property = proxy.SMProxy.GetProperty(name) if proxy.SMProxy is not None else None
+            sm_property = proxy.SMProxy.GetProperty(
+                name) if proxy.SMProxy is not None else None
 
             if type_name == "InputProperty":
                 continue
@@ -47,7 +48,8 @@ class ParaViewPropertyInspector:
                 value = None
 
             available = self._property_options(proxy, name, type_name, value)
-            effective_type = self._effective_property_type(type_name, sm_property)
+            effective_type = self._effective_property_type(
+                type_name, sm_property)
             properties.append(
                 {
                     "scope": "unknown",
@@ -65,7 +67,8 @@ class ParaViewPropertyInspector:
                 }
             )
 
-        properties = sorted(properties, key=lambda item: (item["priority"], item["label"]))
+        properties = sorted(properties, key=lambda item: (
+            item["priority"], item["label"]))
         if scope == "display":
             properties = [
                 item
@@ -116,7 +119,8 @@ class ParaViewPropertyInspector:
                     item["type"], prop.GetData()
                 )
             pending = item.get("pending_value")
-            normalized_pending = self._coerce_property_value(item["type"], pending)
+            normalized_pending = self._coerce_property_value(
+                item["type"], pending)
             normalized_pending_ui = self._normalize_property_value(
                 item["type"], normalized_pending
             )
@@ -139,7 +143,8 @@ class ParaViewPropertyInspector:
         self, proxy, name, type_name, value, sm_property, scope
     ):
         """Expose proxy-switch properties and selected sub-proxy fields."""
-        available = list(getattr(proxy.GetProperty(name), "Available", []) or [])
+        available = list(
+            getattr(proxy.GetProperty(name), "Available", []) or [])
         items = []
         parent_visibility = (
             sm_property.GetPanelVisibility()
@@ -190,7 +195,8 @@ class ParaViewPropertyInspector:
                 child_value = child_prop.GetData()
             except Exception:
                 child_value = None
-            effective_child_type = self._effective_property_type(child_type, child_sm_property)
+            effective_child_type = self._effective_property_type(
+                child_type, child_sm_property)
 
             items.append(
                 {
@@ -236,8 +242,15 @@ class ParaViewPropertyInspector:
                     return "__none__"
                 return f"{association}:{name}"
             return "__none__"
-        if type_name == "VectorProperty" and isinstance(value, (list, tuple)):
-            return ", ".join(str(item) for item in value)
+        if type_name == "VectorProperty":
+            if isinstance(value, (list, tuple)):
+                return ", ".join(str(item) for item in value)
+            if value is not None and hasattr(value, "__iter__"):
+                try:
+                    return ", ".join(str(item) for item in value)
+                except Exception:
+                    pass
+            return str(value) if value is not None else ""
         if isinstance(value, tuple):
             return list(value)
         return value
@@ -386,7 +399,9 @@ class ParaViewPropertyInspector:
                     }
                 )
 
-        current = self._normalize_property_value("ArraySelectionProperty", value)
+        current = self._normalize_property_value(
+            "ArraySelectionProperty", value)
         if current not in {item["value"] for item in options} and current != "__none__":
-            options.append({"text": current.split(":", 1)[1], "value": current})
+            options.append(
+                {"text": current.split(":", 1)[1], "value": current})
         return options

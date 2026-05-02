@@ -151,3 +151,16 @@ def register_state_handlers(
                 filtered.extend(items)
 
         state.filtered_available_files = filtered
+
+    @state.change("state_browser_search_term", "state_files")
+    def on_state_browser_search_change(state_browser_search_term, state_files, **kwargs):
+        """Filter the available state files based on the search term."""
+        if not state_browser_search_term:
+            state.filtered_state_files = list(state_files or [])
+            return
+
+        term = state_browser_search_term.lower()
+        state.filtered_state_files = [
+            item for item in (state_files or [])
+            if term in item.get("text", "").lower()
+        ]

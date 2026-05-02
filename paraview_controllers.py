@@ -757,6 +757,7 @@ def register_paraview_controllers(
                 candidate = str(filename).strip()
                 if candidate:
                     state.state_filename = candidate
+            state.state_browser_dialog = False
             _load_application_state()
         except Exception as exc:
             state.state_status = f"Error: {exc}"

@@ -16,6 +16,8 @@ def register_common_controllers(
     reset_vtk_view,
     persist_uploaded_file,
     refresh_available_files,
+    persist_uploaded_state_file,
+    refresh_available_state_files,
 ):
     """Register backend-agnostic controller callbacks."""
 
@@ -61,6 +63,29 @@ def register_common_controllers(
         except Exception as exc:
             state.upload_status = f"Upload failed: {exc}"
             state.upload_status_type = "error"
+
+    @ctrl.add("upload_state_file")
+    def upload_state_file(files):
+        """Handle a state file upload from the browser file picker."""
+        uploaded_files = files or []
+        if not uploaded_files:
+            return
+
+        client_file = ClientFile(uploaded_files[0])
+        if client_file.is_empty:
+            state.state_status = "Uploaded state file was empty"
+            state.state_status_type = "error"
+            return
+
+        try:
+            relative_path = persist_uploaded_state_file(client_file)
+            refresh_available_state_files()
+            state.state_filename = relative_path
+            state.state_status = f"Uploaded state file: {os.path.basename(relative_path)}"
+            state.state_status_type = "success"
+        except Exception as exc:
+            state.state_status = f"Upload failed: {exc}"
+            state.state_status_type = "error"
 
     @ctrl.add("open_remote_file")
     def open_remote_file(path):

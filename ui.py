@@ -257,6 +257,51 @@ def _build_toolbar(ctrl, backend):
     vuetify.VSpacer()
 
 
+def _build_state_browser_dialog(ctrl):
+    with vuetify.VDialog(v_model=("state_browser_dialog",), max_width="720"):
+        with vuetify.VCard():
+            vuetify.VCardTitle("Load State File")
+            with vuetify.VCardText():
+                vuetify.VTextField(
+                    v_model=("state_browser_search_term",),
+                    placeholder="Search state files...",
+                    clearable=True,
+                    dense=True,
+                    outlined=True,
+                    prepend_inner_icon="mdi-magnify",
+                    classes="mb-2",
+                    autofocus=True,
+                )
+                vuetify.VAlert(
+                    dense=True,
+                    text=True,
+                    type="info",
+                    children=[
+                        "Browse saved state files available on the server under --data-directory."
+                    ],
+                )
+                with vuetify.VList(
+                    dense=True,
+                    style="max-height: 420px; overflow-y: auto; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+                ):
+                    with vuetify.Template(v_for="item in filtered_state_files"):
+                        with vuetify.VListItem(
+                            v_if="item.value",
+                            click=(ctrl.pv_load_state, "[item.value]"),
+                        ):
+                            with vuetify.VListItemIcon():
+                                vuetify.VIcon("mdi-file-cog-outline")
+                            with vuetify.VListItemContent():
+                                vuetify.VListItemTitle("{{ item.text }}")
+            with vuetify.VCardActions():
+                vuetify.VSpacer()
+                vuetify.VBtn(
+                    "Close",
+                    text=True,
+                    click="state_browser_dialog = false",
+                )
+
+
 def _build_remote_browser_dialog(ctrl):
     with vuetify.VDialog(v_model=("remote_browser_dialog",), max_width="720"):
         with vuetify.VCard():
@@ -625,61 +670,15 @@ def _build_paraview_pipeline_panel(ctrl):
                                                     with vuetify.VListItemContent():
                                                         vuetify.VListItemTitle(
                                                             "{{ item.text }}")
-
-            vuetify.VDivider(classes="my-4")
-            vuetify.VSubheader(classes="px-0", children=["State"])
-            with vuetify.VSheet(
-                classes="pa-3",
-                style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
-            ):
-                vuetify.VCombobox(
-                    v_model=("state_filename",),
-                    items=("state_files",),
-                    label="State file",
-                    dense=True,
-                    outlined=True,
-                    clearable=True,
-                    hide_details=True,
-                    classes="mb-3",
-                )
-                with vuetify.VRow(dense=True):
-                    with vuetify.VCol(cols=12):
-                        vuetify.VBtn(
-                            "Save State",
-                            small=True,
-                            block=True,
-                            outlined=True,
-                            click=ctrl.pv_save_state,
-                            disabled=(
-                                "!pipeline_items.length || !state_filename",),
-                            classes="mb-2",
-                        )
-                    with vuetify.VCol(cols=12):
-                        vuetify.VBtn(
-                            "Load State",
-                            small=True,
-                            block=True,
-                            outlined=True,
-                            click=ctrl.pv_load_state,
-                            disabled=("!state_filename",),
-                        )
-                vuetify.VAlert(
-                    v_if="state_status",
-                    type=("state_status_type",),
-                    dense=True,
-                    text=True,
-                    classes="mt-3 mb-0",
-                    children=["{{ state_status }}"],
-                )
-                with vuetify.VCol(cols=12):
-                    vuetify.VBtn(
-                        "Delete Selected",
-                        small=True,
-                        block=True,
-                        outlined=True,
-                        click=ctrl.pv_delete_active,
-                        disabled=("!active_pipeline_item",),
-                    )
+                            with vuetify.VCol(cols=12):
+                                vuetify.VBtn(
+                                    "Delete Selected",
+                                    small=True,
+                                    block=True,
+                                    outlined=True,
+                                    click=ctrl.pv_delete_active,
+                                    disabled=("!active_pipeline_item",),
+                                )
                 with vuetify.VListItem():
                     with vuetify.VListItemContent():
                         vuetify.VListItemSubtitle("Save target")
@@ -865,6 +864,68 @@ def _build_paraview_pipeline_panel(ctrl):
                             children=["{{ save_status }}"],
                             classes="ma-0",
                         )
+
+            vuetify.VDivider(classes="my-4")
+            vuetify.VSubheader(classes="px-0", children=["State"])
+            with vuetify.VSheet(
+                classes="pa-3",
+                style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+            ):
+                html.Input(
+                    ref="stateFilePicker",
+                    type="file",
+                    accept=".json",
+                    style="display: none;",
+                    change=(ctrl.upload_state_file, "[$event.target.files]"),
+                    __events=["change"],
+                )
+                vuetify.VCombobox(
+                    v_model=("state_filename",),
+                    items=("state_files",),
+                    label="State file",
+                    dense=True,
+                    outlined=True,
+                    clearable=True,
+                    hide_details=True,
+                    classes="mb-3",
+                )
+                with vuetify.VRow(dense=True):
+                    with vuetify.VCol(cols=12):
+                        vuetify.VBtn(
+                            "Save State",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click=ctrl.pv_save_state,
+                            disabled=(
+                                "!pipeline_items.length || !state_filename",),
+                            classes="mb-2",
+                        )
+                    with vuetify.VCol(cols=12):
+                        vuetify.VBtn(
+                            "Load State",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click="state_browser_search_term = ''; state_browser_dialog = true",
+                            classes="mb-2",
+                        )
+                    with vuetify.VCol(cols=12):
+                        vuetify.VBtn(
+                            "Upload State File",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click="$refs.stateFilePicker.value = null; $refs.stateFilePicker.click()",
+                        )
+                vuetify.VAlert(
+                    v_if="state_status",
+                    type=("state_status_type",),
+                    dense=True,
+                    text=True,
+                    classes="mt-3 mb-0",
+                    children=["{{ state_status }}"],
+                )
 
             vuetify.VDivider(classes="my-4")
             vuetify.VSubheader(classes="px-0", children=["Workflow"])
@@ -1854,6 +1915,7 @@ def build_ui(server, render_target, backend):
             ):
                 _build_alerts()
                 _build_remote_browser_dialog(ctrl)
+                _build_state_browser_dialog(ctrl)
                 if backend == "paraview":
                     _build_paraview_pipeline_panel(ctrl)
                     _build_paraview_inspector_panel(ctrl)

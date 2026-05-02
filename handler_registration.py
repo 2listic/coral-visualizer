@@ -168,4 +168,6 @@ def register_app_handlers(
         reset_vtk_view=reset_vtk_view,
         persist_uploaded_file=file_operations.persist_uploaded_file,
         refresh_available_files=file_operations.refresh_available_files,
+        persist_uploaded_state_file=file_operations.persist_uploaded_state_file,
+        refresh_available_state_files=file_operations.refresh_available_state_files,
     )
