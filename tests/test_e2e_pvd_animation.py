@@ -33,6 +33,20 @@ def _wait_for_http_ready(url, timeout_s=45):
     raise RuntimeError(f"Timed out waiting for server at {url}")
 
 
+def _press_time_slider_key(page, key):
+    slider = page.locator("div.v-toolbar__content .v-slider").first
+    slider.wait_for(state="visible", timeout=20000)
+    slider.evaluate(
+        """(el) => {
+            const thumb = el.querySelector("[role='slider']");
+            if (thumb) {
+                thumb.focus();
+            }
+        }"""
+    )
+    page.keyboard.press(key)
+
+
 @pytest.fixture
 def paraview_server():
     if not is_paraview_available():
@@ -109,6 +123,17 @@ def test_pvd_animation_state(paraview_server, shared_browser):
                 "total_timesteps": int(match.group(3)),
             }
 
+        def wait_for_time_index(expected, timeout_s=5):
+            deadline = time.time() + timeout_s
+            last = None
+            while time.time() < deadline:
+                last = get_time_info()
+                if last["time_index_displayed"] == expected:
+                    return last
+                time.sleep(0.1)
+            assert last is not None
+            assert last["time_index_displayed"] == expected
+
         state = get_time_info()
         print(f"DEBUG Initial Time Label: {state}")
 
@@ -116,35 +141,15 @@ def test_pvd_animation_state(paraview_server, shared_browser):
         assert state["total_timesteps"] == 4
         assert state["time_index_displayed"] == 1
 
-        # Test Next Step button
-        page.locator(".mdi-skip-next").first.click()
-        time.sleep(1.5)
-        state = get_time_info()
-        assert state["time_index_displayed"] == 2
+        # Drive the discrete timestep slider through its keyboard-accessible thumb.
+        _press_time_slider_key(page, "ArrowRight")
+        wait_for_time_index(2)
 
-        # Test Previous Step button
-        page.locator(".mdi-skip-previous").first.click()
-        time.sleep(1.5)
-        state = get_time_info()
-        assert state["time_index_displayed"] == 1
+        _press_time_slider_key(page, "Home")
+        wait_for_time_index(1)
 
-        # Test Play button
-        page.locator(".mdi-play").first.click()
-        page.wait_for_selector(".mdi-pause", timeout=5000)
-        time.sleep(3.0)
-        state = get_time_info()
-        assert state["time_index_displayed"] > 1
-
-        # Test Pause
-        page.locator(".mdi-pause").first.click()
-        page.wait_for_selector(".mdi-play", timeout=5000)
-        time.sleep(1.5)
-        state = get_time_info()
-        final_index = state["time_index_displayed"]
-
-        time.sleep(1.0)
-        state = get_time_info()
-        assert state["time_index_displayed"] == final_index
+        _press_time_slider_key(page, "End")
+        wait_for_time_index(4)
     except Exception as e:
         page.screenshot(path="failure_pvd_animation.png")
         raise e

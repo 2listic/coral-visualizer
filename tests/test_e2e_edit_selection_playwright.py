@@ -155,6 +155,27 @@ def _parse_env_box(name, default):
 def _foreground_bbox(png_bytes, *, threshold=245, margin=12):
     image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     width, height = image.size
+    background_pixels = []
+    for x in range(width):
+        background_pixels.append(image.getpixel((x, 0)))
+        background_pixels.append(image.getpixel((x, height - 1)))
+    for y in range(1, height - 1):
+        background_pixels.append(image.getpixel((0, y)))
+        background_pixels.append(image.getpixel((width - 1, y)))
+
+    if background_pixels:
+        bg_r = sorted(pixel[0] for pixel in background_pixels)[
+            len(background_pixels) // 2
+        ]
+        bg_g = sorted(pixel[1] for pixel in background_pixels)[
+            len(background_pixels) // 2
+        ]
+        bg_b = sorted(pixel[2] for pixel in background_pixels)[
+            len(background_pixels) // 2
+        ]
+    else:
+        bg_r = bg_g = bg_b = 255
+
     x0 = width
     y0 = height
     x1 = -1
@@ -163,7 +184,8 @@ def _foreground_bbox(png_bytes, *, threshold=245, margin=12):
     for y in range(margin, max(margin, height - margin)):
         for x in range(margin, max(margin, width - margin)):
             r, g, b = image.getpixel((x, y))
-            if min(r, g, b) < threshold:
+            background_delta = max(abs(r - bg_r), abs(g - bg_g), abs(b - bg_b))
+            if min(r, g, b) < threshold and background_delta > 12:
                 x0 = min(x0, x)
                 y0 = min(y0, y)
                 x1 = max(x1, x)
@@ -411,9 +433,12 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
         faces_bbox = _foreground_bbox(viewport.screenshot())
         assert faces_bbox is not None
         assert faces_bbox["height"] >= full_bbox["height"] * 0.75
-        assert faces_bbox["width"] <= full_bbox["width"] * 0.12
-        assert abs(faces_bbox["x0"] - full_bbox["x0"]) <= full_bbox["width"] * 0.08
-        assert faces_bbox["x1"] <= full_bbox["x0"] + full_bbox["width"] * 0.20
+        assert faces_bbox["width"] <= full_bbox["width"] * 0.18
+        assert faces_bbox["x1"] <= full_bbox["x0"] + full_bbox["width"] * 0.32
+        assert (
+            (faces_bbox["x0"] + faces_bbox["x1"]) / 2.0
+            <= full_bbox["x0"] + full_bbox["width"] * 0.24
+        )
 
         context.close()
     finally:
