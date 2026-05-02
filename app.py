@@ -1,3 +1,6 @@
+import mimetypes
+import os
+
 from ui import build_ui
 from mesh_edit import (
     assign_id_to_selection,
@@ -88,6 +91,48 @@ register_app_handlers(
     interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
     view_controls=view_controls,
 )
+
+
+# -----------------------------------------------------------------------------
+# Download endpoint
+# -----------------------------------------------------------------------------
+
+
+async def _handle_file_download(request):
+    """Serve a file from within data_directory for browser download."""
+    from aiohttp.web import Response
+
+    file_param = request.rel_url.query.get("file", "").strip()
+    if not file_param:
+        return Response(status=400, text="Missing file parameter")
+    data_dir_abs = os.path.realpath(data_directory)
+    abs_path = (
+        os.path.realpath(file_param)
+        if os.path.isabs(file_param)
+        else os.path.realpath(os.path.join(data_dir_abs, file_param))
+    )
+
+    if not abs_path.startswith(data_dir_abs + os.sep):
+        return Response(status=403, text="Forbidden")
+
+    if not os.path.isfile(abs_path):
+        return Response(status=404, text="Not found")
+
+    filename = os.path.basename(abs_path)
+    mime = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
+    with open(abs_path, "rb") as fh:
+        content = fh.read()
+    return Response(
+        body=content,
+        content_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@ctrl.add("on_server_bind")
+def _register_download_route(wslink_server):
+    wslink_server.app.router.add_route(
+        "GET", "/api/download", _handle_file_download)
 
 
 # -----------------------------------------------------------------------------

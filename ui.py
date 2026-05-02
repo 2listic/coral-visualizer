@@ -120,6 +120,14 @@ def _build_toolbar(ctrl, backend):
         click="remote_search_term = ''; remote_browser_dialog = true",
         classes="mr-2",
     )
+    vuetify.VBtn(
+        "Download",
+        small=True,
+        outlined=True,
+        disabled=("!selected_file",),
+        click="window.open('/api/download?file=' + encodeURIComponent(selected_file), '_blank')",
+        classes="mr-2",
+    )
     if backend == "paraview":
         vuetify.VBtn(
             "Enter Edit Mode",
@@ -917,6 +925,16 @@ def _build_paraview_pipeline_panel(ctrl):
                             block=True,
                             outlined=True,
                             click="$refs.stateFilePicker.value = null; $refs.stateFilePicker.click()",
+                            classes="mb-2",
+                        )
+                    with vuetify.VCol(cols=12):
+                        vuetify.VBtn(
+                            "Download State",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            disabled=("!state_filename",),
+                            click="window.open('/api/download?file=' + encodeURIComponent(state_filename), '_blank')",
                         )
                 vuetify.VAlert(
                     v_if="state_status",
@@ -1821,15 +1839,15 @@ def _build_vtk_edit_panel(ctrl):
 def build_ui(server, render_target, backend):
     """Build the Trame UI layout."""
     ctrl = server.controller
-    server.state.trame__title = "Coral VTK Editor"
+    server.state.trame__title = "Coral VTK Manipulator"
     if LOGO_DATA_URI:
         server.state.trame__favicon = LOGO_DATA_URI
 
     with SinglePageLayout(server) as layout:
-        layout.title.set_text("Coral VTK Editor")
+        layout.title.set_text("Coral VTK Manipulator")
         layout.title.hide()
         layout.icon.hide()
-        html.Script("document.title = 'Coral VTK Editor';")
+        html.Script("document.title = 'Coral VTK Manipulator';")
 
         # Rescale over time confirmation dialog
         with vuetify.VDialog(v_model=("rescale_over_time_dialog",), max_width=450):
