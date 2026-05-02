@@ -69,6 +69,24 @@ def persist_uploaded_file(data_directory, client_file):
     return str(candidate)
 
 
+def _flush_save_feedback(state):
+    """Best-effort push of save feedback state to the client."""
+    dirty = getattr(state, "dirty", None)
+    if callable(dirty):
+        for key in ("save_filename", "save_status", "save_status_type", "available_files"):
+            try:
+                dirty(key)
+            except Exception:
+                pass
+
+    flush = getattr(state, "flush", None)
+    if callable(flush):
+        try:
+            flush()
+        except Exception:
+            pass
+
+
 def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_session):
     """Resolve the active ParaView save target and classify the output kind."""
     if pv_backend.source is None and not edit_session.active:
@@ -124,4 +142,5 @@ def save_paraview_output(*, state, data_directory, pv_backend, edit_session, ove
     state.save_filename = relative_output
     state.save_status = f"Saved {saved_kind} to {relative_output}"
     state.save_status_type = "success"
+    _flush_save_feedback(state)
     return output_path

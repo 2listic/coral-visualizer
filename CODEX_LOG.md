@@ -6,6 +6,12 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Fixed ParaView save/viewport regressions introduced around overwrite confirmation and face-only display:
+  - preserved the active camera/view state while creating ParaView cell/face extract displays so `Show cells` off / `Show faces` on no longer shifts the viewport on explicit boundary-only datasets
+  - flushed save feedback state after successful ParaView saves so save status updates are pushed to the client reliably
+  - changed ParaView save actions to consume the live `Output filename` value from the toolbar at click time, avoiding races where a stale default filename could trigger the new overwrite dialog unexpectedly
+  - added controller/file-operation/backend regression coverage for camera preservation, save feedback flushing, and explicit client-provided save filenames
+  - verified with targeted tests and Playwright e2e: `91 passed`, `2 passed`
 - Fixed ParaView surface-edit and face-only display regressions:
   - mapped invalid native ParaView surface-pick point IDs back to source boundary keys by coordinate, so surface selections on `cube.vtk` can be assigned successfully
   - preserved existing `CellData` values when materializing new face/edge cells by copying tuples from the owning top-dimensional cell, including multi-component arrays

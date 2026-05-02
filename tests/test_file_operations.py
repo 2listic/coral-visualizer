@@ -195,6 +195,43 @@ def test_save_paraview_output_saves_pipeline_result_with_backend_extension(tmp_p
     assert output_path == str(tmp_path / "exports" / "final.vtu")
     assert pv_backend.saved_paths == [output_path]
     assert state.save_status == "Saved pipeline result to exports/final.vtu"
+
+
+def test_save_paraview_output_flushes_feedback_state_when_supported(tmp_path, monkeypatch):
+    dirty_calls = []
+    flush_calls = []
+
+    state = SimpleNamespace(
+        save_filename="exports/final",
+        save_status="",
+        save_status_type="info",
+        available_files=[],
+        dirty=lambda key: dirty_calls.append(key),
+        flush=lambda: flush_calls.append(True),
+    )
+    edit_session = FakeEditSession(active=False)
+    pv_backend = FakeParaViewBackend(extension=".vtu")
+
+    monkeypatch.setattr(
+        file_operations,
+        "get_vtk_files_from_data_folder",
+        lambda directory: [{"text": "saved", "value": "exports/final.vtu"}],
+    )
+
+    file_operations.save_paraview_output(
+        state=state,
+        data_directory=str(tmp_path),
+        pv_backend=pv_backend,
+        edit_session=edit_session,
+    )
+
+    assert dirty_calls == [
+        "save_filename",
+        "save_status",
+        "save_status_type",
+        "available_files",
+    ]
+    assert flush_calls == [True]
     assert state.available_files == [
         {"text": "saved", "value": "exports/final.vtu"}]
 

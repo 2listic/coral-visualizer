@@ -1022,7 +1022,8 @@ class ParaViewBackend:
                     or (role == "faces" and faces_visible)
                 )
             )
-            self._set_extract_visibility_for_dimension(node, dimension, visible)
+            self._set_extract_visibility_for_dimension(
+                node, dimension, visible)
 
     def _semantic_cell_dimension_roles(self, node, dimensions=None):
         """Return UI cell/face roles mapped to intrinsic VTK cell dimensions."""
@@ -1074,6 +1075,7 @@ class ParaViewBackend:
         if not cell_types:
             return None
 
+        camera_state = self._capture_view_camera_state()
         extract = factory(Input=node["source"])
         extract.CellTypes = cell_types
         extract.UpdatePipeline()
@@ -1081,8 +1083,46 @@ class ParaViewBackend:
         display.SetRepresentationType(
             self._normalize_representation(self._get_representation()))
         self._copy_display_coloring(node["display"], display)
+        self._restore_view_camera_state(camera_state)
         extracts[dimension_key] = {"source": extract, "display": display}
         return extracts[dimension_key]
+
+    def _capture_view_camera_state(self):
+        """Return a shallow snapshot of view camera properties when available."""
+        if self.view is None:
+            return None
+
+        state = {}
+        for name in (
+            "CameraPosition",
+            "CameraFocalPoint",
+            "CameraViewUp",
+            "CameraParallelScale",
+            "CenterOfRotation",
+        ):
+            if not hasattr(self.view, name):
+                continue
+            try:
+                value = getattr(self.view, name)
+            except Exception:
+                continue
+            if isinstance(value, (list, tuple)):
+                state[name] = list(value)
+            else:
+                state[name] = value
+        return state or None
+
+    def _restore_view_camera_state(self, camera_state):
+        """Restore a previously captured view camera snapshot."""
+        if self.view is None or not camera_state:
+            return
+        for name, value in camera_state.items():
+            if not hasattr(self.view, name):
+                continue
+            try:
+                setattr(self.view, name, value)
+            except Exception:
+                pass
 
     def _delete_cell_dimension_extracts(self, node):
         """Remove auxiliary extract proxies for a pipeline node."""
@@ -1175,7 +1215,8 @@ class ParaViewBackend:
             return []
 
         names = []
-        self._collect_cell_type_names_for_dimension(dataset, target_dimension, names)
+        self._collect_cell_type_names_for_dimension(
+            dataset, target_dimension, names)
         return names
 
     def _collect_cell_type_names_for_dimension(self, dataset, target_dimension, names):
@@ -3034,10 +3075,12 @@ class ParaViewBackend:
             "faces": True,
         }
         show_cells = bool(
-            dimension_visibility.get("cells", dimension_visibility.get("volume", True))
+            dimension_visibility.get(
+                "cells", dimension_visibility.get("volume", True))
         )
         show_faces = bool(
-            dimension_visibility.get("faces", dimension_visibility.get("surface", True))
+            dimension_visibility.get(
+                "faces", dimension_visibility.get("surface", True))
         )
         return {
             "pipeline_items": [

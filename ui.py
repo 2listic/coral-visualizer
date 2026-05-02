@@ -123,12 +123,16 @@ def _build_toolbar(ctrl, backend):
             "{{ edit_session_active ? 'Save Edit Result' : 'Save Result' }}",
             small=True,
             color="primary",
-            click=ctrl.pv_save_active_data,
+            click=(
+                ctrl.pv_save_active_data,
+                "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
+            ),
             disabled=("!active_pipeline_item && !edit_session_active",),
             classes="mr-2",
         )
         vuetify.VTextField(
             v_model=("save_filename",),
+            ref="saveFilenameField",
             label="Output filename",
             dense=True,
             outlined=True,
@@ -191,7 +195,10 @@ def _build_toolbar(ctrl, backend):
             small=True,
             outlined=True,
             color="primary",
-            click=ctrl.pv_commit_edit_session,
+            click=(
+                ctrl.pv_commit_edit_session,
+                "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
+            ),
             v_if="edit_session_active",
             classes="mr-2",
         )

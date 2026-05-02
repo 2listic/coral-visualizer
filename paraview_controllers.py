@@ -69,6 +69,13 @@ def register_paraview_controllers(
         state.save_overwrite_dialog = True
         state.save_status = ""
 
+    def _apply_pending_save_filename(filename):
+        if filename is None:
+            return
+        candidate = str(filename).strip()
+        if candidate:
+            state.save_filename = candidate
+
     def _save_active_data(overwrite=False):
         save_paraview_output(overwrite=overwrite)
 
@@ -670,12 +677,13 @@ def register_paraview_controllers(
             state.error_message = f"Error adding filter: {exc}"
 
     @ctrl.add("pv_save_active_data")
-    def pv_save_active_data():
+    def pv_save_active_data(filename=None):
         """Save the active ParaView output or edit-session result to a new file."""
         if not is_paraview_backend():
             return
 
         try:
+            _apply_pending_save_filename(filename)
             _save_active_data()
         except FileExistsError as exc:
             _open_save_overwrite_dialog("save", exc)
@@ -792,12 +800,13 @@ def register_paraview_controllers(
         state.edit_status_type = "info"
 
     @ctrl.add("pv_commit_edit_session")
-    def pv_commit_edit_session():
+    def pv_commit_edit_session(filename=None):
         """Save the current edit session and append it as a new pipeline source."""
         if not is_paraview_backend() or not edit_session.active:
             return
 
         try:
+            _apply_pending_save_filename(filename)
             _commit_edit_session()
         except FileExistsError as exc:
             _open_save_overwrite_dialog("commit", exc)

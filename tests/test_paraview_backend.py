@@ -441,6 +441,11 @@ def make_backend():
     backend.servermanager = SimpleNamespace()
     backend.view = SimpleNamespace(
         ViewSize=(400, 200),
+        CameraPosition=[1.0, 2.0, 3.0],
+        CameraFocalPoint=[4.0, 5.0, 6.0],
+        CameraViewUp=[0.0, 1.0, 0.0],
+        CameraParallelScale=7.0,
+        CenterOfRotation=[8.0, 9.0, 10.0],
         GetProperty=lambda name: FakeProperty(),
         GetClientSideObject=lambda: FakeClientView(renderer),
     )
@@ -472,7 +477,8 @@ def test_load_file_marks_time_dependent_for_non_list_timesteps():
 
     class FakeScene:
         def __init__(self):
-            self.TimeKeeper = SimpleNamespace(TimestepValues=FakeTimeValues([0, 1, 2, 3]))
+            self.TimeKeeper = SimpleNamespace(
+                TimestepValues=FakeTimeValues([0, 1, 2, 3]))
             self.AnimationTime = 0.0
             self.updated = 0
 
@@ -493,7 +499,8 @@ def test_load_file_marks_time_dependent_for_non_list_timesteps():
 
     source = FakeSource(
         "1",
-        FakeDataInformation(point_names=["Velocity"], cell_names=["MaterialID"]),
+        FakeDataInformation(
+            point_names=["Velocity"], cell_names=["MaterialID"]),
     )
     display = FakeDisplay()
     scene = FakeScene()
@@ -517,11 +524,13 @@ def test_is_paraview_available_reflects_importable_modules(monkeypatch):
     monkeypatch.setattr(
         backend_module.importlib.util,
         "find_spec",
-        lambda name: object() if name in {"paraview", "trame.widgets.paraview"} else None,
+        lambda name: object() if name in {
+            "paraview", "trame.widgets.paraview"} else None,
     )
     assert is_paraview_available() is True
 
-    monkeypatch.setattr(backend_module.importlib.util, "find_spec", lambda name: None)
+    monkeypatch.setattr(backend_module.importlib.util,
+                        "find_spec", lambda name: None)
     assert is_paraview_available() is False
 
 
@@ -529,10 +538,12 @@ def test_array_collection_and_array_resolution_helpers():
     backend = make_backend()
     source = FakeSource(
         "1",
-        FakeDataInformation(point_names=["Velocity"], cell_names=["MaterialID"]),
+        FakeDataInformation(
+            point_names=["Velocity"], cell_names=["MaterialID"]),
     )
     display = FakeDisplay(color_array=("CELLS", "MaterialID"))
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -542,7 +553,8 @@ def test_array_collection_and_array_resolution_helpers():
         {"text": "MaterialID (Cell)", "value": f"{CELL_PREFIX}MaterialID"},
     ]
     assert backend._get_selected_array() == f"{CELL_PREFIX}MaterialID"
-    assert backend._resolve_available_array_value(f"{POINT_PREFIX}MaterialID") == f"{CELL_PREFIX}MaterialID"
+    assert backend._resolve_available_array_value(
+        f"{POINT_PREFIX}MaterialID") == f"{CELL_PREFIX}MaterialID"
     assert backend._resolve_available_array_value("bad") == ARRAY_SOLID
 
 
@@ -564,15 +576,18 @@ def test_default_output_filename_relative_path_and_extension_mapping():
 
     assert backend.default_output_extension() == ".vtp"
     assert backend.default_output_filename() == "Clip_1___weird.vtp"
-    assert backend._relative_path("/tmp/data/nested/input file.vtu") == "nested/input file.vtu"
+    assert backend._relative_path(
+        "/tmp/data/nested/input file.vtu") == "nested/input file.vtu"
     assert backend._relative_path("/outside/file.vtu") == "file.vtu"
 
 
 def test_apply_coloring_handles_solid_and_scalar_arrays():
     backend = make_backend()
-    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    source = FakeSource("1", FakeDataInformation(
+        point_names=["U"], cell_names=["M"]))
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -582,15 +597,18 @@ def test_apply_coloring_handles_solid_and_scalar_arrays():
     assert ("ColorBy", display, None) in backend.simple.calls
     assert ("HideUnusedScalarBars", backend.view) in backend.simple.calls
     assert ("ColorBy", display, ("POINTS", "U")) in backend.simple.calls
-    assert display.scalar_bar_calls == [(backend.view, False), (backend.view, True)]
+    assert display.scalar_bar_calls == [
+        (backend.view, False), (backend.view, True)]
     assert display.rescale_calls == [(True, False)]
 
 
 def test_apply_coloring_hides_previous_scalar_bar_when_switching_arrays():
     backend = make_backend()
-    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    source = FakeSource("1", FakeDataInformation(
+        point_names=["U"], cell_names=["M"]))
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -599,7 +617,8 @@ def test_apply_coloring_hides_previous_scalar_bar_when_switching_arrays():
     display.scalar_bar_calls.clear()
     backend.apply_coloring(f"{CELL_PREFIX}M")
 
-    assert display.scalar_bar_calls == [(backend.view, False), (backend.view, True)]
+    assert display.scalar_bar_calls == [
+        (backend.view, False), (backend.view, True)]
     assert ("HideUnusedScalarBars", backend.view) in backend.simple.calls
     assert ("ColorBy", display, ("CELLS", "M")) in backend.simple.calls
 
@@ -608,7 +627,8 @@ def test_apply_coloring_binds_lookup_table_before_showing_scalar_bar():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation(point_names=["U"]))
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -623,9 +643,11 @@ def test_color_controls_manage_lookup_table_scalar_bar_and_axes():
     backend = make_backend()
     backend.view.OrientationAxesVisibility = 1
     lut = FakeLookupTable()
-    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    source = FakeSource("1", FakeDataInformation(
+        point_names=["U"], cell_names=["M"]))
     display = FakeDisplay(color_array=("POINTS", "U"), lookup_table=lut)
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     backend._scalar_bar_visible = True
@@ -660,7 +682,8 @@ def test_categorical_coloring_populates_annotations_and_indexed_colors():
     lut = FakeLookupTable()
     source = FakeSource("1", FakeDataInformation(cell_names=["RegionId"]))
     display = FakeDisplay(color_array=("CELLS", "RegionId"), lookup_table=lut)
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     backend.servermanager.Fetch = lambda _source: FakeCategoricalDataset(
@@ -674,7 +697,7 @@ def test_categorical_coloring_populates_annotations_and_indexed_colors():
     assert lut.Annotations == ["1", "1", "2", "2", "3", "3"]
     assert len(lut.IndexedColors) == 9
     colors = {
-        tuple(lut.IndexedColors[index : index + 3])
+        tuple(lut.IndexedColors[index: index + 3])
         for index in range(0, 9, 3)
     }
     assert len(colors) == 3
@@ -685,7 +708,8 @@ def test_apply_color_map_preset_tries_paraview_aliases():
     lut = FakeLookupTableWithRejectedPresets()
     source = FakeSource("1", FakeDataInformation(point_names=["U"]))
     display = FakeDisplay(color_array=("POINTS", "U"), lookup_table=lut)
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     backend._scalar_bar_visible = True
@@ -697,9 +721,11 @@ def test_apply_color_map_preset_tries_paraview_aliases():
 
 def test_rescale_color_range_over_time_uses_display_fallback_when_simple_api_missing():
     backend = make_backend()
-    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    source = FakeSource("1", FakeDataInformation(
+        point_names=["U"], cell_names=["M"]))
     display = FakeDisplay(color_array=("POINTS", "U"))
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     backend._scalar_bar_visible = True
@@ -712,9 +738,11 @@ def test_rescale_color_range_over_time_uses_display_fallback_when_simple_api_mis
 
 def test_rescale_color_range_over_time_raises_when_no_compatible_api():
     backend = make_backend()
-    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    source = FakeSource("1", FakeDataInformation(
+        point_names=["U"], cell_names=["M"]))
     display = FakeDisplay(color_array=("POINTS", "U"))
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -729,9 +757,11 @@ def test_rescale_color_range_over_time_raises_when_no_compatible_api():
 
 def test_apply_coloring_solid_tolerates_colorby_none_failures():
     backend = make_backend()
-    source = FakeSource("1", FakeDataInformation(point_names=["U"], cell_names=["M"]))
+    source = FakeSource("1", FakeDataInformation(
+        point_names=["U"], cell_names=["M"]))
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -749,7 +779,8 @@ def test_apply_representation_and_apply_property_changes_render():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -758,8 +789,10 @@ def test_apply_representation_and_apply_property_changes_render():
 
     assert display.representation_calls == ["Wireframe"]
     assert source.updated == 1
-    assert ("apply", source, [{"name": "A"}]) in backend.property_inspector.calls
-    assert ("apply", display, [{"name": "B"}]) in backend.property_inspector.calls
+    assert ("apply", source, [{"name": "A"}]
+            ) in backend.property_inspector.calls
+    assert ("apply", display, [{"name": "B"}]
+            ) in backend.property_inspector.calls
 
 
 def test_set_cell_face_visibility_uses_extracts_and_preserves_node_visibility():
@@ -767,8 +800,10 @@ def test_set_cell_face_visibility_uses_extracts_and_preserves_node_visibility():
     backend.simple = FakeSimpleWithExtractCells()
     backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([12, 5])
     source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
-    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    display = FakeDisplay(color_array=("CELLS", "M"),
+                          lookup_table=FakeLookupTable())
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -792,8 +827,10 @@ def test_set_cell_face_visibility_uses_paraview_quadrilateral_alias_for_3d_faces
     backend.simple = FakeSimpleWithExtractCells()
     backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([12, 9])
     source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
-    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
-    node = backend._make_node(source, display, "/tmp/data/cube.vtk", "source", "cube")
+    display = FakeDisplay(color_array=("CELLS", "M"),
+                          lookup_table=FakeLookupTable())
+    node = backend._make_node(
+        source, display, "/tmp/data/cube.vtk", "source", "cube")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -810,8 +847,10 @@ def test_set_cell_face_visibility_shows_only_explicit_faces_on_2d_meshes():
     backend.simple = FakeSimpleWithExtractCells()
     backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([5])
     source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
-    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
-    node = backend._make_node(source, display, "/tmp/data/square.vtu", "source", "square")
+    display = FakeDisplay(color_array=("CELLS", "M"),
+                          lookup_table=FakeLookupTable())
+    node = backend._make_node(
+        source, display, "/tmp/data/square.vtu", "source", "square")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -831,8 +870,10 @@ def test_set_cell_face_visibility_keeps_standalone_edges_as_faces_on_2d_meshes()
     backend.simple = FakeSimpleWithExtractCells()
     backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([5, 3])
     source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
-    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
-    node = backend._make_node(source, display, "/tmp/data/square.vtu", "source", "square")
+    display = FakeDisplay(color_array=("CELLS", "M"),
+                          lookup_table=FakeLookupTable())
+    node = backend._make_node(
+        source, display, "/tmp/data/square.vtu", "source", "square")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -844,6 +885,35 @@ def test_set_cell_face_visibility_keeps_standalone_edges_as_faces_on_2d_meshes()
     assert faces_display.Visibility == 1
 
 
+def test_set_cell_face_visibility_preserves_view_camera_when_creating_extracts():
+    backend = make_backend()
+    backend.simple = FakeSimpleWithExtractCells()
+    backend.servermanager.Fetch = lambda _source: FakeCellTypesDataset([5, 3])
+    source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
+    display = FakeDisplay(color_array=("CELLS", "M"),
+                          lookup_table=FakeLookupTable())
+    node = backend._make_node(
+        source, display, "/tmp/data/square.vtu", "source", "square")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    original_camera = {
+        "CameraPosition": list(backend.view.CameraPosition),
+        "CameraFocalPoint": list(backend.view.CameraFocalPoint),
+        "CameraViewUp": list(backend.view.CameraViewUp),
+        "CameraParallelScale": backend.view.CameraParallelScale,
+        "CenterOfRotation": list(backend.view.CenterOfRotation),
+    }
+
+    backend.set_cell_face_visibility(False, True)
+
+    assert backend.view.CameraPosition == original_camera["CameraPosition"]
+    assert backend.view.CameraFocalPoint == original_camera["CameraFocalPoint"]
+    assert backend.view.CameraViewUp == original_camera["CameraViewUp"]
+    assert backend.view.CameraParallelScale == original_camera["CameraParallelScale"]
+    assert backend.view.CenterOfRotation == original_camera["CenterOfRotation"]
+
+
 def test_cell_face_visibility_reads_dimensions_from_multiblock_sources():
     backend = make_backend()
     backend.simple = FakeSimpleWithExtractCells()
@@ -851,8 +921,10 @@ def test_cell_face_visibility_reads_dimensions_from_multiblock_sources():
         [FakeCellTypesDataset([5]), FakeCellTypesDataset([3])]
     )
     source = FakeSource("1", FakeDataInformation(cell_names=["M"]))
-    display = FakeDisplay(color_array=("CELLS", "M"), lookup_table=FakeLookupTable())
-    node = backend._make_node(source, display, "/tmp/data/blocks.vtm", "source", "blocks")
+    display = FakeDisplay(color_array=("CELLS", "M"),
+                          lookup_table=FakeLookupTable())
+    node = backend._make_node(
+        source, display, "/tmp/data/blocks.vtm", "source", "blocks")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -866,7 +938,8 @@ def test_cell_face_visibility_reads_dimensions_from_multiblock_sources():
 def test_save_active_data_uses_legacy_writer_for_vtk(tmp_path, monkeypatch):
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
-    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(source, FakeDisplay(),
+                              "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -888,11 +961,13 @@ def test_save_active_data_uses_legacy_writer_for_vtk(tmp_path, monkeypatch):
             writes.append(("write",))
             return 1
 
-    monkeypatch.setattr(backend_module, "vtkDataSetWriter", lambda: FakeWriter())
+    monkeypatch.setattr(backend_module, "vtkDataSetWriter",
+                        lambda: FakeWriter())
 
     dataset = FakeVtkDataSet()
     backend.servermanager.Fetch = lambda _source: dataset
-    backend.simple.SaveData = lambda path, proxy=None: writes.append(("savedata", path, proxy))
+    backend.simple.SaveData = lambda path, proxy=None: writes.append(
+        ("savedata", path, proxy))
 
     output = tmp_path / "saved.vtk"
     backend.save_active_data(str(output))
@@ -906,7 +981,8 @@ def test_save_active_data_uses_legacy_writer_for_vtk(tmp_path, monkeypatch):
 def test_save_active_data_falls_back_to_savedata_for_non_dataset_vtk(tmp_path, monkeypatch):
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
-    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(source, FakeDisplay(),
+                              "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -916,7 +992,8 @@ def test_save_active_data_falls_back_to_savedata_for_non_dataset_vtk(tmp_path, m
     monkeypatch.setattr(backend_module, "vtkDataSet", FakeVtkDataSet)
     backend.servermanager.Fetch = lambda _source: object()
     calls = []
-    backend.simple.SaveData = lambda path, proxy=None: calls.append((path, proxy))
+    backend.simple.SaveData = lambda path, proxy=None: calls.append(
+        (path, proxy))
 
     output = tmp_path / "saved.vtk"
     backend.save_active_data(str(output))
@@ -926,8 +1003,10 @@ def test_save_active_data_falls_back_to_savedata_for_non_dataset_vtk(tmp_path, m
 
 def test_reset_view_updates_camera_from_bounds():
     backend = make_backend()
-    source = FakeSource("1", FakeDataInformation(bounds=(0.0, 2.0, 0.0, 4.0, 1.0, 5.0)))
-    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    source = FakeSource("1", FakeDataInformation(
+        bounds=(0.0, 2.0, 0.0, 4.0, 1.0, 5.0)))
+    node = backend._make_node(source, FakeDisplay(),
+                              "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     backend.view.ResetCamera = lambda: setattr(backend.view, "did_reset", True)
@@ -965,14 +1044,18 @@ def test_get_ui_state_reports_pipeline_metadata_for_active_source():
     backend = make_backend()
     source = FakeSource(
         "1",
-        FakeDataInformation(point_names=["Velocity"], cell_names=["MaterialID"], points=7, cells=3),
+        FakeDataInformation(point_names=["Velocity"], cell_names=[
+                            "MaterialID"], points=7, cells=3),
         xml_name="Calculator",
         properties={"AttributeType": FakeProperty("Cell Data")},
     )
     display = FakeDisplay(color_array=("POINTS", "Velocity"), visibility=0)
-    root = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
-    child_source = FakeSource("2", FakeDataInformation(cell_names=["MaterialID"]), xml_name="Threshold")
-    child = backend._make_node(child_source, FakeDisplay(), "/tmp/data/mesh.vtu", "filter", "Threshold 1", parent_id=root["id"], filter_key="threshold")
+    root = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    child_source = FakeSource("2", FakeDataInformation(
+        cell_names=["MaterialID"]), xml_name="Threshold")
+    child = backend._make_node(child_source, FakeDisplay(
+    ), "/tmp/data/mesh.vtu", "filter", "Threshold 1", parent_id=root["id"], filter_key="threshold")
     backend.pipeline_nodes = [root, child]
     backend.active_node_id = root["id"]
 
@@ -983,16 +1066,20 @@ def test_get_ui_state_reports_pipeline_metadata_for_active_source():
     assert ui_state["active_source_label"] == "mesh"
     assert ui_state["active_source_type"] == "Calculator"
     assert ui_state["active_source_kind"] == "Reader Type"
-    assert ui_state["point_arrays"] == [{"text": "Velocity (Point)", "value": "point:Velocity"}]
-    assert ui_state["cell_arrays"] == [{"text": "MaterialID (Cell)", "value": "cell:MaterialID"}]
+    assert ui_state["point_arrays"] == [
+        {"text": "Velocity (Point)", "value": "point:Velocity"}]
+    assert ui_state["cell_arrays"] == [
+        {"text": "MaterialID (Cell)", "value": "cell:MaterialID"}]
     assert ui_state["data_stats"][0] == {"label": "Points", "value": "7"}
     assert ui_state["active_visibility"] is False
     assert ui_state["selected_array"] == "point:Velocity"
     assert ui_state["show_calculator_help"] is True
     assert ui_state["calculator_attribute_type"] == "Cell Data"
     assert ui_state["calculator_input_variables"] == ["MaterialID"]
-    assert ui_state["source_properties"] == [{"name": "source_property", "scope": "source"}]
-    assert ui_state["display_properties"] == [{"name": "display_property", "scope": "display"}]
+    assert ui_state["source_properties"] == [
+        {"name": "source_property", "scope": "source"}]
+    assert ui_state["display_properties"] == [
+        {"name": "display_property", "scope": "display"}]
 
 
 def test_get_detailed_cell_stats_reports_intrinsic_dimensions():
@@ -1014,13 +1101,17 @@ def test_get_detailed_cell_stats_reports_intrinsic_dimensions():
 
 def test_pipeline_helpers_cover_parentage_labels_and_descendants():
     backend = make_backend()
-    root = backend._make_node(FakeSource("1", FakeDataInformation()), FakeDisplay(), "/tmp/data/a.vtu", "source", "Reader")
-    child = backend._make_node(FakeSource("2", FakeDataInformation()), FakeDisplay(), "/tmp/data/a.vtu", "filter", "Clip 1", parent_id=root["id"], filter_key="clip")
-    grandchild = backend._make_node(FakeSource("3", FakeDataInformation()), FakeDisplay(), "/tmp/data/a.vtu", "filter", "Threshold 1", parent_id=child["id"], filter_key="threshold")
+    root = backend._make_node(FakeSource("1", FakeDataInformation(
+    )), FakeDisplay(), "/tmp/data/a.vtu", "source", "Reader")
+    child = backend._make_node(FakeSource("2", FakeDataInformation()), FakeDisplay(
+    ), "/tmp/data/a.vtu", "filter", "Clip 1", parent_id=root["id"], filter_key="clip")
+    grandchild = backend._make_node(FakeSource("3", FakeDataInformation()), FakeDisplay(
+    ), "/tmp/data/a.vtu", "filter", "Threshold 1", parent_id=child["id"], filter_key="threshold")
     backend.pipeline_nodes = [root, child, grandchild]
     backend.active_node_id = grandchild["id"]
 
-    assert [node["id"] for node in backend._collect_descendants(root["id"])] == [child["id"], grandchild["id"]]
+    assert [node["id"] for node in backend._collect_descendants(root["id"])] == [
+        child["id"], grandchild["id"]]
     assert backend._pipeline_depth(grandchild) == 2
     assert backend._pipeline_label(grandchild) == "    Threshold 1"
     assert backend._active_kind_label() == "Filter Type"
@@ -1029,9 +1120,12 @@ def test_pipeline_helpers_cover_parentage_labels_and_descendants():
 
 def test_delete_node_removes_descendants_and_selects_last_remaining_node():
     backend = make_backend()
-    root = backend._make_node(FakeSource("1", FakeDataInformation()), FakeDisplay(), "/tmp/data/a.vtu", "source", "Reader")
-    child = backend._make_node(FakeSource("2", FakeDataInformation()), FakeDisplay(), "/tmp/data/a.vtu", "filter", "Clip 1", parent_id=root["id"], filter_key="clip")
-    other = backend._make_node(FakeSource("3", FakeDataInformation()), FakeDisplay(), "/tmp/data/b.vtu", "source", "Other")
+    root = backend._make_node(FakeSource("1", FakeDataInformation(
+    )), FakeDisplay(), "/tmp/data/a.vtu", "source", "Reader")
+    child = backend._make_node(FakeSource("2", FakeDataInformation()), FakeDisplay(
+    ), "/tmp/data/a.vtu", "filter", "Clip 1", parent_id=root["id"], filter_key="clip")
+    other = backend._make_node(FakeSource("3", FakeDataInformation(
+    )), FakeDisplay(), "/tmp/data/b.vtu", "source", "Other")
     backend.pipeline_nodes = [root, child, other]
     backend.active_node_id = child["id"]
     chosen = []
@@ -1075,7 +1169,8 @@ def test_reload_node_file_replaces_root_source_for_selected_filter():
     backend.state = None
     backend.reset_camera = lambda: None
 
-    reloaded_source = FakeSource("4", FakeDataInformation(cell_names=["MaterialID"]))
+    reloaded_source = FakeSource(
+        "4", FakeDataInformation(cell_names=["MaterialID"]))
     reloaded_display = FakeDisplay()
     backend.simple.OpenDataFile = lambda filename: reloaded_source
     backend.simple.GetAnimationScene = lambda: SimpleNamespace(
@@ -1115,7 +1210,8 @@ def test_update_edit_selection_overlay_makes_overlay_non_pickable_and_restores_a
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     overlay_display = FakeDisplay()
@@ -1137,7 +1233,8 @@ def test_update_edit_selection_overlay_tolerates_colorby_none_failures():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     overlay_display = FakeDisplay()
@@ -1160,7 +1257,8 @@ def test_update_edit_selection_overlay_does_not_cleanup_scalar_bars():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
     display = FakeDisplay()
-    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     overlay_display = FakeDisplay()
@@ -1171,14 +1269,16 @@ def test_update_edit_selection_overlay_does_not_cleanup_scalar_bars():
 
     backend.update_edit_selection_overlay(FakeOverlayDataset(2))
 
-    hide_calls = [call for call in backend.simple.calls if call[0] == "HideUnusedScalarBars"]
+    hide_calls = [call for call in backend.simple.calls if call[0]
+                  == "HideUnusedScalarBars"]
     assert hide_calls == []
 
 
 def test_pick_visible_cell_ids_in_rect_keeps_paraview_surface_selection_ids():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
-    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(source, FakeDisplay(),
+                              "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
 
@@ -1187,7 +1287,8 @@ def test_pick_visible_cell_ids_in_rect_keeps_paraview_surface_selection_ids():
     backend._fetch_selected_original_cell_ids = lambda _source: [1, 2, 3]
     backend._filter_visible_cell_ids_by_depth = lambda _source, ids: []
 
-    picked = backend.pick_visible_cell_ids_in_rect(1, 2, 30, 40, behavior="touch")
+    picked = backend.pick_visible_cell_ids_in_rect(
+        1, 2, 30, 40, behavior="touch")
 
     assert picked == [1, 2, 3]
 
@@ -1195,7 +1296,8 @@ def test_pick_visible_cell_ids_in_rect_keeps_paraview_surface_selection_ids():
 def test_pick_surface_keys_in_rect_skips_occluded_boundary_elements():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
-    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(source, FakeDisplay(),
+                              "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     backend.servermanager.Fetch = lambda _source: object()
@@ -1210,9 +1312,11 @@ def test_pick_surface_keys_in_rect_skips_occluded_boundary_elements():
         (20.0, 10.0),
         (15.0, 20.0),
     ]
-    backend._surface_element_is_visible = lambda _dataset, point_ids, _renderer: point_ids == (1, 2, 3)
+    backend._surface_element_is_visible = lambda _dataset, point_ids, _renderer: point_ids == (
+        1, 2, 3)
 
-    picked = backend._pick_surface_keys_in_rect([0, 0, 30, 30], behavior="touch")
+    picked = backend._pick_surface_keys_in_rect(
+        [0, 0, 30, 30], behavior="touch")
 
     assert picked == [(1, 2, 3)]
 
@@ -1220,7 +1324,8 @@ def test_pick_surface_keys_in_rect_skips_occluded_boundary_elements():
 def test_pick_surface_keys_in_rect_falls_back_when_native_returns_empty():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation())
-    node = backend._make_node(source, FakeDisplay(), "/tmp/data/mesh.vtu", "source", "mesh")
+    node = backend._make_node(source, FakeDisplay(),
+                              "/tmp/data/mesh.vtu", "source", "mesh")
     backend.pipeline_nodes = [node]
     backend.active_node_id = node["id"]
     backend.servermanager.Fetch = lambda _source: object()
@@ -1236,7 +1341,8 @@ def test_pick_surface_keys_in_rect_falls_back_when_native_returns_empty():
         (15.0, 20.0),
     ]
 
-    picked = backend._pick_surface_keys_in_rect([0, 0, 30, 30], behavior="touch")
+    picked = backend._pick_surface_keys_in_rect(
+        [0, 0, 30, 30], behavior="touch")
 
     assert picked == [(1, 2, 3)]
 
@@ -1248,7 +1354,8 @@ def test_surface_keys_from_selected_dataset_falls_back_to_coordinate_mapping():
         cells=[(0, 1, 2)],
     )
     source = FakeSurfaceDataset(
-        points=[(0.0, 0.0, 0.0), (3.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)],
+        points=[(0.0, 0.0, 0.0), (3.0, 0.0, 0.0),
+                (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)],
         cells=[],
     )
 
@@ -1318,6 +1425,7 @@ def test_surface_keys_from_selected_dataset_maps_triangle_to_quad_boundary_key()
         points=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)],
         cells=[(0, 1, 2)],
     )
+
     class FakeEdge:
         def __init__(self, point_ids):
             self._point_ids = tuple(point_ids)
@@ -1491,12 +1599,18 @@ def test_source_cell_ids_from_selected_dataset_maps_selected_face_to_volume_cell
         def __init__(self, point_ids):
             self._point_ids = tuple(point_ids)
             self._faces = [
-                FakeFace((point_ids[0], point_ids[1], point_ids[2], point_ids[3])),
-                FakeFace((point_ids[4], point_ids[5], point_ids[6], point_ids[7])),
-                FakeFace((point_ids[0], point_ids[1], point_ids[5], point_ids[4])),
-                FakeFace((point_ids[2], point_ids[3], point_ids[7], point_ids[6])),
-                FakeFace((point_ids[0], point_ids[3], point_ids[7], point_ids[4])),
-                FakeFace((point_ids[1], point_ids[2], point_ids[6], point_ids[5])),
+                FakeFace((point_ids[0], point_ids[1],
+                         point_ids[2], point_ids[3])),
+                FakeFace((point_ids[4], point_ids[5],
+                         point_ids[6], point_ids[7])),
+                FakeFace((point_ids[0], point_ids[1],
+                         point_ids[5], point_ids[4])),
+                FakeFace((point_ids[2], point_ids[3],
+                         point_ids[7], point_ids[6])),
+                FakeFace((point_ids[0], point_ids[3],
+                         point_ids[7], point_ids[4])),
+                FakeFace((point_ids[1], point_ids[2],
+                         point_ids[6], point_ids[5])),
             ]
 
         def GetCellDimension(self):
@@ -1581,7 +1695,8 @@ def test_remap_cell_ids_between_datasets_matches_by_geometry_coordinates():
         cells=[(2, 1, 0, 3), (5, 2, 3, 4)],
     )
 
-    remapped = ParaViewBackend._remap_cell_ids_between_datasets([0, 1], source, target)
+    remapped = ParaViewBackend._remap_cell_ids_between_datasets(
+        [0, 1], source, target)
 
     assert remapped == [1, 0]
 

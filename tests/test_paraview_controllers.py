@@ -195,6 +195,49 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
     assert state.save_overwrite_action == ""
 
 
+def test_pv_save_active_data_prefers_explicit_filename_from_client():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        active_visibility=True,
+        save_filename="square_vtk_edited.vtu",
+        save_status="",
+        save_status_type="info",
+        save_overwrite_dialog=False,
+        save_overwrite_target="",
+        save_overwrite_action="",
+    )
+
+    def save_with_confirmation(*, overwrite=False):
+        calls.append((state.save_filename, overwrite))
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=SimpleNamespace(active=False),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=save_with_confirmation,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_save_active_data"]("e2e_surface_boundaryid_left.vtu")
+
+    assert calls == [("e2e_surface_boundaryid_left.vtu", False)]
+    assert state.save_filename == "e2e_surface_boundaryid_left.vtu"
+
+
 def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     ctrl = FakeCtrl()
     calls = []
@@ -269,6 +312,68 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     assert "render" in calls
     assert state.edit_status == "Edit session saved and added to the pipeline"
     assert state.edit_status_type == "success"
+
+
+def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        mainViewMode="remote",
+        save_filename="square_vtk_edited.vtu",
+        save_status="",
+        save_status_type="info",
+        save_overwrite_dialog=False,
+        save_overwrite_target="",
+        save_overwrite_action="",
+        inspector_tab=3,
+        edit_status="",
+        edit_status_type="info",
+        representation="Surface",
+        available_arrays=[],
+        selected_array="__solid__",
+    )
+    edit_session = SimpleNamespace(
+        active=True, clear=lambda: calls.append("clear"))
+    pv_backend = SimpleNamespace(
+        clear_edit_target_dataset=lambda: calls.append("clear_target"),
+        load_file=lambda output_path: (
+            [{"text": "Solid Color", "value": "__solid__"}], "__solid__"),
+        apply_representation=lambda representation: calls.append(
+            ("representation", representation)),
+        apply_coloring=lambda array_name: calls.append(
+            ("coloring", array_name)),
+    )
+
+    def save_result(*, overwrite=False):
+        calls.append(("save", state.save_filename, overwrite))
+        return "/tmp/data/" + state.save_filename
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=pv_backend,
+        edit_session=edit_session,
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: calls.append("update_ui"),
+        render_and_push=lambda: calls.append("render"),
+        save_paraview_output=save_result,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: calls.append(
+            ("remote", enabled)),
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: calls.append("sync_edit"),
+        sync_paraview_edit_selection_overlay=lambda: calls.append(
+            "sync_overlay"),
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_commit_edit_session"]("e2e_surface_boundaryid_left.vtu")
+
+    assert ("save", "e2e_surface_boundaryid_left.vtu", False) in calls
+    assert state.save_filename == "e2e_surface_boundaryid_left.vtu"
 
 
 def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():
