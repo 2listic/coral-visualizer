@@ -185,6 +185,10 @@ def initialize_state(
     state.save_filename = "output"
     state.save_status = ""
     state.save_status_type = "success"
+    state.state_files = []
+    state.state_filename = "session.coral.state.json"
+    state.state_status = ""
+    state.state_status_type = "info"
     state.save_overwrite_dialog = False
     state.save_overwrite_target = ""
     state.save_overwrite_action = ""

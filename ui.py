@@ -1,7 +1,20 @@
+from pathlib import Path
+from urllib.parse import quote
+
 from trame.ui.vuetify import SinglePageLayout
 from trame.widgets import html, vuetify
 
 from constants import REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POINTS
+
+
+def _load_logo_data_uri():
+    logo_path = Path(__file__).with_name("assets") / "logo_no_dual.svg"
+    if not logo_path.exists():
+        return ""
+    return f"data:image/svg+xml;utf8,{quote(logo_path.read_text(encoding='utf-8'))}"
+
+
+LOGO_DATA_URI = _load_logo_data_uri()
 
 
 def _build_view_widget(backend, render_target, ctrl=None):
@@ -85,8 +98,6 @@ def _build_alerts():
 
 
 def _build_toolbar(ctrl, backend):
-    vuetify.VToolbarTitle("Coral VTK Manipulator")
-    vuetify.VDivider(vertical=True, classes="mx-4")
     html.Input(
         ref="filePicker",
         type="file",
@@ -429,12 +440,34 @@ def _build_inspector_tab_selector():
 def _build_paraview_pipeline_panel(ctrl):
     with vuetify.VNavigationDrawer(
         app=True,
-        clipped=True,
+        clipped=False,
         permanent=True,
         width=280,
         style="border-right: 1px solid rgba(0,0,0,0.08);",
     ):
-        with vuetify.VSheet(classes="pa-4", style="height: 100%; background: #f5f5f7;"):
+        with vuetify.VSheet(classes="px-4 pb-4 pt-0", style="height: 100%; background: #f5f5f7; overflow-y: auto;"):
+            if LOGO_DATA_URI:
+                with vuetify.VSheet(
+                    color="#f5f5f7",
+                    classes="mb-2",
+                    style="position: sticky; top: 0; z-index: 5; padding-top: 8px; padding-bottom: 4px;",
+                ):
+                    with vuetify.VRow(
+                        no_gutters=True,
+                        align="center",
+                        style="min-height: 64px;",
+                    ):
+                        with vuetify.VCol(cols="auto"):
+                            html.Img(
+                                src=LOGO_DATA_URI,
+                                alt="Company logo",
+                                style="height: 48px; width: auto; display: block; margin-right: 10px;",
+                            )
+                        with vuetify.VCol():
+                            html.Div(
+                                "VTK Manipulator",
+                                style="font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; color: rgba(0,0,0,0.82); line-height: 1;",
+                            )
             with vuetify.VRow(
                 no_gutters=True,
                 align="center",
@@ -592,15 +625,61 @@ def _build_paraview_pipeline_panel(ctrl):
                                                     with vuetify.VListItemContent():
                                                         vuetify.VListItemTitle(
                                                             "{{ item.text }}")
-                            with vuetify.VCol(cols=12):
-                                vuetify.VBtn(
-                                    "Delete Selected",
-                                    small=True,
-                                    block=True,
-                                    outlined=True,
-                                    click=ctrl.pv_delete_active,
-                                    disabled=("!active_pipeline_item",),
-                                )
+
+            vuetify.VDivider(classes="my-4")
+            vuetify.VSubheader(classes="px-0", children=["State"])
+            with vuetify.VSheet(
+                classes="pa-3",
+                style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+            ):
+                vuetify.VCombobox(
+                    v_model=("state_filename",),
+                    items=("state_files",),
+                    label="State file",
+                    dense=True,
+                    outlined=True,
+                    clearable=True,
+                    hide_details=True,
+                    classes="mb-3",
+                )
+                with vuetify.VRow(dense=True):
+                    with vuetify.VCol(cols=12):
+                        vuetify.VBtn(
+                            "Save State",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click=ctrl.pv_save_state,
+                            disabled=(
+                                "!pipeline_items.length || !state_filename",),
+                            classes="mb-2",
+                        )
+                    with vuetify.VCol(cols=12):
+                        vuetify.VBtn(
+                            "Load State",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click=ctrl.pv_load_state,
+                            disabled=("!state_filename",),
+                        )
+                vuetify.VAlert(
+                    v_if="state_status",
+                    type=("state_status_type",),
+                    dense=True,
+                    text=True,
+                    classes="mt-3 mb-0",
+                    children=["{{ state_status }}"],
+                )
+                with vuetify.VCol(cols=12):
+                    vuetify.VBtn(
+                        "Delete Selected",
+                        small=True,
+                        block=True,
+                        outlined=True,
+                        click=ctrl.pv_delete_active,
+                        disabled=("!active_pipeline_item",),
+                    )
                 with vuetify.VListItem():
                     with vuetify.VListItemContent():
                         vuetify.VListItemSubtitle("Save target")
@@ -802,7 +881,7 @@ def _build_paraview_pipeline_panel(ctrl):
 def _build_paraview_inspector_panel(ctrl):
     with vuetify.VNavigationDrawer(
         app=True,
-        clipped=True,
+        clipped=False,
         right=True,
         permanent=True,
         width=340,
@@ -811,8 +890,11 @@ def _build_paraview_inspector_panel(ctrl):
         with vuetify.VSheet(
             style="background: #fafafa; min-height: 100%; display: flex; flex-direction: column;"
         ):
-            _build_property_action_bar(ctrl)
-            _build_inspector_tab_selector()
+            with vuetify.VSheet(
+                style="position: sticky; top: 0; z-index: 6; background: #fafafa; flex: 0 0 auto;"
+            ):
+                _build_property_action_bar(ctrl)
+                _build_inspector_tab_selector()
             with vuetify.VSheet(
                 style="flex: 1 1 auto; overflow-y: auto; background: #fafafa;"
             ):
@@ -1678,10 +1760,15 @@ def _build_vtk_edit_panel(ctrl):
 def build_ui(server, render_target, backend):
     """Build the Trame UI layout."""
     ctrl = server.controller
+    server.state.trame__title = "Coral VTK Editor"
+    if LOGO_DATA_URI:
+        server.state.trame__favicon = LOGO_DATA_URI
 
     with SinglePageLayout(server) as layout:
-        layout.title.set_text("")
+        layout.title.set_text("Coral VTK Editor")
+        layout.title.hide()
         layout.icon.hide()
+        html.Script("document.title = 'Coral VTK Editor';")
 
         # Rescale over time confirmation dialog
         with vuetify.VDialog(v_model=("rescale_over_time_dialog",), max_width=450):
@@ -1708,8 +1795,7 @@ def build_ui(server, render_target, backend):
                             dense=True,
                             outlined=True,
                             children=[
-                                "The file '{{ save_overwrite_target }}' already exists. "
-                                "Overwrite it with the newly saved result?"
+                                "{{ save_overwrite_action === 'state_save' ? ('The state file ' + save_overwrite_target + ' already exists. Overwrite it with the current application state?') : ('The file ' + save_overwrite_target + ' already exists. Overwrite it with the newly saved result?') }}"
                             ],
                         )
                     with vuetify.VCardActions():

@@ -5,6 +5,9 @@ import json
 from constants import ARRAY_SOLID
 
 
+DEFAULT_REPRESENTATION = "Surface with Edges"
+
+
 class ParaViewRuntime:
     """Own ParaView-side UI synchronization and runtime plumbing."""
 
@@ -46,7 +49,7 @@ class ParaViewRuntime:
         if len(output) <= self.output_offset:
             return
 
-        new_output = output[self.output_offset :]
+        new_output = output[self.output_offset:]
         self.output_offset = len(output)
         lines = [
             line.strip()
@@ -87,7 +90,8 @@ class ParaViewRuntime:
             association = "cell"
             infer = getattr(self.edit_session, "infer_field_association", None)
             if callable(infer):
-                association = infer(self.edit_session.field_name) or association
+                association = infer(
+                    self.edit_session.field_name) or association
             selected_choice = f"{association}:{self.edit_session.field_name}"
         elif (
             isinstance(getattr(self.state, "edit_field_choice", ""), str)
@@ -102,7 +106,8 @@ class ParaViewRuntime:
             else "cell"
         )
         if self.state.edit_field_association == "point":
-            getter = getattr(self.edit_session, "available_point_variables", None)
+            getter = getattr(self.edit_session,
+                             "available_point_variables", None)
             self.state.edit_available_variables = getter() if callable(getter) else []
         else:
             self.state.edit_available_variables = self.edit_session.available_cell_variables()
@@ -292,7 +297,8 @@ class ParaViewRuntime:
             self.call_view_update()
             return
 
-        build_dataset = getattr(self.edit_session, "build_selected_dataset", None)
+        build_dataset = getattr(
+            self.edit_session, "build_selected_dataset", None)
         if callable(build_dataset):
             dataset = build_dataset()
         else:
@@ -416,8 +422,10 @@ class ParaViewRuntime:
             [item for item in self.state.display_properties if item["visibility"] == "advanced"]
         )
         self.state.active_visibility = ui_state["active_visibility"]
-        self.state.available_arrays = ui_state["point_arrays"] + ui_state["cell_arrays"]
-        self.state.available_arrays.insert(0, {"text": "Solid Color", "value": ARRAY_SOLID})
+        self.state.available_arrays = ui_state["point_arrays"] + \
+            ui_state["cell_arrays"]
+        self.state.available_arrays.insert(
+            0, {"text": "Solid Color", "value": ARRAY_SOLID})
         self.state.selected_array = ui_state["selected_array"]
         self.state.representation = ui_state["representation"]
         self.state.show_cells = ui_state["show_cells"]
@@ -474,9 +482,14 @@ class ParaViewRuntime:
     def load_file(self, selected_file):
         """Load a dataset through the ParaView backend and refresh derived state."""
         self.refresh_runtime_message(clear=True)
-        arrays, default_array = self.pv_backend.load_file(selected_file)
-        self.pv_backend.apply_representation(self.state.representation)
-        self.pv_backend.apply_coloring(default_array)
+        self.pv_backend.load_file(selected_file)
+        self.state.selected_array = ARRAY_SOLID
+        self.state.representation = DEFAULT_REPRESENTATION
+        self.pv_backend.apply_representation(DEFAULT_REPRESENTATION)
+        self.pv_backend.apply_coloring(ARRAY_SOLID)
+        reset_view = getattr(self.pv_backend, "reset_view", None)
+        if callable(reset_view):
+            reset_view()
         self.refresh_runtime_message()
         self.update_ui_state()
         self.state.has_boundary = False

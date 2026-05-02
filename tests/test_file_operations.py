@@ -33,6 +33,11 @@ class FakeParaViewBackend:
         self._default_name = default_name
         self._extension = extension
         self.saved_paths = []
+        self.exported_state = {
+            "version": 1,
+            "camera": {"CameraPosition": [1.0, 2.0, 3.0]},
+            "nodes": [{"id": "source:1", "kind": "source", "filename": "square.vtk"}],
+        }
 
     def default_output_filename(self):
         return self._default_name
@@ -43,6 +48,9 @@ class FakeParaViewBackend:
     def save_active_data(self, output_path):
         Path(output_path).write_bytes(b"pipeline")
         self.saved_paths.append(output_path)
+
+    def export_app_state(self):
+        return dict(self.exported_state)
 
 
 def test_refresh_available_files_delegates_to_file_utils(monkeypatch):
@@ -316,3 +324,67 @@ def test_save_paraview_output_requires_active_source_or_edit_session(tmp_path):
             pv_backend=pv_backend,
             edit_session=edit_session,
         )
+
+
+def test_save_paraview_state_writes_snapshot_and_updates_state_list(tmp_path):
+    state = SimpleNamespace(
+        state_filename="states/demo",
+        state_status="",
+        state_status_type="info",
+        state_files=[],
+        selected_file="test_data/square.vtk",
+    )
+    pv_backend = FakeParaViewBackend()
+
+    output_path = file_operations.save_paraview_state(
+        state=state,
+        data_directory=str(tmp_path),
+        pv_backend=pv_backend,
+    )
+
+    saved_path = tmp_path / "states" / \
+        f"demo{file_operations.STATE_FILE_EXTENSION}"
+    payload = saved_path.read_text(encoding="utf-8")
+
+    assert output_path == str(saved_path)
+    assert '"selected_file": "test_data/square.vtk"' in payload
+    assert state.state_filename == f"states/demo{file_operations.STATE_FILE_EXTENSION}"
+    assert state.state_status == (
+        f"Saved application state to states/demo{file_operations.STATE_FILE_EXTENSION}"
+    )
+    assert state.state_status_type == "success"
+    assert state.state_files == [
+        {
+            "text": f"states/demo{file_operations.STATE_FILE_EXTENSION}",
+            "value": f"states/demo{file_operations.STATE_FILE_EXTENSION}",
+        }
+    ]
+
+
+def test_load_paraview_state_reads_snapshot_from_disk(tmp_path):
+    state_path = tmp_path / "states" / \
+        f"demo{file_operations.STATE_FILE_EXTENSION}"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        '{"version": 1, "selected_file": "square.vtk", "nodes": []}',
+        encoding="utf-8",
+    )
+    state = SimpleNamespace(
+        state_filename="states/demo",
+        state_files=[],
+    )
+
+    snapshot, loaded_path = file_operations.load_paraview_state(
+        state=state,
+        data_directory=str(tmp_path),
+    )
+
+    assert loaded_path == str(state_path)
+    assert snapshot["selected_file"] == "square.vtk"
+    assert state.state_filename == f"states/demo{file_operations.STATE_FILE_EXTENSION}"
+    assert state.state_files == [
+        {
+            "text": f"states/demo{file_operations.STATE_FILE_EXTENSION}",
+            "value": f"states/demo{file_operations.STATE_FILE_EXTENSION}",
+        }
+    ]

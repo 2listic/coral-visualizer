@@ -107,7 +107,12 @@ def register_app_handlers(
         refresh_runtime_message=refresh_runtime_message,
         update_paraview_ui_state=update_paraview_ui_state,
         render_and_push=render_and_push,
-        save_paraview_output=file_operations.save_paraview_output,
+        save_paraview_output=getattr(
+            file_operations, "save_paraview_output", _noop),
+        save_paraview_state=getattr(
+            file_operations, "save_paraview_state", _noop),
+        load_paraview_state=getattr(
+            file_operations, "load_paraview_state", _noop),
         debug_view=view_controls.debug,
         call_view_update_geometry=view_controls.update_geometry,
         call_view_set_remote_rendering=view_controls.set_remote_rendering,

@@ -25,6 +25,8 @@ def register_paraview_controllers(
     sync_paraview_edit_selection_overlay,
     summarize_edit_event,
     normalize_edit_selection_ids,
+    save_paraview_state=None,
+    load_paraview_state=None,
 ):
     """Register ParaView-only controller callbacks on the provided Trame controller."""
     selection_debug = SelectionDebugLogger(
@@ -78,6 +80,41 @@ def register_paraview_controllers(
 
     def _save_active_data(overwrite=False):
         save_paraview_output(overwrite=overwrite)
+
+    def _save_application_state(overwrite=False):
+        if not callable(save_paraview_state):
+            raise RuntimeError("Application state save is not available")
+        save_paraview_state(overwrite=overwrite)
+
+    def _load_application_state():
+        if not callable(load_paraview_state):
+            raise RuntimeError("Application state load is not available")
+        snapshot, _path = load_paraview_state()
+        clear_edit_target = getattr(
+            pv_backend, "clear_edit_target_dataset", None)
+
+        edit_session.clear()
+        if callable(clear_edit_target):
+            clear_edit_target()
+        sync_edit_session_state()
+        sync_paraview_edit_selection_overlay()
+
+        importer = getattr(pv_backend, "import_app_state", None)
+        if not callable(importer):
+            raise RuntimeError(
+                "Current backend does not support loading application state")
+
+        importer(snapshot)
+        update_paraview_ui_state()
+        state.selected_file = snapshot.get(
+            "selected_file", state.selected_file)
+        state.inspector_tab = snapshot.get(
+            "inspector_tab", getattr(state, "inspector_tab", 0)
+        )
+        state.state_status = f"Loaded application state from {state.state_filename}"
+        state.state_status_type = "success"
+        state.error_message = ""
+        render_and_push()
 
     def _commit_edit_session(overwrite=False):
         debug_view("pv_commit_edit_session.start", mode=state.mainViewMode)
@@ -691,6 +728,40 @@ def register_paraview_controllers(
             state.save_status = f"Error: {exc}"
             state.save_status_type = "error"
 
+    @ctrl.add("pv_save_state")
+    def pv_save_state(filename=None):
+        """Save the current ParaView application state to disk."""
+        if not is_paraview_backend():
+            return
+
+        try:
+            if filename is not None:
+                candidate = str(filename).strip()
+                if candidate:
+                    state.state_filename = candidate
+            _save_application_state()
+        except FileExistsError as exc:
+            _open_save_overwrite_dialog("state_save", exc)
+        except Exception as exc:
+            state.state_status = f"Error: {exc}"
+            state.state_status_type = "error"
+
+    @ctrl.add("pv_load_state")
+    def pv_load_state(filename=None):
+        """Load a previously saved ParaView application state from disk."""
+        if not is_paraview_backend():
+            return
+
+        try:
+            if filename is not None:
+                candidate = str(filename).strip()
+                if candidate:
+                    state.state_filename = candidate
+            _load_application_state()
+        except Exception as exc:
+            state.state_status = f"Error: {exc}"
+            state.state_status_type = "error"
+
     @ctrl.add("pv_confirm_save_overwrite")
     def pv_confirm_save_overwrite():
         """Confirm overwrite for ParaView save operations."""
@@ -702,12 +773,17 @@ def register_paraview_controllers(
             _close_save_overwrite_dialog()
             if action == "commit":
                 _commit_edit_session(overwrite=True)
+            elif action == "state_save":
+                _save_application_state(overwrite=True)
             else:
                 _save_active_data(overwrite=True)
         except Exception as exc:
             if action == "commit":
                 state.edit_status = f"Could not add edited result to pipeline: {exc}"
                 state.edit_status_type = "error"
+            elif action == "state_save":
+                state.state_status = f"Error: {exc}"
+                state.state_status_type = "error"
             else:
                 state.save_status = f"Error: {exc}"
                 state.save_status_type = "error"

@@ -47,6 +47,8 @@ class FakeParaViewBackend:
         self.display = object()
         self.source = object()
         self.view = SimpleNamespace(ViewSize=(400, 200))
+        self.selected_array = "cell:M"
+        self.representation = "Wireframe"
 
     def render(self):
         self.calls.append("render")
@@ -85,8 +87,8 @@ class FakeParaViewBackend:
             "calculator_input_variables": ["M"],
             "calculator_coordinate_variables": ["coordsX", "coordsY", "coordsZ"],
             "active_visibility": True,
-            "selected_array": "cell:M",
-            "representation": "Wireframe",
+            "selected_array": self.selected_array,
+            "representation": self.representation,
             "show_cells": True,
             "show_faces": False,
             "time_values": [0.0, 1.0, 2.0, 3.0],
@@ -104,14 +106,19 @@ class FakeParaViewBackend:
         return {"dataset": object()}
 
     def apply_representation(self, representation):
+        self.representation = representation
         self.calls.append(("apply_representation", representation))
 
     def apply_coloring(self, array_value):
+        self.selected_array = array_value
         self.calls.append(("apply_coloring", array_value))
 
     def load_file(self, path):
         self.calls.append(("load_file", path))
         return ([{"text": "M (Cell)", "value": "cell:M"}], "cell:M")
+
+    def reset_view(self):
+        self.calls.append("reset_view")
 
 
 def make_runtime(*, active_edit=False, output=""):
@@ -164,7 +171,8 @@ def test_render_and_push_and_runtime_message_parsing():
 
 
 def test_sync_edit_session_state_updates_modes_and_interactor_settings():
-    runtime, state, backend, edit_session, view_calls = make_runtime(active_edit=True)
+    runtime, state, backend, edit_session, view_calls = make_runtime(
+        active_edit=True)
 
     runtime.sync_edit_session_state()
 
@@ -196,7 +204,8 @@ def test_normalize_edit_selection_ids_and_event_summary_cover_payload_shapes():
     assert runtime.normalize_edit_selection_ids({"position": {"x": 1, "y": 2}}) == [
         ("coords", 1, 2)
     ]
-    assert runtime.normalize_edit_selection_ids({"x": 4, "y": 6}) == [("coords", 4, 6)]
+    assert runtime.normalize_edit_selection_ids(
+        {"x": 4, "y": 6}) == [("coords", 4, 6)]
     assert runtime.normalize_edit_selection_ids(
         {
             "position": {"x": 4, "y": 6},
@@ -217,26 +226,31 @@ def test_normalize_edit_selection_ids_and_event_summary_cover_payload_shapes():
     ) == [("coords", 50, 100)]
     assert runtime.normalize_edit_selection_ids([{"compositeID": 9}]) == [9]
 
-    summary = runtime.summarize_edit_event({"mode": "click", "compositeID": 7, "x": 1, "y": 2})
+    summary = runtime.summarize_edit_event(
+        {"mode": "click", "compositeID": 7, "x": 1, "y": 2})
     assert '"resolved_coords": [' in summary
 
-    coord_summary = runtime.summarize_edit_event({"position": {"x": 3, "y": 4}})
+    coord_summary = runtime.summarize_edit_event(
+        {"position": {"x": 3, "y": 4}})
     assert '"resolved_coords": [' in coord_summary
     assert runtime.summarize_edit_event(None) == "No event payload"
 
 
 def test_sync_edit_selection_overlay_covers_inactive_empty_and_present_selection():
-    runtime, state, backend, edit_session, view_calls = make_runtime(active_edit=False)
+    runtime, state, backend, edit_session, view_calls = make_runtime(
+        active_edit=False)
 
     runtime.sync_edit_selection_overlay()
-    assert backend.calls[:2] == ["clear_active_selection", "clear_edit_selection_overlay"]
+    assert backend.calls[:2] == [
+        "clear_active_selection", "clear_edit_selection_overlay"]
     assert view_calls[-1] == {}
 
     backend.calls.clear()
     edit_session.active = True
     edit_session.overlay_dataset = None
     runtime.sync_edit_selection_overlay()
-    assert backend.calls[:2] == ["clear_active_selection", "clear_edit_selection_overlay"]
+    assert backend.calls[:2] == [
+        "clear_active_selection", "clear_edit_selection_overlay"]
 
     backend.calls.clear()
     edit_session.overlay_dataset = SimpleNamespace(GetNumberOfCells=lambda: 2)
@@ -248,7 +262,8 @@ def test_sync_edit_selection_overlay_covers_inactive_empty_and_present_selection
 
 
 def test_update_ui_state_applies_backend_metadata_and_editability_flags():
-    runtime, state, backend, edit_session, view_calls = make_runtime(active_edit=True)
+    runtime, state, backend, edit_session, view_calls = make_runtime(
+        active_edit=True)
 
     runtime.update_ui_state()
 
@@ -291,7 +306,8 @@ def test_update_ui_state_tolerates_missing_backend_keys():
     assert state.active_source_label == ""
     assert state.active_source_kind == "Reader Type"
     assert state.show_calculator_help is False
-    assert state.available_arrays == [{"text": "Solid Color", "value": ARRAY_SOLID}]
+    assert state.available_arrays == [
+        {"text": "Solid Color", "value": ARRAY_SOLID}]
     assert state.selected_array == ARRAY_SOLID
     assert state.representation == "Surface with Edges"
     assert state.show_cells is True
@@ -311,6 +327,11 @@ def test_apply_representation_apply_coloring_and_load_file_refresh_state():
     assert ("apply_representation", "Points") in backend.calls
     assert ("apply_coloring", "cell:M") in backend.calls
     assert ("load_file", "/tmp/data/mesh.vtu") in backend.calls
+    assert ("apply_representation", "Surface with Edges") in backend.calls
+    assert ("apply_coloring", ARRAY_SOLID) in backend.calls
+    assert "reset_view" in backend.calls
+    assert state.selected_array == ARRAY_SOLID
+    assert state.representation == "Surface with Edges"
     assert state.has_boundary is False
     assert state.error_message == ""
     assert state.selection_count == 0

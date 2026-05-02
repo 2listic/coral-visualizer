@@ -520,6 +520,38 @@ def test_load_file_marks_time_dependent_for_non_list_timesteps():
     assert default_array == ARRAY_SOLID
 
 
+def test_load_file_does_not_bind_lookup_table_before_coloring_choice():
+    backend = make_backend()
+    backend.reset_camera = lambda: None
+    backend.state = SimpleNamespace(
+        is_time_dependent=False,
+        total_timesteps=0,
+        time_values=[],
+        current_time=0.0,
+        time_index=0,
+        time_playing=False,
+    )
+    source = FakeSource(
+        "1",
+        FakeDataInformation(
+            point_names=["Velocity"], cell_names=["MaterialID"]),
+    )
+    display = FakeDisplay()
+    backend.simple.OpenDataFile = lambda _filename: source
+    backend.simple.GetAnimationScene = lambda: SimpleNamespace(
+        TimeKeeper=SimpleNamespace(TimestepValues=[]),
+        UpdateAnimationUsingDataTimeSteps=lambda: None,
+    )
+    backend.simple.Show = lambda _source, _view: display
+
+    _arrays, default_array = backend.load_file("/tmp/data/mesh.vtu")
+
+    assert default_array == f"{CELL_PREFIX}MaterialID"
+    assert display.LookupTable is None
+    assert not any(
+        call[0] == "GetColorTransferFunction" for call in backend.simple.calls)
+
+
 def test_is_paraview_available_reflects_importable_modules(monkeypatch):
     monkeypatch.setattr(
         backend_module.importlib.util,
@@ -595,10 +627,8 @@ def test_apply_coloring_handles_solid_and_scalar_arrays():
     backend.apply_coloring(f"{POINT_PREFIX}U")
 
     assert ("ColorBy", display, None) in backend.simple.calls
-    assert ("HideUnusedScalarBars", backend.view) in backend.simple.calls
     assert ("ColorBy", display, ("POINTS", "U")) in backend.simple.calls
-    assert display.scalar_bar_calls == [
-        (backend.view, False), (backend.view, True)]
+    assert display.scalar_bar_calls == [(backend.view, True)]
     assert display.rescale_calls == [(True, False)]
 
 
@@ -623,6 +653,24 @@ def test_apply_coloring_hides_previous_scalar_bar_when_switching_arrays():
     assert ("ColorBy", display, ("CELLS", "M")) in backend.simple.calls
 
 
+def test_apply_coloring_solid_clears_display_color_array_name():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(
+        point_names=["U"], cell_names=["M"]))
+    display = FakeDisplay(color_array=("POINTS", "U"),
+                          lookup_table=FakeLookupTable())
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh"
+    )
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+
+    backend.apply_coloring(ARRAY_SOLID)
+
+    assert backend._get_selected_array() == ARRAY_SOLID
+    assert display.LookupTable is None
+
+
 def test_apply_coloring_binds_lookup_table_before_showing_scalar_bar():
     backend = make_backend()
     source = FakeSource("1", FakeDataInformation(point_names=["U"]))
@@ -637,6 +685,25 @@ def test_apply_coloring_binds_lookup_table_before_showing_scalar_bar():
     assert display.LookupTable is backend.simple.lookup_tables["U"]
     assert ("GetColorTransferFunction", "U") in backend.simple.calls
     assert display.scalar_bar_calls[-1] == (backend.view, True)
+
+
+def test_apply_coloring_does_not_show_scalar_bar_without_lookup_table():
+    backend = make_backend()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"]))
+    display = FakeDisplay()
+    node = backend._make_node(
+        source, display, "/tmp/data/mesh.vtu", "source", "mesh"
+    )
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend.simple.GetColorTransferFunction = lambda _name: None
+
+    backend.apply_coloring(f"{POINT_PREFIX}U")
+
+    assert display.LookupTable is None
+    assert (backend.view, True) not in display.scalar_bar_calls
+    assert ("HideUnusedScalarBars", backend.view) in backend.simple.calls
+    assert backend._scalar_bar_visible is False
 
 
 def test_color_controls_manage_lookup_table_scalar_bar_and_axes():

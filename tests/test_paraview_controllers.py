@@ -238,6 +238,60 @@ def test_pv_save_active_data_prefers_explicit_filename_from_client():
     assert state.save_filename == "e2e_surface_boundaryid_left.vtu"
 
 
+def test_pv_save_state_existing_target_opens_overwrite_dialog_and_confirm_retries():
+    ctrl = FakeCtrl()
+    calls = []
+    state = SimpleNamespace(
+        active_pipeline_item="node-1",
+        state_filename="states/demo",
+        state_status="",
+        state_status_type="info",
+        save_overwrite_dialog=False,
+        save_overwrite_target="",
+        save_overwrite_action="",
+    )
+
+    def save_state_with_confirmation(*, overwrite=False):
+        calls.append(overwrite)
+        if not overwrite:
+            raise FileExistsError(17, "exists", "states/demo.coral.state.json")
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        is_paraview_backend=lambda: True,
+        pv_backend=SimpleNamespace(),
+        edit_session=SimpleNamespace(active=False),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: None,
+        render_and_push=lambda: None,
+        save_paraview_output=lambda **kwargs: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+        save_paraview_state=save_state_with_confirmation,
+    )
+
+    ctrl.handlers["pv_save_state"]()
+
+    assert calls == [False]
+    assert state.save_overwrite_dialog is True
+    assert state.save_overwrite_target == "states/demo.coral.state.json"
+    assert state.save_overwrite_action == "state_save"
+
+    ctrl.handlers["pv_confirm_save_overwrite"]()
+
+    assert calls == [False, True]
+    assert state.save_overwrite_dialog is False
+    assert state.save_overwrite_target == ""
+    assert state.save_overwrite_action == ""
+
+
 def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     ctrl = FakeCtrl()
     calls = []

@@ -1,11 +1,16 @@
 """File and save helpers shared by Trame controllers."""
 
 import errno
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from file_utils import get_vtk_files_from_data_folder
+
+
+STATE_FILE_EXTENSION = ".coral.state.json"
+DEFAULT_STATE_FILENAME = f"session{STATE_FILE_EXTENSION}"
 
 
 @dataclass
@@ -20,6 +25,9 @@ class FileOperationService:
     def refresh_available_files(self):
         refresh_available_files(self.state, self.data_directory)
 
+    def refresh_available_state_files(self):
+        refresh_available_state_files(self.state, self.data_directory)
+
     def persist_uploaded_file(self, client_file):
         return persist_uploaded_file(self.data_directory, client_file)
 
@@ -32,10 +40,44 @@ class FileOperationService:
             overwrite=overwrite,
         )
 
+    def save_paraview_state(self, overwrite=False):
+        return save_paraview_state(
+            state=self.state,
+            data_directory=self.data_directory,
+            pv_backend=self.pv_backend,
+            overwrite=overwrite,
+        )
+
+    def load_paraview_state(self):
+        return load_paraview_state(
+            state=self.state,
+            data_directory=self.data_directory,
+        )
+
 
 def refresh_available_files(state, data_directory):
     """Refresh the file list exposed to the UI."""
     state.available_files = get_vtk_files_from_data_folder(data_directory)
+
+
+def get_state_files_from_data_folder(data_directory):
+    """Return saved application state files from the data directory."""
+    root = Path(data_directory)
+    if not root.exists():
+        return []
+
+    items = []
+    for candidate in sorted(root.rglob(f"*{STATE_FILE_EXTENSION}")):
+        if not candidate.is_file():
+            continue
+        relative = candidate.relative_to(root).as_posix()
+        items.append({"text": relative, "value": relative})
+    return items
+
+
+def refresh_available_state_files(state, data_directory):
+    """Refresh the saved-state file list exposed to the UI."""
+    state.state_files = get_state_files_from_data_folder(data_directory)
 
 
 def resolve_output_path(data_directory, filename, fallback_name):
@@ -49,6 +91,14 @@ def resolve_output_path(data_directory, filename, fallback_name):
     if str(normalized).startswith(".."):
         raise ValueError("Output path must stay inside --data-directory")
     return os.path.join(data_directory, str(normalized))
+
+
+def resolve_state_path(data_directory, filename, fallback_name=DEFAULT_STATE_FILENAME):
+    """Resolve a saved application-state path inside ``data_directory``."""
+    output_path = resolve_output_path(data_directory, filename, fallback_name)
+    if not output_path.endswith(STATE_FILE_EXTENSION):
+        output_path += STATE_FILE_EXTENSION
+    return output_path
 
 
 def persist_uploaded_file(data_directory, client_file):
@@ -144,3 +194,52 @@ def save_paraview_output(*, state, data_directory, pv_backend, edit_session, ove
     state.save_status_type = "success"
     _flush_save_feedback(state)
     return output_path
+
+
+def save_paraview_state(*, state, data_directory, pv_backend, overwrite=False):
+    """Serialize and save the current ParaView application state to disk."""
+    exporter = getattr(pv_backend, "export_app_state", None)
+    if not callable(exporter):
+        raise RuntimeError(
+            "Current backend does not support saving application state")
+
+    output_path = resolve_state_path(
+        data_directory, getattr(state, "state_filename", ""))
+    relative_output = os.path.relpath(output_path, data_directory)
+
+    if os.path.exists(output_path) and not overwrite:
+        raise FileExistsError(
+            errno.EEXIST,
+            "State file already exists",
+            relative_output,
+        )
+
+    snapshot = exporter() or {}
+    snapshot.setdefault("version", 1)
+    snapshot.setdefault("selected_file", getattr(
+        state, "selected_file", "") or "")
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    Path(output_path).write_text(json.dumps(
+        snapshot, indent=2, sort_keys=True), encoding="utf-8")
+
+    refresh_available_state_files(state, data_directory)
+    state.state_filename = relative_output
+    state.state_status = f"Saved application state to {relative_output}"
+    state.state_status_type = "success"
+    _flush_save_feedback(state)
+    return output_path
+
+
+def load_paraview_state(*, state, data_directory):
+    """Load a previously saved ParaView application state snapshot from disk."""
+    input_path = resolve_state_path(
+        data_directory, getattr(state, "state_filename", ""))
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(errno.ENOENT, "State file not found", os.path.relpath(
+            input_path, data_directory))
+
+    snapshot = json.loads(Path(input_path).read_text(encoding="utf-8"))
+    state.state_filename = os.path.relpath(input_path, data_directory)
+    refresh_available_state_files(state, data_directory)
+    return snapshot, input_path
