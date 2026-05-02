@@ -6,6 +6,12 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Fixed recurring `vtkSMColorMapEditorHelper` LUT warning on file load:
+  - added `[view-debug]` trace logs inside `load_file` and `_disable_scalar_coloring` to pinpoint the exact call where the warning was emitted
+  - root cause: `_disable_scalar_coloring` unconditionally called `SetScalarBarVisibility(False)` on the display before checking whether a LUT was actually bound; when `had_lookup_table=False` (fresh display from `Show()` with ParaView-internal auto-coloring, or already-cleared display) the call caused `vtkSMColorMapEditorHelper` to traverse its LUT-resolution path and fail with "Failed to determine the LookupTable being used"
+  - fix: gate `SetScalarBarVisibility` / `HideUnusedScalarBars` calls strictly on `had_lookup_table=True`; when the display has no explicitly bound LUT, only clear `ColorArrayName` and `LookupTable` directly, then call `ColorBy(display, None)`
+  - imported `debug_log` from `diagnostics` into `paraview_backend` for the trace lines
+  - verified with full unit + Playwright e2e suite: `94 passed`, `8 passed`
 - Fixed ParaView save/viewport regressions introduced around overwrite confirmation and face-only display:
   - preserved the active camera/view state while creating ParaView cell/face extract displays so `Show cells` off / `Show faces` on no longer shifts the viewport on explicit boundary-only datasets
   - flushed save feedback state after successful ParaView saves so save status updates are pushed to the client reliably

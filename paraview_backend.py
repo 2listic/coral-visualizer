@@ -9,6 +9,7 @@ import time
 from math import isfinite
 
 from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
+from diagnostics import debug_log
 from edit_session import EditSession
 from paraview_filter_catalog import ParaViewFilterCatalog, SUPPORTED_FILTERS
 from paraview_property_inspector import ParaViewPropertyInspector
@@ -208,10 +209,19 @@ class ParaViewBackend:
             f"total_timesteps={total_timesteps}, times={time_values}"
         )
 
+        debug_log("[view-debug] load_file: calling Show()")
         display = self.simple.Show(source, self.view)
+        debug_log(
+            "[view-debug] load_file: Show() returned — disabling auto-coloring")
+        # Disable any auto-coloring ParaView assigned during Show() so that
+        # the first render (triggered by ResetCamera below) never tries to
+        # look up a LUT that hasn't been explicitly bound yet.
+        self._disable_scalar_coloring(display, hide_unused_scalar_bars=False)
+        debug_log("[view-debug] load_file: auto-coloring cleared")
         display.SetRepresentationType(
             self._normalize_representation("Surface with Edges")
         )
+        debug_log("[view-debug] load_file: SetRepresentationType done")
 
         node = self._make_node(
             source=source,
@@ -224,7 +234,13 @@ class ParaViewBackend:
         self.pipeline_nodes.append(node)
 
         self.set_active_node(node["id"])
-        self.reset_camera()
+        if self.view is not None:
+            self._sync_view_center(source)
+            reset_camera = getattr(self.view, "ResetCamera", None)
+            if callable(reset_camera):
+                debug_log("[view-debug] load_file: calling ResetCamera()")
+                reset_camera()
+                debug_log("[view-debug] load_file: ResetCamera() returned")
 
         arrays = self.get_available_arrays()
         default_array = next(
@@ -235,28 +251,6 @@ class ParaViewBackend:
             ),
             arrays[1]["value"] if len(arrays) > 1 else ARRAY_SOLID,
         )
-
-        # Ensure LookupTable is set or cleared after file load
-        display = node["display"]
-        if default_array != ARRAY_SOLID:
-            name = None
-            if default_array.startswith(POINT_PREFIX):
-                name = default_array[len(POINT_PREFIX):]
-            elif default_array.startswith(CELL_PREFIX):
-                name = default_array[len(CELL_PREFIX):]
-            if name:
-                lut = self._ensure_display_lookup_table(display, name)
-                if getattr(display, "LookupTable", None) is None and lut is not None:
-                    try:
-                        display.LookupTable = lut
-                    except Exception:
-                        pass
-        else:
-            if hasattr(display, "LookupTable"):
-                try:
-                    display.LookupTable = None
-                except Exception:
-                    pass
         return arrays, default_array
 
     def get_available_filters(self):
@@ -490,6 +484,183 @@ class ParaViewBackend:
         self.render()
         return True
 
+    def clear_pipeline(self):
+        """Delete every pipeline node and reset the active selection."""
+        for node in list(reversed(self.pipeline_nodes)):
+            if self._find_node(node["id"]) is not None:
+                self.delete_node(node["id"])
+
+        self.pipeline_nodes = []
+        self.active_node_id = None
+        self.clear_active_selection()
+        self.clear_edit_selection_overlay()
+        self.render()
+
+    def export_app_state(self):
+        """Return a JSON-serializable snapshot of the current ParaView app state."""
+        saved_active_id = self.active_node_id
+        nodes = []
+
+        for node in list(self.pipeline_nodes):
+            self.set_active_node(node["id"])
+            display = node.get("display")
+            nodes.append(
+                {
+                    "id": node["id"],
+                    "kind": node.get("kind") or "source",
+                    "filename": self._relative_path(node.get("filename") or ""),
+                    "parent_id": node.get("parent_id"),
+                    "filter_key": node.get("filter_key"),
+                    "visibility": bool(
+                        node.get(
+                            "visibility",
+                            bool(display.Visibility) if display is not None else True,
+                        )
+                    ),
+                    "selected_array": self._get_selected_array(),
+                    "representation": self._get_representation(),
+                    "cell_dimension_visibility": dict(
+                        node.get("cell_dimension_visibility")
+                        or {"cells": True, "faces": True}
+                    ),
+                    "source_properties": self.property_inspector.tag_property_scope(
+                        self.property_inspector.collect_proxy_properties(
+                            node.get("source"), scope="source"
+                        ),
+                        "source",
+                    ),
+                    "display_properties": self.property_inspector.tag_property_scope(
+                        self.property_inspector.collect_proxy_properties(
+                            display, scope="display"
+                        ),
+                        "display",
+                    ),
+                }
+            )
+
+        if saved_active_id:
+            self.set_active_node(saved_active_id)
+
+        return {
+            "version": 1,
+            "active_node_id": saved_active_id,
+            "camera": self._capture_view_camera_state(),
+            "nodes": nodes,
+            "time": self.get_time_state(),
+            "active_color_controls": {
+                **self.get_color_control_state(),
+                "color_map_preset": getattr(self.state, "color_map_preset", "")
+                if self.state is not None
+                else "",
+            },
+            "inspector_tab": getattr(self.state, "inspector_tab", 0)
+            if self.state is not None
+            else 0,
+        }
+
+    def import_app_state(self, snapshot):
+        """Restore a previously saved application state snapshot."""
+        if not isinstance(snapshot, dict):
+            raise ValueError("Invalid application state payload")
+
+        node_entries = list(snapshot.get("nodes") or [])
+        id_map = {}
+        self.clear_pipeline()
+
+        for entry in node_entries:
+            if not isinstance(entry, dict):
+                continue
+
+            kind = (entry.get("kind") or "source").strip().lower()
+            if kind == "source":
+                filename = self._resolve_snapshot_filename(
+                    entry.get("filename") or "")
+                self.load_file(filename)
+                new_id = self.active_node_id
+            elif kind == "filter":
+                parent_id = id_map.get(entry.get("parent_id"))
+                if not parent_id:
+                    raise ValueError(
+                        "Saved state references a filter without a restored parent")
+                filter_key = (entry.get("filter_key") or "").strip()
+                if not filter_key:
+                    raise ValueError(
+                        "Saved state filter entry is missing filter_key")
+                self.set_active_node(parent_id)
+                new_id = self.add_filter(filter_key)
+            else:
+                raise ValueError(
+                    f"Unsupported saved pipeline node kind: {kind}")
+
+            id_map[entry.get("id") or new_id] = new_id
+
+        for entry in node_entries:
+            saved_id = entry.get("id")
+            restored_id = id_map.get(saved_id)
+            if not restored_id:
+                continue
+
+            self.set_active_node(restored_id)
+            self.apply_property_changes(
+                entry.get("source_properties") or [],
+                entry.get("display_properties") or [],
+            )
+            self.apply_representation(
+                entry.get("representation") or "Surface with Edges")
+            self.apply_coloring(entry.get("selected_array") or ARRAY_SOLID)
+
+            dimension_visibility = entry.get("cell_dimension_visibility") or {}
+            self.set_cell_face_visibility(
+                dimension_visibility.get("cells", True),
+                dimension_visibility.get("faces", True),
+            )
+            self.set_visibility(restored_id, entry.get("visibility", True))
+
+        active_node_id = id_map.get(snapshot.get("active_node_id"))
+        if active_node_id:
+            self.set_active_node(active_node_id)
+
+        time_state = snapshot.get("time") or {}
+        if time_state.get("is_time_dependent") and time_state.get("time_values"):
+            try:
+                self.set_time(time_state.get("current_time",
+                              time_state["time_values"][0]))
+            except Exception:
+                pass
+
+        controls = snapshot.get("active_color_controls") or {}
+        if controls:
+            if self._get_selected_array() != ARRAY_SOLID:
+                preset = (controls.get("color_map_preset") or "").strip()
+                if preset:
+                    try:
+                        self.apply_color_map_preset(preset)
+                    except Exception:
+                        pass
+
+                if controls.get("categorical_coloring"):
+                    self.set_categorical_coloring(True)
+
+                range_min = controls.get("color_range_min", "")
+                range_max = controls.get("color_range_max", "")
+                if range_min not in {"", None} and range_max not in {"", None}:
+                    try:
+                        self.apply_color_range(range_min, range_max)
+                    except Exception:
+                        pass
+
+                self.set_scalar_bar_visible(
+                    bool(controls.get("color_bar_visible", False)))
+
+            self.set_orientation_axes_visible(
+                bool(controls.get("orientation_axes_visible", True))
+            )
+
+        camera_state = snapshot.get("camera")
+        self._restore_view_camera_state(camera_state)
+        self.render()
+        return id_map
+
     def get_available_arrays(self):
         """Return Trame select items for point and cell arrays."""
         source = self.source
@@ -551,9 +722,21 @@ class ParaViewBackend:
                 warnings.warn(
                     "[coral] Warning: LookupTable is still None after ColorBy and _ensure_display_lookup_table. This may cause ParaView warning.")
             target_display.RescaleTransferFunctionToDataRange(True, False)
-        if display is not None:
-            display.SetScalarBarVisibility(self.view, True)
-        self._scalar_bar_visible = True
+
+        can_show_scalar_bar = self._display_has_lookup_table(
+            display, array_value)
+        if can_show_scalar_bar and display is not None:
+            try:
+                display.SetScalarBarVisibility(self.view, True)
+            except Exception:
+                can_show_scalar_bar = False
+        elif not can_show_scalar_bar:
+            try:
+                self.simple.HideUnusedScalarBars(self.view)
+            except Exception:
+                pass
+
+        self._scalar_bar_visible = bool(can_show_scalar_bar)
         self.render()
 
     def get_color_control_state(self):
@@ -631,6 +814,14 @@ class ParaViewBackend:
         display = self.display
         if display is None or self.view is None:
             return
+        if visible and not self._display_has_lookup_table(display):
+            self._scalar_bar_visible = False
+            try:
+                self.simple.HideUnusedScalarBars(self.view)
+            except Exception:
+                pass
+            self.render()
+            return
         for target_display in self._active_display_targets():
             if hasattr(target_display, "SetScalarBarVisibility"):
                 target_display.SetScalarBarVisibility(self.view, bool(visible))
@@ -674,44 +865,67 @@ class ParaViewBackend:
 
     def _disable_scalar_coloring(self, display, *, hide_unused_scalar_bars=True):
         """Best-effort disable scalar coloring across ParaView version differences."""
+        had_lookup_table = getattr(display, "LookupTable", None) is not None
+        debug_log(
+            f"[view-debug] _disable_scalar_coloring: had_lookup_table={had_lookup_table}"
+        )
+        # Only hide the scalar bar (and call HideUnusedScalarBars) when the
+        # display has an explicitly bound LUT. Calling SetScalarBarVisibility on
+        # a display whose LookupTable is None — even when ParaView auto-assigned
+        # a color array during Show() — causes vtkSMColorMapEditorHelper to
+        # traverse its internal LUT-resolution path and emit "Failed to determine
+        # the LookupTable being used". The pre-hide must happen *before*
+        # ColorBy(None) so the helper has nothing left to update during that call.
+        if had_lookup_table:
+            debug_log(
+                "[view-debug] _disable_scalar_coloring: hiding scalar bar before ColorBy(None)"
+            )
+            if hasattr(display, "SetScalarBarVisibility") and self.view is not None:
+                try:
+                    display.SetScalarBarVisibility(self.view, False)
+                except Exception:
+                    pass
+            try:
+                self.simple.HideUnusedScalarBars(self.view)
+            except Exception:
+                pass
+        debug_log("[view-debug] _disable_scalar_coloring: calling ColorBy(None)")
         try:
             self.simple.ColorBy(display, None)
         except Exception:
             pass
-        # Always clear LookupTable explicitly
+        debug_log("[view-debug] _disable_scalar_coloring: ColorBy(None) done")
+        # Clear ColorArrayName and LookupTable explicitly so there is no
+        # residual auto-assigned state that could confuse later renders.
+        if hasattr(display, "ColorArrayName"):
+            for value in (("", ""), None, [None, ""], (None, ""), ["", ""]):
+                try:
+                    display.ColorArrayName = value
+                    break
+                except Exception:
+                    continue
         if hasattr(display, "LookupTable"):
             try:
                 display.LookupTable = None
             except Exception:
                 pass
-        # Debug log if LookupTable is not None
-        if getattr(display, "LookupTable", None) is not None:
-            import warnings
-            warnings.warn(
-                "[coral] Debug: LookupTable should be None after disabling scalar coloring, but is not.")
-        if hasattr(display, "SetScalarBarVisibility"):
+        self._scalar_bar_visible = False
+
+    def _hide_current_scalar_bar(self, display):
+        """Hide the active display's current scalar bar before switching arrays."""
+        if (
+            display is not None
+            and getattr(display, "LookupTable", None) is not None
+            and hasattr(display, "SetScalarBarVisibility")
+        ):
             try:
                 display.SetScalarBarVisibility(self.view, False)
             except Exception:
                 pass
-        self._scalar_bar_visible = False
-        if hide_unused_scalar_bars:
             try:
                 self.simple.HideUnusedScalarBars(self.view)
             except Exception:
                 pass
-
-    def _hide_current_scalar_bar(self, display):
-        """Hide the active display's current scalar bar before switching arrays."""
-        if display is not None and hasattr(display, "SetScalarBarVisibility"):
-            try:
-                display.SetScalarBarVisibility(self.view, False)
-            except Exception:
-                pass
-        try:
-            self.simple.HideUnusedScalarBars(self.view)
-        except Exception:
-            pass
 
     def _restore_scalar_bar_visibility(self):
         """Reapply the user-selected scalar-bar visibility after LUT updates."""
@@ -721,6 +935,9 @@ class ParaViewBackend:
         if self._get_selected_array() == ARRAY_SOLID:
             self._scalar_bar_visible = False
         visible = bool(getattr(self, "_scalar_bar_visible", False))
+        if visible and not self._display_has_lookup_table(display):
+            visible = False
+            self._scalar_bar_visible = False
         for target_display in self._active_display_targets():
             if not hasattr(target_display, "SetScalarBarVisibility"):
                 continue
@@ -792,6 +1009,31 @@ class ParaViewBackend:
             except Exception:
                 pass
         return lut
+
+    def _display_has_lookup_table(self, display, array_value=None):
+        """Return True when a display has a LUT bound or one can be resolved safely."""
+        if display is None:
+            return False
+
+        if getattr(display, "LookupTable", None) is not None:
+            return True
+
+        selected_array = array_value or self._get_selected_array()
+        if not selected_array or selected_array == ARRAY_SOLID:
+            return False
+
+        if selected_array.startswith(POINT_PREFIX):
+            name = selected_array[len(POINT_PREFIX):]
+        elif selected_array.startswith(CELL_PREFIX):
+            name = selected_array[len(CELL_PREFIX):]
+        else:
+            return False
+
+        try:
+            lut = self._ensure_display_lookup_table(display, name)
+        except Exception:
+            return False
+        return lut is not None and getattr(display, "LookupTable", None) is not None
 
     @staticmethod
     def _lookup_table_range(lut):
@@ -3559,6 +3801,16 @@ class ParaViewBackend:
         if common != self.data_directory:
             return os.path.basename(filename)
         return os.path.relpath(filename, self.data_directory)
+
+    def _resolve_snapshot_filename(self, filename):
+        """Resolve a saved-state dataset path back to an absolute readable path."""
+        if not filename:
+            raise ValueError("Saved state is missing a source filename")
+        if os.path.isabs(filename):
+            return filename
+        if self.data_directory is None:
+            return filename
+        return os.path.join(self.data_directory, filename)
 
     def _default_output_extension(self):
         """Return a reasonable file extension for the active dataset type."""
