@@ -95,3 +95,13 @@ def register_common_controllers(
 
         state.remote_browser_dialog = False
         state.selected_file = path
+
+    @ctrl.add("refresh_remote_files")
+    def refresh_remote_files():
+        """Force a refresh of the available remote data files."""
+        refresh_available_files()
+
+    @ctrl.add("refresh_remote_state_files")
+    def refresh_remote_state_files():
+        """Force a refresh of the available remote state files."""
+        refresh_available_state_files()

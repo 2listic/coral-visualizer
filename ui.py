@@ -117,7 +117,7 @@ def _build_toolbar(ctrl, backend):
         "Open Remote",
         small=True,
         outlined=True,
-        click="remote_search_term = ''; remote_browser_dialog = true",
+        click="remote_search_term = ''; remote_browser_dialog = true; trigger('refresh_remote_files')",
         classes="mr-2",
     )
     vuetify.VBtn(
@@ -915,7 +915,7 @@ def _build_paraview_pipeline_panel(ctrl):
                             small=True,
                             block=True,
                             outlined=True,
-                            click="state_browser_search_term = ''; state_browser_dialog = true",
+                            click="state_browser_search_term = ''; state_browser_dialog = true; trigger('refresh_remote_state_files')",
                             classes="mb-2",
                         )
                     with vuetify.VCol(cols=12):
@@ -1931,6 +1931,23 @@ def build_ui(server, render_target, backend):
                 classes="pa-0 fill-height",
                 style="position: relative; max-width: none;",
             ):
+                # Busy indicator
+                with vuetify.VCard(
+                    v_show=("trame__busy",),
+                    style="position: absolute; top: 20px; right: 20px; z-index: 1001; background: rgba(255,255,255,0.8); border-radius: 50%; padding: 8px;",
+                    flat=True,
+                ):
+                    with vuetify.VProgressCircular(
+                        indeterminate=True,
+                        color="primary",
+                        size=64,
+                        width=4,
+                    ):
+                        if LOGO_DATA_URI:
+                            html.Img(
+                                src=LOGO_DATA_URI,
+                                style="height: 40px; width: 40px;",
+                            )
                 _build_alerts()
                 _build_remote_browser_dialog(ctrl)
                 _build_state_browser_dialog(ctrl)
