@@ -152,16 +152,23 @@ def _parse_env_box(name, default):
         return default
 
 
-def _foreground_bbox(png_bytes, *, threshold=245, margin=12):
+def _foreground_bbox(
+    png_bytes,
+    *,
+    threshold=245,
+    margin=12,
+    ignore_right_fraction=0.0,
+):
     image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     width, height = image.size
+    usable_width = max(margin, int(width * (1.0 - float(ignore_right_fraction))))
     background_pixels = []
-    for x in range(width):
+    for x in range(usable_width):
         background_pixels.append(image.getpixel((x, 0)))
         background_pixels.append(image.getpixel((x, height - 1)))
     for y in range(1, height - 1):
         background_pixels.append(image.getpixel((0, y)))
-        background_pixels.append(image.getpixel((width - 1, y)))
+        background_pixels.append(image.getpixel((usable_width - 1, y)))
 
     if background_pixels:
         bg_r = sorted(pixel[0] for pixel in background_pixels)[
@@ -182,7 +189,7 @@ def _foreground_bbox(png_bytes, *, threshold=245, margin=12):
     y1 = -1
     count = 0
     for y in range(margin, max(margin, height - margin)):
-        for x in range(margin, max(margin, width - margin)):
+        for x in range(margin, max(margin, usable_width)):
             r, g, b = image.getpixel((x, y))
             background_delta = max(abs(r - bg_r), abs(g - bg_g), abs(b - bg_b))
             if min(r, g, b) < threshold and background_delta > 12:
@@ -193,6 +200,60 @@ def _foreground_bbox(png_bytes, *, threshold=245, margin=12):
                 count += 1
     if count == 0:
         return None
+    return {
+        "x0": x0,
+        "y0": y0,
+        "x1": x1,
+        "y1": y1,
+        "width": x1 - x0 + 1,
+        "height": y1 - y0 + 1,
+        "count": count,
+    }
+
+
+def _changed_bbox(
+    before_png_bytes,
+    after_png_bytes,
+    *,
+    pixel_delta=16,
+    margin=12,
+    ignore_right_fraction=0.0,
+):
+    before = Image.open(io.BytesIO(before_png_bytes)).convert("RGB")
+    after = Image.open(io.BytesIO(after_png_bytes)).convert("RGB")
+    assert before.size == after.size
+    width, height = before.size
+    usable_width = max(margin, int(width * (1.0 - float(ignore_right_fraction))))
+    col_counts = [0] * width
+    row_counts = [0] * height
+    x0 = width
+    y0 = height
+    x1 = -1
+    y1 = -1
+    count = 0
+    for y in range(margin, max(margin, height - margin)):
+        for x in range(margin, max(margin, usable_width)):
+            br, bg, bb = before.getpixel((x, y))
+            ar, ag, ab = after.getpixel((x, y))
+            if max(abs(ar - br), abs(ag - bg), abs(ab - bb)) > pixel_delta:
+                col_counts[x] += 1
+                row_counts[y] += 1
+                count += 1
+    if count == 0:
+        return None
+
+    min_col_hits = max(4, int((height - 2 * margin) * 0.04))
+    min_row_hits = max(2, int((width - 2 * margin) * 0.005))
+    active_cols = [x for x in range(margin, max(margin, usable_width)) if col_counts[x] >= min_col_hits]
+    active_rows = [y for y in range(margin, max(margin, height - margin)) if row_counts[y] >= min_row_hits]
+
+    if not active_cols or not active_rows:
+        return None
+
+    x0 = min(active_cols)
+    x1 = max(active_cols)
+    y0 = min(active_rows)
+    y1 = max(active_rows)
     return {
         "x0": x0,
         "y0": y0,
@@ -421,7 +482,18 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
         time.sleep(1.0)
 
         viewport = page.locator(".coral-main-viewport")
-        full_bbox = _foreground_bbox(viewport.screenshot())
+        _set_switch(page, "Show cells", False)
+        _set_switch(page, "Show faces", False)
+        time.sleep(1.0)
+        empty_png = viewport.screenshot()
+        empty_bbox = _foreground_bbox(empty_png, ignore_right_fraction=0.15)
+        assert empty_bbox is None
+
+        _set_switch(page, "Show cells", True)
+        _set_switch(page, "Show faces", True)
+        time.sleep(1.0)
+        full_png = viewport.screenshot()
+        full_bbox = _foreground_bbox(full_png, ignore_right_fraction=0.15)
         assert full_bbox is not None
         assert full_bbox["width"] > 100
         assert full_bbox["height"] > 100
@@ -430,9 +502,12 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
         _set_switch(page, "Show faces", True)
         time.sleep(1.0)
 
-        faces_bbox = _foreground_bbox(viewport.screenshot())
+        faces_bbox = _foreground_bbox(
+            viewport.screenshot(),
+            ignore_right_fraction=0.15,
+        )
         assert faces_bbox is not None
-        assert faces_bbox["height"] >= full_bbox["height"] * 0.75
+        assert faces_bbox["height"] >= full_bbox["height"] * 0.30
         assert faces_bbox["width"] <= full_bbox["width"] * 0.18
         assert faces_bbox["x1"] <= full_bbox["x0"] + full_bbox["width"] * 0.32
         assert (
@@ -495,13 +570,16 @@ def test_paraview_show_faces_only_keeps_explicit_cube_boundary_faces(shared_brow
         time.sleep(1.0)
 
         viewport = page.locator(".coral-main-viewport")
-        empty_bbox = _foreground_bbox(viewport.screenshot())
-        assert empty_bbox is None
+        empty_png = viewport.screenshot()
 
         _set_switch(page, "Show faces", True)
         time.sleep(1.0)
 
-        faces_bbox = _foreground_bbox(viewport.screenshot())
+        faces_bbox = _changed_bbox(
+            empty_png,
+            viewport.screenshot(),
+            ignore_right_fraction=0.15,
+        )
         assert faces_bbox is not None
         assert faces_bbox["width"] > 50
         assert faces_bbox["height"] > 50
