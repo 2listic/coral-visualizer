@@ -1,22 +1,13 @@
-# Coral Visualizer
+# VTK Manipulator
 
-Trame/Vuetify visualizer for VTK/deal.II-style meshes. The project has two
-rendering backends:
+Trame/Vuetify mesh visualizer and editor for VTK/deal.II-style meshes, built
+on the ParaView library. Supports pipeline construction, filters, edit sessions,
+selection, saving, and advanced display/color controls.
 
-- `paraview`: primary backend for pipeline work, filters, edit sessions,
-  selection, saving, and advanced display/color controls.
-- `vtk`: legacy backend kept for lightweight local rendering and compatibility.
+## Installation
 
-## Installation (ParaView backend)
-
-The app now supports `--backend vtk|paraview|auto`.
-
-The default `auto` mode uses ParaView when ParaView and the Trame ParaView
-widget are available in the current Python environment; otherwise it falls back
-to the legacy VTK backend.
-
-The recommended way to run the ParaView backend is a dedicated conda
-environment from `conda-forge`.
+The recommended way to run the app is a dedicated conda environment from
+`conda-forge`.
 
 ### Prerequisites: install conda
 
@@ -33,9 +24,8 @@ bash Miniforge3-Linux-x86_64.sh
 
 > **Micromamba alternative:** if you prefer a single-binary install with no base
 > environment, run `"${SHELL}" <(curl -L micro.mamba.pm/install.sh)` and set
-> `CONDA_BIN=micromamba` when calling `setup_pv_env.sh`. Note that the rest of
-> this README uses `conda run ...`; replace it with `micromamba run ...`
-> throughout if you go this route.
+> `CONDA_BIN=micromamba` when calling `setup_pv_env.sh`. Replace `conda activate`
+> with `micromamba activate` throughout this README.
 
 ### Create the environment
 
@@ -45,49 +35,36 @@ bash Miniforge3-Linux-x86_64.sh
 
 ### Usage
 
+Activate the environment once for your session, then all commands work without a prefix:
+
 ```bash
-conda run -n coral-paraview python app.py --backend paraview
+conda activate coral-paraview
+python app.py
 ```
 
-You can override the defaults if needed:
+As a one-liner without activating:
+
+```bash
+conda run -n coral-paraview python app.py
+```
+
+You can override the environment name or Python version:
 
 ```bash
 ENV_NAME=my-pv-env PYTHON_VERSION=3.10 ./tools/setup_pv_env.sh
 ```
 
-Mesh editing is supported on both VTK and ParaView backends.
-
-## Legacy local VTK Installation / Unit-Test Environment
+Use `--data-directory` to scan a custom folder instead of the default `./data` (also used as the save destination for exported `.vtu` files):
 
 ```bash
-uv venv
-source ./.venv/bin/activate
-uv pip install -r setup/requirements.txt -r setup/requirements-dev.txt
+python app.py --data-directory /path/to/meshes
 ```
 
-Dependencies are pinned in `setup/requirements.txt` (runtime) and
-`setup/requirements-dev.txt` (dev/test tools). Docker installs the same pinned
-Python packages after provisioning ParaView from `setup/environment-docker.yml`.
+Developer diagnostics are enabled by default through `--devtools`, which also
+enables Trame hot reload and ParaView view/selection debug logs. Use
+`--no-devtools` for a quieter production-like local run.
 
-This environment is suitable for the VTK backend and most unit tests. It is not
-the recommended way to run the ParaView backend.
-
-### Usage (legacy VTK backend)
-
-```bash
-source .venv/bin/activate
-python3 app.py
-```
-
-or using the custom `file` argument plus any Trame argument (i.e. `port`)  
-`python app.py --file data/grid-1.vtk --port 1234`
-
-Use `--data-directory` to scan a custom folder instead of the default `./data` (also used as the save destination for exported `.vtu` files):  
-`python app.py --data-directory /path/to/meshes`
-
-Developer diagnostics are enabled by default for now through `--devtools`.
-This also enables Trame hot reload and ParaView view/selection debug logs.
-Use `--no-devtools` for a quieter production-like local run.
+> All examples in this README assume `conda activate coral-paraview` is in effect.
 
 ## Dependency Matrix
 
@@ -99,7 +76,6 @@ Verified on this development machine and in the Docker image on 2026-04-25.
 | ParaView | 6.1 | 6.1 |
 | VTK | 9.6.1 | 9.6.1 |
 | trame | 3.12.0 | 3.12.0 |
-| trame-vtk | 2.11.6 | 2.11.6 |
 | trame-vuetify | 3.2.1 | 3.2.1 |
 | pytest | 9.0.3 | 9.0.3 |
 | Playwright | 1.58.0 | 1.58.0 |
@@ -109,11 +85,11 @@ Verified on this development machine and in the Docker image on 2026-04-25.
 Local version probe:
 
 ```bash
-conda run -n coral-paraview python - <<'PY'
+python - <<'PY'
 import importlib.metadata as md
 import sys
 print("python", sys.version.split()[0])
-for name in ["trame", "trame-vtk", "trame-vuetify", "vtk", "playwright", "pytest"]:
+for name in ["trame", "trame-vuetify", "playwright", "pytest"]:
     print(name, md.version(name))
 import paraview.simple as ps
 print("paraview", ps.GetParaViewVersion())
@@ -126,7 +102,7 @@ Docker version probe:
 docker run --rm coral-visualizer-standalone \
   micromamba run -n coral python -c "import sys, importlib.metadata as md; \
 print('python', sys.version.split()[0]); \
-[print(n, md.version(n)) for n in ['trame','trame-vtk','trame-vuetify','vtk','playwright','pytest','pytest-playwright','Pillow']]; \
+[print(n, md.version(n)) for n in ['trame','trame-vuetify','playwright','pytest','pytest-playwright','Pillow']]; \
 import paraview.simple as ps; print('paraview', ps.GetParaViewVersion())"
 ```
 
@@ -137,8 +113,7 @@ Original example at the official [Trame repo](https://github.com/Kitware/trame/t
 The Docker image uses `micromamba` and a dedicated conda environment from
 `conda-forge` so ParaView is available on Linux/arm64 as well. Python and
 ParaView are constrained in `setup/environment-docker.yml`; runtime and dev
-Python packages are installed from the pinned requirements files. The container
-starts the app with `--backend paraview --server` by default.
+Python packages are installed from the pinned requirements files. The container starts the app with `--server` by default.
 
 The Docker path does not install ParaView from `setup/requirements.txt`.
 Instead, it provisions a dedicated conda environment from
@@ -184,37 +159,50 @@ ParaView can produce screenshots offscreen.
 
 ### Unit tests
 
-Activate the uv venv, then run:
+```bash
+pytest -q tests/ --ignore-glob=tests/test_e2e*.py
+pytest -v tests/ --ignore-glob=tests/test_e2e*.py  # verbose
+```
+
+Run a single test file:
 
 ```bash
-source .venv/bin/activate
-pytest          # run all unit tests
-pytest -v       # verbose output
+pytest -q tests/test_paraview_backend.py
 ```
 
 ### E2E tests
 
-E2E tests require the `coral-paraview` conda environment (ParaView + Playwright).
 Run all tests (unit + e2e):
 
 ```bash
-conda run -n coral-paraview pytest -q
+pytest -q
 ```
 
 By default, E2E tests run in headless mode. To run them with a visible browser:
 
 ```bash
-conda run -n coral-paraview pytest tests/ --show-browser
+pytest tests/test_e2e_edit_selection_playwright.py --show-browser
+```
+
+Add `--slow-mo <ms>` to insert a delay between Playwright actions — useful for following along visually:
+
+```bash
+pytest tests/test_e2e_edit_selection_playwright.py --show-browser --slow-mo 500
+```
+
+To stream app logs to the terminal while e2e tests run:
+
+```bash
+E2E_STREAM_APP_LOGS=1 pytest -q tests/test_e2e_edit_selection_playwright.py
+```
+
+Run a single test function:
+
+```bash
+pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_point_field_replace_box_selection_does_not_toggle_overlap
 ```
 
 Test meshes live in `test_data/` so tests do not depend on the `data/` directory.
-
-Useful focused e2e tests:
-
-```bash
-conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_point_field_replace_box_selection_does_not_toggle_overlap
-conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
-```
 
 ## CI/CD
 
@@ -230,7 +218,7 @@ After that, formatting (`black`), linting (`ruff`), and unit tests (`pytest`) ru
 **NOTE:**  
 E2E tests are excluded from the pre-commit hook — run them manually with the
 conda environment when needed.  
-Either the uv venv or the conda environment must be active so that `pytest` is on the path.
+The `coral-paraview` conda environment must be active so that `pytest` is on the path.
 
 To run hooks manually against all files:
 
@@ -259,16 +247,13 @@ Two workflows run on push and pull requests to `main`:
 
 ## Troubleshooting
 
-- `ModuleNotFoundError: No module named 'paraview'`: use the conda
-  `coral-paraview` environment or rebuild the Docker image. The `.venv`/`uv`
-  environment does not provide ParaView.
-- **ParaView backend not available even with `conda run`**: if the `.venv` is
-  active in your shell, `conda run` inherits its `PATH` and `python` resolves
-  to `.venv/bin/python` instead of the conda env. Run `deactivate` first, then
-  retry `conda run -n coral-paraview python app.py ...`.
-- `Page.wait_for_selector` failures in e2e: first verify the app can start with
-  `--backend paraview`; then rerun with `--show-browser` or
-  `E2E_STREAM_APP_LOGS=1`.
+- `ModuleNotFoundError: No module named 'trame'` or `'paraview'`: use the conda
+  `coral-paraview` environment or rebuild the Docker image.
+- **ParaView unavailable even with `conda run`**: if a `.venv` is active in
+  your shell, `conda run` inherits its `PATH` and `python` resolves to
+  `.venv/bin/python`. Run `deactivate` first, then retry.
+- `Page.wait_for_selector` failures in e2e: verify the app starts cleanly, then
+  rerun with `--show-browser` or `E2E_STREAM_APP_LOGS=1`.
 - ParaView startup warnings about X/EGL/OSMesa can be non-fatal in Docker. The
   HTTP verification above is the quick check that the app still starts.
 - If a local Docker HTTP check fails with permission errors, rerun the check
@@ -279,6 +264,25 @@ Two workflows run on push and pull requests to `main`:
 `inspect_vtu.py` decodes and prints all cell types and data arrays from a `.vtu` file (binary/compressed and not human-readable).
 
 ```bash
-conda run -n coral-paraview python tools/inspect_vtu.py data/output.vtu            # print to console
-conda run -n coral-paraview python tools/inspect_vtu.py data/output.vtu -o out.txt # write to file
+python tools/inspect_vtu.py data/output.vtu            # print to console
+python tools/inspect_vtu.py data/output.vtu -o out.txt # write to file
+```
+
+## Exploring the ParaView Python API
+
+### Quick docstring lookup
+
+```bash
+python -c "from paraview import simple; help(simple.Show)"
+```
+
+Replace `simple.Show` with any other symbol (`simple.OpenDataFile`, `simple.ColorBy`, etc.).
+
+### Jump-to-source lookup
+
+`tools/pv_lookup.py` resolves a dotted ParaView symbol and prints the exact file and line number you can open in an editor:
+
+```bash
+python tools/pv_lookup.py simple.Show
+python tools/pv_lookup.py servermanager.Proxy
 ```

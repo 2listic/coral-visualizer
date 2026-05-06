@@ -1,12 +1,19 @@
 """File and save helpers shared by Trame controllers."""
 
+from __future__ import annotations
+
 import errno
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from file_utils import get_vtk_files_from_data_folder
+
+if TYPE_CHECKING:
+    from edit_session import EditSession
+    from paraview_backend import ParaViewBackend
 
 STATE_FILE_EXTENSION = ".coral.state.json"
 DEFAULT_STATE_FILENAME = f"session{STATE_FILE_EXTENSION}"
@@ -18,8 +25,8 @@ class FileOperationService:
 
     state: object
     data_directory: str
-    pv_backend: object | None = None
-    edit_session: object | None = None
+    pv_backend: ParaViewBackend
+    edit_session: EditSession
 
     def refresh_available_files(self):
         refresh_available_files(self.state, self.data_directory)

@@ -4,15 +4,14 @@
 class ViewControllerProxy:
     """Centralize view updates and optional ParaView diagnostics."""
 
-    def __init__(self, ctrl, state, *, backend, devtools_enabled=False):
+    def __init__(self, ctrl, state, *, devtools_enabled=False):
         self._ctrl = ctrl
         self._state = state
-        self._backend = backend
         self._devtools_enabled = bool(devtools_enabled)
 
     def debug(self, message, **values):
         """Emit compact view diagnostics when devtools are enabled."""
-        if not (self._backend == "paraview" and self._devtools_enabled):
+        if not self._devtools_enabled:
             return False
         payload = " ".join(f"{key}={values[key]!r}" for key in sorted(values))
         if payload:

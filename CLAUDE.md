@@ -4,16 +4,11 @@ Operational onboarding for Claude/Codex/other agents working in this repository.
 
 ## First Read
 
-This is a Trame/Vuetify mesh visualizer with two backends:
-
-- `vtk`: legacy local VTK rendering path.
-- `paraview`: current primary path for pipeline, filters, edit sessions, selection, saving, and display/color controls.
-
-Most recent feature work is in the ParaView backend. When reproducing user-reported UI behavior, prefer the ParaView environment and `--backend paraview` unless the user explicitly says VTK.
+This is a Trame/Vuetify mesh visualizer and editor built on the ParaView library. It supports pipeline construction, filters, edit sessions, selection, saving, and advanced display/color controls.
 
 ## Environment
 
-### Recommended ParaView Environment
+### Environment
 
 Use the conda environment `coral-paraview`. Create it if missing:
 
@@ -21,31 +16,17 @@ Use the conda environment `coral-paraview`. Create it if missing:
 ./tools/setup_pv_env.sh
 ```
 
-This installs ParaView from `conda-forge`, pip-installs all Python dev dependencies, and installs the Playwright Chromium browser. Do not expect ParaView to work from the lightweight `.venv`/`uv` setup.
+This installs ParaView from `conda-forge`, pip-installs all Python dev dependencies, and installs the Playwright Chromium browser.
 
 Use `conda run -n coral-paraview <command>` or find the env root with `conda info --envs` to get the full path.
 
-Run the ParaView app:
+Run the app:
 
 ```bash
-conda run -n coral-paraview python app.py --backend paraview --data-directory test_data --host 127.0.0.1 --port 8008
+conda run -n coral-paraview python app.py --data-directory test_data --host 127.0.0.1 --port 8008
 ```
 
-`--devtools` is enabled by default for now. It enables Trame hot reload and
-ParaView view/selection diagnostics. Use `--no-devtools` for quiet
-production-like runs. The older `--dev` flag is a compatibility alias.
-
-### Lightweight VTK/Unit-Test Environment
-
-For pure unit tests that do not import ParaView, the default Python may work if requirements are installed:
-
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -r setup/requirements.txt -r setup/requirements-dev.txt
-```
-
-Use this only for non-ParaView work. If a test imports `paraview` or uses Playwright e2e against the ParaView backend, use `coral-paraview`.
+`--devtools` is enabled by default. It enables Trame hot reload and ParaView view/selection diagnostics. Use `--no-devtools` for quiet production-like runs. The older `--dev` flag is a compatibility alias.
 
 ### Playwright
 
@@ -62,6 +43,12 @@ Visible browser debugging:
 conda run -n coral-paraview pytest tests/test_e2e_edit_selection_playwright.py --show-browser
 ```
 
+Add `--slow-mo <ms>` to insert a delay between Playwright actions:
+
+```bash
+conda run -n coral-paraview pytest tests/test_e2e_edit_selection_playwright.py --show-browser --slow-mo 500
+```
+
 Optional app log streaming during e2e:
 
 ```bash
@@ -70,19 +57,19 @@ E2E_STREAM_APP_LOGS=1 conda run -n coral-paraview pytest -q tests/test_e2e_edit_
 
 ## Common Commands
 
-Run unit/controller tests:
+Run unit tests (excludes e2e):
 
 ```bash
-pytest -q tests/test_paraview_backend.py tests/test_paraview_runtime.py tests/test_paraview_controllers.py tests/test_state_setup.py
+conda run -n coral-paraview pytest -q tests/ --ignore-glob=tests/test_e2e*.py
 ```
 
-Run ParaView e2e tests:
+Run all tests (unit + e2e):
 
 ```bash
-conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py
+conda run -n coral-paraview pytest -q
 ```
 
-Run a single e2e:
+Run a single e2e test:
 
 ```bash
 conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py::test_paraview_display_color_scale_visibility_survives_rescale
@@ -107,7 +94,7 @@ docker run -it --rm -p 8008:8080 coral-visualizer-standalone
 
 On every `git commit`, pre-commit runs formatting (`black`), linting (`ruff`),
 and unit tests (`pytest`). E2E tests are excluded from the hook — run them
-manually with the conda env. Either the uv venv or conda env must be active so
+manually with the conda env. The `coral-paraview` conda env must be active so
 `pytest` is on the path.
 
 ## Git Conventions
@@ -121,9 +108,9 @@ manually with the conda env. Either the uv venv or conda env must be active so
 ### Entry And Registration
 
 - `app.py`: entry point and server/runtime construction.
-- `app_config.py`: CLI parsing, devtools/hot-reload setup, and backend selection.
-- `runtime_setup.py`: VTK/ParaView rendering object construction and runtime service attachment.
-- `handler_registration.py`: wires backend-specific controllers and state handlers.
+- `app_config.py`: CLI parsing and devtools/hot-reload setup.
+- `runtime_setup.py`: ParaView rendering object construction and runtime service attachment.
+- `handler_registration.py`: wires controllers and state handlers.
 - `state_setup.py`: initializes all Trame state. If adding UI controls, add defaults here.
 - `state_handlers.py`: shared `@state.change(...)` callbacks for selected file, color-by, representation, active pipeline node, interaction quality, edit mode.
 - `view_controls.py`: central wrapper for Trame view update callbacks and optional ParaView diagnostics.
@@ -144,11 +131,6 @@ Important ParaView UI state:
 - `source_properties` / `display_properties`: generated editable proxy properties.
 - `color_controls_*`: dedicated color-bar controls under Display -> Advanced Display Controls.
 - `edit_session_active`, `edit_geometry_mode`, `edit_field_choice`, `edit_selection_mode`, `selection_count`: edit workflow.
-
-### VTK Legacy Path
-
-- `vtk_runtime.py`, `vtk_controllers.py`, `vtk_pipeline.py`, `mesh_edit.py`, `interactor.py`, `scalar_bars.py`.
-- Keep this path working, but do not model new ParaView features after it unless the user asks for VTK parity.
 
 ### UI
 
@@ -209,19 +191,20 @@ conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.p
 For backend/controller coverage:
 
 ```bash
-pytest -q tests/test_paraview_backend.py tests/test_paraview_runtime.py tests/test_paraview_controllers.py tests/test_state_setup.py
+conda run -n coral-paraview pytest -q tests/ --ignore-glob=tests/test_e2e*.py
 ```
 
 ## Debugging Notes
 
-- If `conda run -n coral-paraview python` resolves to `.venv/bin/python` (ParaView unavailable despite using the conda env): the `.venv` is active and its `PATH` entry wins. Run `deactivate` first, then retry.
+- If `conda run -n coral-paraview python` resolves to `.venv/bin/python` (ParaView unavailable): a `.venv` is active and its `PATH` entry wins. Run `deactivate` first, then retry.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.
 - Selection e2e logs can include `[selection-record] ...`; use `E2E_STREAM_APP_LOGS=1` to see app output live.
 - `tools/inspect_vtu.py` can inspect binary/compressed VTU output:
 
 ```bash
-conda run -n coral-paraview python tools/inspect_vtu.py test_data/output.vtu
+conda run -n coral-paraview python tools/inspect_vtu.py test_data/output.vtu            # print to console
+conda run -n coral-paraview python tools/inspect_vtu.py test_data/output.vtu -o out.txt # write to file
 ```
 
 ## File Format Notes

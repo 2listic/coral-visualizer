@@ -12,15 +12,22 @@ def pytest_addoption(parser):
         default=False,
         help="Run E2E tests with visible browser (disables headless mode)",
     )
+    parser.addoption(
+        "--slow-mo",
+        type=int,
+        default=0,
+        help="Milliseconds to wait between Playwright actions (useful with --show-browser)",
+    )
 
 
 @pytest.fixture(scope="session")
 def shared_browser(request):
     show_browser = request.config.getoption("--show-browser")
+    slow_mo = request.config.getoption("--slow-mo")
     from playwright.sync_api import sync_playwright
 
     playwright = sync_playwright().start()
-    browser = playwright.chromium.launch(headless=not show_browser)
+    browser = playwright.chromium.launch(headless=not show_browser, slow_mo=slow_mo)
     yield browser
     browser.close()
     playwright.stop()

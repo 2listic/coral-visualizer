@@ -21,17 +21,11 @@ def initialize_state(
     *,
     available_files,
     initial_file,
-    backend,
-    backend_message,
     pv_backend,
 ):
     """Populate the Trame state object with the app defaults."""
     initial_arrays = [{"text": "Solid Color", "value": ARRAY_SOLID}]
-    filter_catalog = (
-        pv_backend.get_available_filters()
-        if pv_backend
-        else {"supported": [], "experimental": []}
-    )
+    filter_catalog = pv_backend.get_available_filters()
 
     state.available_files = available_files
     state.selected_file = initial_file
@@ -42,8 +36,6 @@ def initialize_state(
     state.show_cells = True
     state.show_faces = True
     state.has_boundary = False
-    state.backend = backend
-    state.backend_message = backend_message
     state.pipeline_items = []
     state.active_pipeline_item = None
     state.active_source_label = ""
