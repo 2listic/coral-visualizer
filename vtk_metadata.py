@@ -6,7 +6,6 @@ import tempfile
 
 from vtkmodules.vtkCommonCore import vtkDataArray
 
-
 _DATA_ARRAY_INFORMATION_KEYS = (
     vtkDataArray.L2_NORM_RANGE(),
     vtkDataArray.L2_NORM_FINITE_RANGE(),
@@ -39,14 +38,23 @@ def strip_data_array_information_keys(dataset):
 
     points_getter = getattr(dataset, "GetPoints", None)
     points = points_getter() if callable(points_getter) else None
-    points_data = points.GetData() if points is not None and hasattr(points, "GetData") else None
+    points_data = (
+        points.GetData() if points is not None and hasattr(points, "GetData") else None
+    )
     _strip_array_information_keys(points_data)
 
 
 def sanitized_vtk_xml_path(path):
     """Return a temporary XML VTK file path with fragile InformationKey blocks removed."""
     source_path = Path(path)
-    if source_path.suffix.lower() not in {".vtu", ".pvtu", ".vtp", ".vti", ".vtr", ".vts"}:
+    if source_path.suffix.lower() not in {
+        ".vtu",
+        ".pvtu",
+        ".vtp",
+        ".vti",
+        ".vtr",
+        ".vts",
+    }:
         return str(source_path)
 
     try:

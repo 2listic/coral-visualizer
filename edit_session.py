@@ -5,7 +5,11 @@ from math import acos, degrees, sqrt
 
 from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIdList
 from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid, vtkVertex
-from vtkmodules.vtkFiltersCore import vtkArrayCalculator, vtkCellCenters, vtkExtractCells
+from vtkmodules.vtkFiltersCore import (
+    vtkArrayCalculator,
+    vtkCellCenters,
+    vtkExtractCells,
+)
 from vtkmodules.vtkIOLegacy import vtkUnstructuredGridWriter
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
 
@@ -89,7 +93,9 @@ class EditSession:
 
     def default_output_filename(self):
         """Return a suggested filename for the current edit-session output."""
-        label = self.source_label or Path(self.source_filename or "edited").stem or "edited"
+        label = (
+            self.source_label or Path(self.source_filename or "edited").stem or "edited"
+        )
         safe_label = "".join(
             char if char.isalnum() or char in {"-", "_"} else "_" for char in label
         ).strip("_")
@@ -201,7 +207,9 @@ class EditSession:
         if not self.active or self.working_dataset is None:
             return 0
         if self.geometry_mode == "point":
-            self.selected_point_ids = set(range(self.working_dataset.GetNumberOfPoints()))
+            self.selected_point_ids = set(
+                range(self.working_dataset.GetNumberOfPoints())
+            )
             return len(self.selected_point_ids)
         if self.geometry_mode == "surface":
             self.selected_surface_keys = set(self._surface_boundary_map_for_top_cells())
@@ -272,7 +280,8 @@ class EditSession:
             self.selected_point_ids = {
                 int(point_id)
                 for point_id in (cell_ids or [])
-                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+                if isinstance(point_id, (int, float))
+                and 0 <= int(point_id) < point_count
             }
             return len(self.selected_point_ids)
 
@@ -288,7 +297,8 @@ class EditSession:
         normalized = {
             int(cell_id)
             for cell_id in (cell_ids or [])
-            if isinstance(cell_id, (int, float)) and 0 <= int(cell_id) < self.working_dataset.GetNumberOfCells()
+            if isinstance(cell_id, (int, float))
+            and 0 <= int(cell_id) < self.working_dataset.GetNumberOfCells()
         }
         if grow:
             normalized = self._grow_volume_selection(normalized)
@@ -305,7 +315,8 @@ class EditSession:
             selected = {
                 int(point_id)
                 for point_id in (cell_ids or [])
-                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+                if isinstance(point_id, (int, float))
+                and 0 <= int(point_id) < point_count
             }
             self.selected_point_ids |= selected
             return len(self.selected_point_ids)
@@ -322,7 +333,8 @@ class EditSession:
         normalized = {
             int(cell_id)
             for cell_id in (cell_ids or [])
-            if isinstance(cell_id, (int, float)) and 0 <= int(cell_id) < self.working_dataset.GetNumberOfCells()
+            if isinstance(cell_id, (int, float))
+            and 0 <= int(cell_id) < self.working_dataset.GetNumberOfCells()
         }
         if grow:
             normalized = self._grow_volume_selection(normalized)
@@ -339,7 +351,8 @@ class EditSession:
             selected = {
                 int(point_id)
                 for point_id in (cell_ids or [])
-                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+                if isinstance(point_id, (int, float))
+                and 0 <= int(point_id) < point_count
             }
             self.selected_point_ids -= selected
             return len(self.selected_point_ids)
@@ -374,7 +387,8 @@ class EditSession:
             normalized = {
                 int(point_id)
                 for point_id in (cell_ids or [])
-                if isinstance(point_id, (int, float)) and 0 <= int(point_id) < point_count
+                if isinstance(point_id, (int, float))
+                and 0 <= int(point_id) < point_count
             }
             for point_id in normalized:
                 if point_id in self.selected_point_ids:
@@ -464,9 +478,7 @@ class EditSession:
         target_data = self._dataset_data_for_association(association)
         existing = target_data.GetArray(field_name)
         if existing is None:
-            raise RuntimeError(
-                f"Field '{field_name}' does not exist. Create it first."
-            )
+            raise RuntimeError(f"Field '{field_name}' does not exist. Create it first.")
         if existing.GetNumberOfComponents() != 1:
             raise RuntimeError("Only scalar fields can be assigned in edit mode.")
 
@@ -486,41 +498,6 @@ class EditSession:
         self.expression = expression
         self.dirty = True
         return field_name
-
-    # Legacy wrappers kept for compatibility with older tests/callers.
-    def apply_volume_field(self, field_name, expression, default_value, overwrite=False):
-        exists = self.has_field(field_name, "cell")
-        if exists and not overwrite:
-            raise RuntimeError(
-                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
-            )
-        if overwrite:
-            self.create_field(field_name, "cell", default_value, overwrite=True)
-        elif not exists:
-            self.create_field(field_name, "cell", default_value, overwrite=False)
-        if not expression:
-            expression = str(default_value)
-        self.geometry_mode = "volume"
-        if not self.selected_cell_ids:
-            self.selected_cell_ids = set(range(self.working_dataset.GetNumberOfCells()))
-        return self.assign_to_selected(field_name, "cell", expression)
-
-    def apply_surface_field(self, field_name, expression, default_value, overwrite=False):
-        exists = self.has_field(field_name, "cell")
-        if exists and not overwrite:
-            raise RuntimeError(
-                f"Field '{field_name}' already exists. Confirm overwrite to replace it."
-            )
-        if overwrite:
-            self.create_field(field_name, "cell", default_value, overwrite=True)
-        elif not exists:
-            self.create_field(field_name, "cell", default_value, overwrite=False)
-        if not expression:
-            expression = str(default_value)
-        self.geometry_mode = "surface"
-        if not self.selected_surface_keys:
-            self.selected_surface_keys = set(self._surface_boundary_map_for_top_cells())
-        return self.assign_to_selected(field_name, "cell", expression)
 
     def _evaluate_expression(self, association, expression):
         """Evaluate expression and return one scalar value per tuple."""
@@ -574,10 +551,7 @@ class EditSession:
 
     def build_selected_dataset(self):
         """Return a lightweight dataset containing currently selected editable entities."""
-        if (
-            not self.active
-            or self.working_dataset is None
-        ):
+        if not self.active or self.working_dataset is None:
             return None
 
         if self.geometry_mode == "surface":
@@ -630,7 +604,9 @@ class EditSession:
         boundary_map = self._surface_boundary_map_for_top_cells()
         existing = self._existing_codim_keys(top_dim - 1)
         missing_keys = [
-            key for key in sorted(self.selected_surface_keys) if key in boundary_map and key not in existing
+            key
+            for key in sorted(self.selected_surface_keys)
+            if key in boundary_map and key not in existing
         ]
         if not missing_keys:
             return 0
@@ -750,7 +726,10 @@ class EditSession:
     @staticmethod
     def _cell_key(cell):
         return tuple(
-            sorted(int(cell.GetPointId(point_id)) for point_id in range(cell.GetNumberOfPoints()))
+            sorted(
+                int(cell.GetPointId(point_id))
+                for point_id in range(cell.GetNumberOfPoints())
+            )
         )
 
     def _surface_boundary_map_for_top_cells(self):
@@ -790,7 +769,11 @@ class EditSession:
                         int(subcell.GetPointId(point_id))
                         for point_id in range(subcell.GetNumberOfPoints())
                     )
-                    metadata[key] = (int(subcell.GetCellType()), point_ids, int(cell_id))
+                    metadata[key] = (
+                        int(subcell.GetCellType()),
+                        point_ids,
+                        int(cell_id),
+                    )
 
         self._surface_boundary_map = {
             key: metadata[key] for key, count in counts.items() if count == 1
@@ -811,7 +794,7 @@ class EditSession:
         top_cell_ids = set()
         existing_keys = None
 
-        for item in (cell_ids or []):
+        for item in cell_ids or []:
             if isinstance(item, (tuple, list)) and len(item) >= 2:
                 try:
                     key = tuple(sorted(int(value) for value in item))
@@ -1060,7 +1043,6 @@ class EditSession:
                 return (nx / norm, ny / norm, nz / norm)
         return None
 
-
     @staticmethod
     def _extend_cell_data_for_new_cells(dataset, old_cell_count, owner_cell_ids=None):
         """Resize cell-data arrays after appending cells and inherit owner tuples."""
@@ -1089,7 +1071,9 @@ class EditSession:
                         array.SetComponent(cell_id, component, value)
             for cell_id in range(old_cell_count, new_cell_count):
                 owner_cell_id = owner_cell_ids.get(cell_id)
-                if owner_cell_id is not None and 0 <= owner_cell_id < len(original_tuples):
+                if owner_cell_id is not None and 0 <= owner_cell_id < len(
+                    original_tuples
+                ):
                     try:
                         array.SetTuple(cell_id, original_tuples[owner_cell_id])
                         continue
@@ -1114,7 +1098,10 @@ class EditSession:
 
         cell_count = dataset.GetNumberOfCells()
         max_dimension = max(
-            (dataset.GetCell(cell_id).GetCellDimension() for cell_id in range(cell_count)),
+            (
+                dataset.GetCell(cell_id).GetCellDimension()
+                for cell_id in range(cell_count)
+            ),
             default=0,
         )
         shared_subcells = {}
@@ -1133,7 +1120,10 @@ class EditSession:
                 getter = cell.GetEdge
             elif max_dimension == 1:
                 num_subcells = cell.GetNumberOfPoints()
-                getter = lambda idx, c=cell: c.GetPointId(idx)
+
+                def getter(idx, _cell=cell):
+                    return _cell.GetPointId(idx)
+
             else:
                 continue
 

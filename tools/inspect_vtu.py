@@ -20,7 +20,11 @@ def _looks_like_xml_vtk(filename: str) -> bool:
         with open(filename, "rb") as handle:
             head = handle.read(2048)
         compact = head.lstrip()
-        return compact.startswith(b"<VTKFile") or compact.startswith(b"<?xml") and b"<VTKFile" in compact
+        return (
+            compact.startswith(b"<VTKFile")
+            or compact.startswith(b"<?xml")
+            and b"<VTKFile" in compact
+        )
     except Exception:
         return False
 
@@ -54,9 +58,8 @@ def _reader_error_message(reader) -> str | None:
         error_name = vtk.vtkErrorCode.GetStringFromErrorCode(error_code)
     except Exception:
         error_name = None
-    return (
-        f"VTK reader error code {error_code}"
-        + (f" ({error_name})" if error_name else "")
+    return f"VTK reader error code {error_code}" + (
+        f" ({error_name})" if error_name else ""
     )
 
 
@@ -92,7 +95,10 @@ def _xml_fallback_summary(filename: str, out) -> None:
     for idx, piece in enumerate(pieces):
         n_points = piece.attrib.get("NumberOfPoints", "unknown")
         n_cells = piece.attrib.get("NumberOfCells", "unknown")
-        print(f"  Piece {idx}: NumberOfPoints={n_points}, NumberOfCells={n_cells}", file=out)
+        print(
+            f"  Piece {idx}: NumberOfPoints={n_points}, NumberOfCells={n_cells}",
+            file=out,
+        )
 
         point_data = piece.find("PointData")
         cell_data = piece.find("CellData")

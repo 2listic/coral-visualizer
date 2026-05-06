@@ -81,7 +81,9 @@ def register_common_controllers(
             relative_path = persist_uploaded_state_file(client_file)
             refresh_available_state_files()
             state.state_filename = relative_path
-            state.state_status = f"Uploaded state file: {os.path.basename(relative_path)}"
+            state.state_status = (
+                f"Uploaded state file: {os.path.basename(relative_path)}"
+            )
             state.state_status_type = "success"
         except Exception as exc:
             state.state_status = f"Upload failed: {exc}"

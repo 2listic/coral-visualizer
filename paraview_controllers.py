@@ -1,28 +1,39 @@
 """ParaView-specific Trame controller registrations."""
 
+from __future__ import annotations
+
 from contextlib import nullcontext
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from selection_debug import SelectionDebugLogger
 from selection_timing import SelectionTiming
+
+if TYPE_CHECKING:
+    from edit_session import EditSession
+    from paraview_backend import ParaViewBackend
+
+
+class _RefreshRuntimeMessage(Protocol):
+    def __call__(self, *, clear: bool = False) -> None: ...
 
 
 def register_paraview_controllers(
     ctrl,
     state,
     *,
-    is_paraview_backend,
-    pv_backend,
-    edit_session,
-    refresh_runtime_message,
-    update_paraview_ui_state,
-    render_and_push,
+    is_paraview_backend: Callable[[], bool],
+    pv_backend: ParaViewBackend | None,
+    edit_session: EditSession,
+    refresh_runtime_message: _RefreshRuntimeMessage,
+    update_paraview_ui_state: Callable[[], None],
+    render_and_push: Callable[[], None],
     save_paraview_output,
     debug_view,
     call_view_update_geometry,
     call_view_set_remote_rendering,
     call_view_update,
-    sync_edit_session_state,
-    sync_paraview_edit_selection_overlay,
+    sync_edit_session_state: Callable[[], None],
+    sync_paraview_edit_selection_overlay: Callable[[], None],
     summarize_edit_event,
     normalize_edit_selection_ids,
     save_paraview_state=None,
@@ -66,8 +77,9 @@ def register_paraview_controllers(
 
     def _open_save_overwrite_dialog(action, exc):
         state.save_overwrite_action = action
-        state.save_overwrite_target = getattr(
-            exc, "filename", "") or state.save_filename
+        state.save_overwrite_target = (
+            getattr(exc, "filename", "") or state.save_filename
+        )
         state.save_overwrite_dialog = True
         state.save_status = ""
 
@@ -90,8 +102,7 @@ def register_paraview_controllers(
         if not callable(load_paraview_state):
             raise RuntimeError("Application state load is not available")
         snapshot, _path = load_paraview_state()
-        clear_edit_target = getattr(
-            pv_backend, "clear_edit_target_dataset", None)
+        clear_edit_target = getattr(pv_backend, "clear_edit_target_dataset", None)
 
         edit_session.clear()
         if callable(clear_edit_target):
@@ -102,12 +113,12 @@ def register_paraview_controllers(
         importer = getattr(pv_backend, "import_app_state", None)
         if not callable(importer):
             raise RuntimeError(
-                "Current backend does not support loading application state")
+                "Current backend does not support loading application state"
+            )
 
         importer(snapshot)
         update_paraview_ui_state()
-        state.selected_file = snapshot.get(
-            "selected_file", state.selected_file)
+        state.selected_file = snapshot.get("selected_file", state.selected_file)
         state.inspector_tab = snapshot.get(
             "inspector_tab", getattr(state, "inspector_tab", 0)
         )
@@ -120,8 +131,7 @@ def register_paraview_controllers(
         debug_view("pv_commit_edit_session.start", mode=state.mainViewMode)
         output_path = save_paraview_output(overwrite=overwrite)
         edit_session.clear()
-        clear_edit_target = getattr(
-            pv_backend, "clear_edit_target_dataset", None)
+        clear_edit_target = getattr(pv_backend, "clear_edit_target_dataset", None)
         if callable(clear_edit_target):
             clear_edit_target()
         sync_edit_session_state()
@@ -177,7 +187,8 @@ def register_paraview_controllers(
         mode = _apply_geometry_options_for_association(association)
         expression = (state.edit_expression or "").strip()
         field_name = edit_session.assign_to_selected(
-            field_name, association, expression)
+            field_name, association, expression
+        )
         sync_edit_session_state()
 
         if mode == "surface":
@@ -186,9 +197,7 @@ def register_paraview_controllers(
             scope = "point(s)"
         else:
             scope = "cell(s)"
-        state.edit_apply_status = (
-            f"Assigned '{field_name}' on {edit_session.selected_count()} selected {scope}."
-        )
+        state.edit_apply_status = f"Assigned '{field_name}' on {edit_session.selected_count()} selected {scope}."
         state.edit_apply_status_type = "success"
 
     def _set_selection_mode(mode):
@@ -214,8 +223,7 @@ def register_paraview_controllers(
         if mode == "surface":
             if len(picked_ids or []) > 50:
                 return []
-            resolver = getattr(
-                edit_session, "_surface_keys_from_top_cells", None)
+            resolver = getattr(edit_session, "_surface_keys_from_top_cells", None)
             if callable(resolver):
                 try:
                     resolved = resolver(picked_ids)
@@ -244,8 +252,7 @@ def register_paraview_controllers(
             {
                 int(cell_id)
                 for cell_id in (picked_ids or [])
-                if isinstance(cell_id, (int, float))
-                and 0 <= int(cell_id) < cell_count
+                if isinstance(cell_id, (int, float)) and 0 <= int(cell_id) < cell_count
             }
         )
 
@@ -263,8 +270,7 @@ def register_paraview_controllers(
                 try:
                     apply_preset(preset)
                 except Exception as exc:
-                    _set_color_status(
-                        f"Color map restore skipped: {exc}", "warning")
+                    _set_color_status(f"Color map restore skipped: {exc}", "warning")
 
         if range_min != "" and range_max != "":
             apply_range = getattr(pv_backend, "apply_color_range", None)
@@ -272,14 +278,12 @@ def register_paraview_controllers(
                 try:
                     apply_range(range_min, range_max)
                 except Exception as exc:
-                    _set_color_status(
-                        f"Color range restore skipped: {exc}", "warning")
+                    _set_color_status(f"Color range restore skipped: {exc}", "warning")
 
         set_categorical = getattr(pv_backend, "set_categorical_coloring", None)
         if callable(set_categorical):
             try:
-                set_categorical(
-                    bool(getattr(state, "categorical_coloring", False)))
+                set_categorical(bool(getattr(state, "categorical_coloring", False)))
             except Exception as exc:
                 _set_color_status(
                     f"Categorical coloring restore skipped: {exc}", "warning"
@@ -290,8 +294,7 @@ def register_paraview_controllers(
             try:
                 set_bar_visible(visible)
             except Exception as exc:
-                _set_color_status(
-                    f"Color scale restore skipped: {exc}", "warning")
+                _set_color_status(f"Color scale restore skipped: {exc}", "warning")
 
     def _set_color_status(message, status_type="success"):
         state.color_controls_status = message
@@ -379,19 +382,14 @@ def register_paraview_controllers(
             entity_label = "point(s)"
         else:
             entity_label = "cell(s)"
-        state.edit_selection_status = (
-            f"{action} {len(picked_ids)} {entity_label} with {source_label}. {count} selected total."
-        )
+        state.edit_selection_status = f"{action} {len(picked_ids)} {entity_label} with {source_label}. {count} selected total."
         state.edit_selection_status_type = "success"
         if mode == "surface":
-            selected_now = sorted(
-                getattr(edit_session, "selected_surface_keys", set()))
+            selected_now = sorted(getattr(edit_session, "selected_surface_keys", set()))
         elif mode == "point":
-            selected_now = sorted(
-                getattr(edit_session, "selected_point_ids", set()))
+            selected_now = sorted(getattr(edit_session, "selected_point_ids", set()))
         else:
-            selected_now = sorted(
-                getattr(edit_session, "selected_cell_ids", set()))
+            selected_now = sorted(getattr(edit_session, "selected_cell_ids", set()))
         print(
             "[selection-debug] controller.apply.end "
             f"mode={mode} selection_mode={selection_mode} "
@@ -437,31 +435,31 @@ def register_paraview_controllers(
     def _pick_edit_ids_in_rect(mode, x0, y0, x1, y1):
         behavior = state.selection_behavior or "touch"
         if mode == "surface":
-            picker = getattr(
-                pv_backend, "pick_visible_surface_keys_in_rect", None)
+            picker = getattr(pv_backend, "pick_visible_surface_keys_in_rect", None)
             picked_ids = (
-                picker(x0, y0, x1, y1, behavior=behavior)
-                if callable(picker)
-                else []
+                picker(x0, y0, x1, y1, behavior=behavior) if callable(picker) else []
             )
             if not picked_ids and behavior == "inside" and callable(picker):
                 picked_ids = picker(x0, y0, x1, y1, behavior="touch")
             if not picked_ids:
                 picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
-                    x0, y0, x1, y1, behavior=behavior)
+                    x0, y0, x1, y1, behavior=behavior
+                )
             if not picked_ids and behavior == "inside":
                 picked_ids = pv_backend.pick_visible_cell_ids_in_rect(
-                    x0, y0, x1, y1, behavior="touch")
+                    x0, y0, x1, y1, behavior="touch"
+                )
             return picked_ids
         if mode == "point":
-            picker = getattr(
-                pv_backend, "pick_visible_point_ids_in_rect", None)
+            picker = getattr(pv_backend, "pick_visible_point_ids_in_rect", None)
             if callable(picker):
                 return picker(x0, y0, x1, y1, behavior=behavior)
             return pv_backend.pick_visible_cell_ids_in_rect(
-                x0, y0, x1, y1, behavior=behavior)
+                x0, y0, x1, y1, behavior=behavior
+            )
         return pv_backend.pick_visible_cell_ids_in_rect(
-            x0, y0, x1, y1, behavior=behavior)
+            x0, y0, x1, y1, behavior=behavior
+        )
 
     def _set_empty_selection_status(mode, interaction):
         entity_label = "points" if mode == "point" else "cells"
@@ -533,7 +531,9 @@ def register_paraview_controllers(
         if not is_paraview_backend():
             return
 
-        target = state.source_properties if scope == "source" else state.display_properties
+        target = (
+            state.source_properties if scope == "source" else state.display_properties
+        )
         updated = []
         changed = False
         for item in target:
@@ -583,7 +583,8 @@ def register_paraview_controllers(
             return
 
         pv_backend.set_visibility(
-            state.active_pipeline_item, not state.active_visibility)
+            state.active_pipeline_item, not state.active_visibility
+        )
         update_paraview_ui_state()
         render_and_push()
 
@@ -636,8 +637,7 @@ def register_paraview_controllers(
         try:
             property_restore_error = ""
             selected_array = getattr(state, "selected_array", "") or ""
-            color_bar_visible = bool(
-                getattr(state, "color_bar_visible", False))
+            color_bar_visible = bool(getattr(state, "color_bar_visible", False))
             color_range_min = getattr(state, "color_range_min", "")
             color_range_max = getattr(state, "color_range_max", "")
             show_cells = bool(getattr(state, "show_cells", True))
@@ -654,12 +654,10 @@ def register_paraview_controllers(
             )
             pv_backend.apply_representation(state.representation)
             pv_backend.apply_coloring(selected_array or default_array)
-            set_cell_visibility = getattr(
-                pv_backend, "set_cell_face_visibility", None)
+            set_cell_visibility = getattr(pv_backend, "set_cell_face_visibility", None)
             if callable(set_cell_visibility):
                 set_cell_visibility(show_cells, show_faces)
-            apply_properties = getattr(
-                pv_backend, "apply_property_changes", None)
+            apply_properties = getattr(pv_backend, "apply_property_changes", None)
             if callable(apply_properties):
                 try:
                     apply_properties(source_properties, display_properties)
@@ -809,8 +807,7 @@ def register_paraview_controllers(
                 exported["filename"],
                 exported["dataset"],
             )
-            set_edit_target = getattr(
-                pv_backend, "set_edit_target_dataset", None)
+            set_edit_target = getattr(pv_backend, "set_edit_target_dataset", None)
             if callable(set_edit_target):
                 set_edit_target(edit_session.working_dataset)
 
@@ -835,10 +832,7 @@ def register_paraview_controllers(
             sync_paraview_edit_selection_overlay()
             render_and_push()
             debug_view("pv_begin_edit_session.end", mode=state.mainViewMode)
-            state.edit_status = (
-                f"Edit session initialized for {exported['label']}. "
-                ""
-            )
+            state.edit_status = f"Edit session initialized for {exported['label']}. " ""
             state.edit_status_type = "info"
         except Exception as exc:
             state.edit_session_active = False
@@ -851,8 +845,7 @@ def register_paraview_controllers(
         """Discard the current edit session."""
         debug_view("pv_discard_edit_session.start", mode=state.mainViewMode)
         edit_session.clear()
-        clear_edit_target = getattr(
-            pv_backend, "clear_edit_target_dataset", None)
+        clear_edit_target = getattr(pv_backend, "clear_edit_target_dataset", None)
         if callable(clear_edit_target):
             clear_edit_target()
         sync_edit_session_state()
@@ -896,8 +889,7 @@ def register_paraview_controllers(
         """Apply the selected color-map preset to the active scalar coloring."""
         if not is_paraview_backend() or pv_backend.display is None:
             return
-        preset = (preset or getattr(
-            state, "color_map_preset", "") or "").strip()
+        preset = (preset or getattr(state, "color_map_preset", "") or "").strip()
         if not preset:
             return
         try:
@@ -946,8 +938,7 @@ def register_paraview_controllers(
             _set_color_status("Rescaled color range over time.")
             state.rescale_over_time_dialog = False
         except Exception as exc:
-            _set_color_status(
-                f"Color range rescale over time failed: {exc}", "error")
+            _set_color_status(f"Color range rescale over time failed: {exc}", "error")
 
     @ctrl.add("pv_set_time")
     def pv_set_time(time_value):
@@ -1074,9 +1065,7 @@ def register_paraview_controllers(
         if not is_paraview_backend() or pv_backend.display is None:
             return
         visible = bool(
-            getattr(state, "color_bar_visible", False)
-            if visible is None
-            else visible
+            getattr(state, "color_bar_visible", False) if visible is None else visible
         )
         try:
             state.color_bar_visible = visible
@@ -1106,8 +1095,7 @@ def register_paraview_controllers(
                 "Orientation axes shown." if visible else "Orientation axes hidden."
             )
         except Exception as exc:
-            _set_color_status(
-                f"Orientation axes update failed: {exc}", "error")
+            _set_color_status(f"Orientation axes update failed: {exc}", "error")
 
     @ctrl.add("pv_set_categorical_coloring")
     def pv_set_categorical_coloring(enabled=None):
@@ -1129,8 +1117,7 @@ def register_paraview_controllers(
                 else "Categorical colors disabled."
             )
         except Exception as exc:
-            _set_color_status(
-                f"Categorical color update failed: {exc}", "error")
+            _set_color_status(f"Categorical color update failed: {exc}", "error")
 
     @ctrl.add("pv_on_edit_field_choice")
     def pv_on_edit_field_choice(choice=None):
@@ -1138,8 +1125,9 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not edit_session.active:
             return
 
-        raw_choice = choice if choice is not None else getattr(
-            state, "edit_field_choice", "")
+        raw_choice = (
+            choice if choice is not None else getattr(state, "edit_field_choice", "")
+        )
         choice = (raw_choice or "").strip()
         state.edit_field_choice = choice
         if choice == "__create_new__":
@@ -1186,22 +1174,20 @@ def register_paraview_controllers(
         if not is_paraview_backend() or not edit_session.active:
             return
         try:
-            association = (
-                state.edit_new_field_association or "cell").strip().lower()
+            association = (state.edit_new_field_association or "cell").strip().lower()
             field_name = (state.edit_new_field_name or "").strip()
             default_value = (state.edit_new_field_default_value or "0").strip()
             has_field = getattr(edit_session, "has_field", None)
             if callable(has_field) and has_field(field_name, association):
                 state.edit_overwrite_field_name = field_name
                 state.edit_overwrite_dialog = True
-                state.edit_apply_status = (
-                    f"Field '{field_name}' already exists. Confirm overwrite to replace it."
-                )
+                state.edit_apply_status = f"Field '{field_name}' already exists. Confirm overwrite to replace it."
                 state.edit_apply_status_type = "warning"
                 sync_edit_session_state()
                 return
             edit_session.create_field(
-                field_name, association, default_value, overwrite=False)
+                field_name, association, default_value, overwrite=False
+            )
             state.edit_field_choice = f"{association}:{field_name}"
             state.edit_create_field_dialog = False
             state.edit_new_field_name = ""
@@ -1235,14 +1221,14 @@ def register_paraview_controllers(
             return
 
         try:
-            association = (
-                state.edit_new_field_association or "cell").strip().lower()
+            association = (state.edit_new_field_association or "cell").strip().lower()
             field_name = (state.edit_new_field_name or "").strip()
             default_value = (state.edit_new_field_default_value or "0").strip()
             state.edit_overwrite_dialog = False
             state.edit_overwrite_field_name = ""
             edit_session.create_field(
-                field_name, association, default_value, overwrite=True)
+                field_name, association, default_value, overwrite=True
+            )
             state.edit_field_choice = f"{association}:{field_name}"
             state.edit_create_field_dialog = False
             state.edit_new_field_name = ""
@@ -1292,13 +1278,11 @@ def register_paraview_controllers(
             if coords is not None:
                 selection_debug.log("click", x=coords[0], y=coords[1])
                 with timing.phase("backend_pick"):
-                    picked_ids = _pick_edit_ids_at_coords(
-                        mode, coords[0], coords[1])
+                    picked_ids = _pick_edit_ids_at_coords(mode, coords[0], coords[1])
                 _append_backend_timing(timing)
             else:
                 with timing.phase("payload_pick"):
-                    picked_ids = [
-                        item for item in normalized if isinstance(item, int)]
+                    picked_ids = [item for item in normalized if isinstance(item, int)]
 
             if not picked_ids:
                 with timing.phase("empty_status"):
@@ -1345,8 +1329,7 @@ def register_paraview_controllers(
         try:
             with timing.phase("summarize_event"):
                 state.edit_selection_event = summarize_edit_event(event)
-            selection = event.get("selection") if isinstance(
-                event, dict) else None
+            selection = event.get("selection") if isinstance(event, dict) else None
             if not isinstance(selection, (list, tuple)) or len(selection) != 4:
                 with timing.phase("invalid_status"):
                     state.edit_selection_status = (
@@ -1358,9 +1341,7 @@ def register_paraview_controllers(
 
             x0, x1, y0, y1 = selection
             with timing.phase("scale_rect"):
-                x0, x1, y0, y1 = _scale_box_selection_to_view(
-                    event, x0, x1, y0, y1
-                )
+                x0, x1, y0, y1 = _scale_box_selection_to_view(event, x0, x1, y0, y1)
             with timing.phase("sync_mode"):
                 mode = _sync_edit_mode_from_state()
             try:
@@ -1400,8 +1381,7 @@ def register_paraview_controllers(
                 timing.update(mode=mode, picked_count=0)
                 return
 
-            _apply_selection_ids(picked_ids, "box selection",
-                                 timing=timing, mode=mode)
+            _apply_selection_ids(picked_ids, "box selection", timing=timing, mode=mode)
         except Exception:
             status = "error"
             raise

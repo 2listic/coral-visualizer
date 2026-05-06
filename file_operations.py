@@ -8,7 +8,6 @@ from pathlib import Path
 
 from file_utils import get_vtk_files_from_data_folder
 
-
 STATE_FILE_EXTENSION = ".coral.state.json"
 DEFAULT_STATE_FILENAME = f"session{STATE_FILE_EXTENSION}"
 
@@ -127,8 +126,7 @@ def persist_uploaded_state_file(data_directory, client_file):
     uploads_dir = Path(data_directory) / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
-    original_name = Path(
-        client_file.name or f"upload{STATE_FILE_EXTENSION}").name
+    original_name = Path(client_file.name or f"upload{STATE_FILE_EXTENSION}").name
     if not original_name.endswith(STATE_FILE_EXTENSION):
         original_name = Path(original_name).stem + STATE_FILE_EXTENSION
     stem = original_name[: -len(STATE_FILE_EXTENSION)]
@@ -146,7 +144,12 @@ def _flush_save_feedback(state):
     """Best-effort push of save feedback state to the client."""
     dirty = getattr(state, "dirty", None)
     if callable(dirty):
-        for key in ("save_filename", "save_status", "save_status_type", "available_files"):
+        for key in (
+            "save_filename",
+            "save_status",
+            "save_status_type",
+            "available_files",
+        ):
             try:
                 dirty(key)
             except Exception:
@@ -168,7 +171,8 @@ def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_sess
     if edit_session.active:
         fallback_name = edit_session.default_output_filename()
         output_path = resolve_output_path(
-            data_directory, state.save_filename, fallback_name)
+            data_directory, state.save_filename, fallback_name
+        )
         suffix = os.path.splitext(output_path)[1].lower()
         if not suffix:
             output_path += ".vtu"
@@ -180,7 +184,8 @@ def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_sess
     else:
         fallback_name = pv_backend.default_output_filename()
         output_path = resolve_output_path(
-            data_directory, state.save_filename, fallback_name)
+            data_directory, state.save_filename, fallback_name
+        )
         if not os.path.splitext(output_path)[1]:
             output_path += pv_backend.default_output_extension()
         saved_kind = "pipeline result"
@@ -188,7 +193,9 @@ def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_sess
     return output_path, saved_kind
 
 
-def save_paraview_output(*, state, data_directory, pv_backend, edit_session, overwrite=False):
+def save_paraview_output(
+    *, state, data_directory, pv_backend, edit_session, overwrite=False
+):
     """Save the active ParaView output or edit-session dataset and return its path."""
     output_path, saved_kind = resolve_paraview_output_path(
         state=state,
@@ -223,11 +230,11 @@ def save_paraview_state(*, state, data_directory, pv_backend, overwrite=False):
     """Serialize and save the current ParaView application state to disk."""
     exporter = getattr(pv_backend, "export_app_state", None)
     if not callable(exporter):
-        raise RuntimeError(
-            "Current backend does not support saving application state")
+        raise RuntimeError("Current backend does not support saving application state")
 
     output_path = resolve_state_path(
-        data_directory, getattr(state, "state_filename", ""))
+        data_directory, getattr(state, "state_filename", "")
+    )
     relative_output = os.path.relpath(output_path, data_directory)
 
     if os.path.exists(output_path) and not overwrite:
@@ -239,8 +246,7 @@ def save_paraview_state(*, state, data_directory, pv_backend, overwrite=False):
 
     snapshot = exporter() or {}
     snapshot.setdefault("version", 1)
-    snapshot.setdefault("selected_file", getattr(
-        state, "selected_file", "") or "")
+    snapshot.setdefault("selected_file", getattr(state, "selected_file", "") or "")
 
     def _json_default(obj):
         """Fallback serializer: convert any non-JSON-serializable value to its string form."""
@@ -266,10 +272,14 @@ def save_paraview_state(*, state, data_directory, pv_backend, overwrite=False):
 def load_paraview_state(*, state, data_directory):
     """Load a previously saved ParaView application state snapshot from disk."""
     input_path = resolve_state_path(
-        data_directory, getattr(state, "state_filename", ""))
+        data_directory, getattr(state, "state_filename", "")
+    )
     if not os.path.exists(input_path):
-        raise FileNotFoundError(errno.ENOENT, "State file not found", os.path.relpath(
-            input_path, data_directory))
+        raise FileNotFoundError(
+            errno.ENOENT,
+            "State file not found",
+            os.path.relpath(input_path, data_directory),
+        )
 
     snapshot = json.loads(Path(input_path).read_text(encoding="utf-8"))
     state.state_filename = os.path.relpath(input_path, data_directory)

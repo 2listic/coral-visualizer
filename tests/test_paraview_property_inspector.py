@@ -306,12 +306,28 @@ def test_property_helper_methods_cover_boolean_domains_and_array_coercion():
     inspector = ParaViewPropertyInspector()
     sm_property = FakeSMProperty(domains=[FakeDomain("vtkSMBooleanDomain")])
 
-    assert inspector._effective_property_type("VectorProperty", sm_property) == "BooleanProperty"
-    assert inspector._normalize_property_value("ArraySelectionProperty", ["POINTS", "U"]) == "POINTS:U"
-    assert inspector._normalize_property_value("ArraySelectionProperty", ["", ""]) == "__none__"
+    assert (
+        inspector._effective_property_type("VectorProperty", sm_property)
+        == "BooleanProperty"
+    )
+    assert (
+        inspector._normalize_property_value("ArraySelectionProperty", ["POINTS", "U"])
+        == "POINTS:U"
+    )
+    assert (
+        inspector._normalize_property_value("ArraySelectionProperty", ["", ""])
+        == "__none__"
+    )
     assert inspector._coerce_property_value("BooleanProperty", True) == 1
-    assert inspector._coerce_property_value("ArraySelectionProperty", "POINTS:U") == ["POINTS", "U"]
-    assert inspector._coerce_property_value("VectorProperty", "1, 2.5, 3") == [1.0, 2.5, 3.0]
+    assert inspector._coerce_property_value("ArraySelectionProperty", "POINTS:U") == [
+        "POINTS",
+        "U",
+    ]
+    assert inspector._coerce_property_value("VectorProperty", "1, 2.5, 3") == [
+        1.0,
+        2.5,
+        3.0,
+    ]
     assert inspector._property_priority("Opacity", "display") == 0
     assert inspector._property_priority("ClipType.Origin", "source") == 14
     assert inspector._is_editable_property("EnumerationProperty", None, []) is True

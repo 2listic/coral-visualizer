@@ -1,7 +1,14 @@
 """Centralized registration of Trame handlers."""
 
-from dataclasses import dataclass
+from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from paraview_runtime import ParaViewRuntime
+
+from runtime_setup import RuntimeContext
 from common_controllers import register_common_controllers
 from paraview_controllers import register_paraview_controllers
 from state_handlers import register_state_handlers
@@ -25,7 +32,7 @@ def register_app_handlers(
     *,
     ctrl,
     state,
-    runtime,
+    runtime: RuntimeContext,
     edit_operations,
     file_operations,
     interaction_quality_presets,
@@ -36,7 +43,7 @@ def register_app_handlers(
     pv_backend = runtime.pv_backend
     edit_session = runtime.edit_session
     vtk_runtime = runtime.vtk_runtime
-    paraview_runtime = runtime.paraview_runtime
+    paraview_runtime: ParaViewRuntime | None = runtime.paraview_runtime
 
     def is_paraview_backend():
         return backend == "paraview"
@@ -107,12 +114,9 @@ def register_app_handlers(
         refresh_runtime_message=refresh_runtime_message,
         update_paraview_ui_state=update_paraview_ui_state,
         render_and_push=render_and_push,
-        save_paraview_output=getattr(
-            file_operations, "save_paraview_output", _noop),
-        save_paraview_state=getattr(
-            file_operations, "save_paraview_state", _noop),
-        load_paraview_state=getattr(
-            file_operations, "load_paraview_state", _noop),
+        save_paraview_output=getattr(file_operations, "save_paraview_output", _noop),
+        save_paraview_state=getattr(file_operations, "save_paraview_state", _noop),
+        load_paraview_state=getattr(file_operations, "load_paraview_state", _noop),
         debug_view=view_controls.debug,
         call_view_update_geometry=view_controls.update_geometry,
         call_view_set_remote_rendering=view_controls.set_remote_rendering,

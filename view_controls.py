@@ -59,5 +59,7 @@ class ViewControllerProxy:
             edit_session_active=self._state.edit_session_active,
         )
         result = self._ctrl.view_set_remote_rendering(*args, **kwargs)
-        self.debug("view.set_remote_rendering.done", mode_after=self._state.mainViewMode)
+        self.debug(
+            "view.set_remote_rendering.done", mode_after=self._state.mainViewMode
+        )
         return result

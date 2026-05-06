@@ -121,7 +121,8 @@ def register_handlers(state=None, edit_state=None, *, is_vtk_backend=True):
         ),
         data_directory="/tmp/data",
         apply_edit_coloring=lambda target: calls.append(
-            ("apply_edit_coloring", target)),
+            ("apply_edit_coloring", target)
+        ),
         render_and_push=lambda: calls.append("render"),
         update_selection_actor=lambda selection, dataset, actor, mapper: calls.append(
             ("update_selection_actor", set(selection), dataset, actor, mapper)
@@ -130,14 +131,16 @@ def register_handlers(state=None, edit_state=None, *, is_vtk_backend=True):
             ("assign_id_to_selection", array_name, value)
         ),
         save_as_vtu=lambda edit_state_obj, output_path: calls.append(
-            ("save_as_vtu", output_path)),
+            ("save_as_vtu", output_path)
+        ),
         refresh_available_files=lambda: calls.append("refresh_files"),
         update_scalar_bars=lambda lut, array_value: calls.append(
             ("update_scalar_bars", lut, array_value)
         ),
         active_lut_getter=lambda: "active-lut",
         apply_vtk_coloring=lambda array_value: calls.append(
-            ("apply_vtk_coloring", array_value)),
+            ("apply_vtk_coloring", array_value)
+        ),
         apply_vtk_representation_to_scene=lambda representation: calls.append(
             ("apply_vtk_representation", representation)
         ),
@@ -146,13 +149,14 @@ def register_handlers(state=None, edit_state=None, *, is_vtk_backend=True):
 
 
 def test_edit_mode_change_rejects_non_vtk_backend():
-    state, ctrl, edit_state, calls, viz = register_handlers(
-        is_vtk_backend=False)
+    state, ctrl, edit_state, calls, viz = register_handlers(is_vtk_backend=False)
 
     state._handlers["edit_mode"](True)
 
     assert state.edit_mode is False
-    assert state.error_message == "Edit mode is not available on the ParaView backend yet."
+    assert (
+        state.error_message == "Edit mode is not available on the ParaView backend yet."
+    )
     assert calls == []
 
 
@@ -164,8 +168,7 @@ def test_edit_mode_change_enables_and_disables_vtk_editing():
     assert state.edit_target == BOUNDARY
     assert state.pick_mode is True
     assert viz.bnd_actor.visibility == 0
-    assert calls[:3] == [
-        ("apply_edit_coloring", BOUNDARY), "install", "render"]
+    assert calls[:3] == [("apply_edit_coloring", BOUNDARY), "install", "render"]
 
     calls.clear()
     state._handlers["edit_mode"](False)
@@ -255,8 +258,7 @@ def test_assign_id_handles_invalid_value_and_boundary_and_volume_paths():
 
 
 def test_save_vtu_handles_backend_guard_missing_data_success_and_failure():
-    state, ctrl, edit_state, calls, viz = register_handlers(
-        is_vtk_backend=False)
+    state, ctrl, edit_state, calls, viz = register_handlers(is_vtk_backend=False)
 
     ctrl.handlers["save_vtu"]()
     assert state.save_status == "Save is not available on the ParaView backend yet"
@@ -285,15 +287,13 @@ def test_save_vtu_handles_backend_guard_missing_data_success_and_failure():
         is_vtk_backend=lambda: True,
         viz_getter=lambda: viz,
         edit_state=edit_state,
-        pick_interactor=SimpleNamespace(
-            install=lambda: None, remove=lambda: None),
+        pick_interactor=SimpleNamespace(install=lambda: None, remove=lambda: None),
         data_directory="/tmp/data",
         apply_edit_coloring=lambda target: None,
         render_and_push=lambda: None,
         update_selection_actor=lambda *args: None,
         assign_id_to_selection=lambda *args: None,
-        save_as_vtu=lambda *args: (_ for _ in ()
-                                   ).throw(RuntimeError("cannot write")),
+        save_as_vtu=lambda *args: (_ for _ in ()).throw(RuntimeError("cannot write")),
         refresh_available_files=lambda: None,
         update_scalar_bars=lambda *args: None,
         active_lut_getter=lambda: None,

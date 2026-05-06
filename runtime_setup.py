@@ -23,15 +23,15 @@ class RuntimeContext:
     render_target: object
     edit_session: EditSession
     edit_state: BoundaryEditState
-    pv_backend: object | None = None
-    pv_output_window: object | None = None
+    pv_backend: ParaViewBackend | None = None
+    pv_output_window: vtkStringOutputWindow | None = None
     renderer: object | None = None
     render_window: object | None = None
     render_window_interactor: object | None = None
     scalar_bars: object | None = None
     pick_interactor: object | None = None
-    vtk_runtime: object | None = None
-    paraview_runtime: object | None = None
+    vtk_runtime: VtkRuntime | None = None
+    paraview_runtime: ParaViewRuntime | None = None
 
 
 def create_runtime_context(config):

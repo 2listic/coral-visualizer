@@ -15,7 +15,6 @@ from handler_registration import EditOperations, register_app_handlers
 from file_operations import FileOperationService
 from file_utils import get_vtk_files_from_data_folder
 from constants import (
-    BOUNDARY,
     INTERACTION_QUALITY_PRESETS,
 )
 from trame.app import get_server
@@ -69,8 +68,7 @@ initialize_state(
 
 build_ui(server, runtime.render_target, BACKEND)
 
-attach_runtime_services(runtime, state=state, ctrl=ctrl,
-                        view_controls=view_controls)
+attach_runtime_services(runtime, state=state, ctrl=ctrl, view_controls=view_controls)
 file_operations = FileOperationService(
     state=state,
     data_directory=data_directory,
@@ -131,8 +129,7 @@ async def _handle_file_download(request):
 
 @ctrl.add("on_server_bind")
 def _register_download_route(wslink_server):
-    wslink_server.app.router.add_route(
-        "GET", "/api/download", _handle_file_download)
+    wslink_server.app.router.add_route("GET", "/api/download", _handle_file_download)
 
 
 # -----------------------------------------------------------------------------

@@ -1,6 +1,5 @@
 """Property-inspector helpers for the ParaView backend."""
 
-from constants import ARRAY_SOLID, CELL_PREFIX, POINT_PREFIX
 from paraview_filter_catalog import humanize_paraview_name
 
 
@@ -16,13 +15,18 @@ class ParaViewPropertyInspector:
         for name in proxy.ListProperties():
             prop = proxy.GetProperty(name)
             type_name = type(prop).__name__
-            sm_property = proxy.SMProxy.GetProperty(
-                name) if proxy.SMProxy is not None else None
+            sm_property = (
+                proxy.SMProxy.GetProperty(name) if proxy.SMProxy is not None else None
+            )
 
             if type_name == "InputProperty":
                 continue
 
-            if type_name == "ProxyProperty" and name in {"ClipType", "GlyphType", "SeedType"}:
+            if type_name == "ProxyProperty" and name in {
+                "ClipType",
+                "GlyphType",
+                "SeedType",
+            }:
                 properties.extend(
                     self._collect_proxy_subproperties(
                         proxy, name, type_name, None, sm_property, scope
@@ -48,8 +52,7 @@ class ParaViewPropertyInspector:
                 value = None
 
             available = self._property_options(proxy, name, type_name, value)
-            effective_type = self._effective_property_type(
-                type_name, sm_property)
+            effective_type = self._effective_property_type(type_name, sm_property)
             properties.append(
                 {
                     "scope": "unknown",
@@ -58,7 +61,9 @@ class ParaViewPropertyInspector:
                     "type": effective_type,
                     "visibility": visibility,
                     "value": self._format_property_value(value),
-                    "pending_value": self._normalize_property_value(effective_type, value),
+                    "pending_value": self._normalize_property_value(
+                        effective_type, value
+                    ),
                     "options": available,
                     "editable": self._is_editable_property(
                         effective_type, value, available
@@ -67,8 +72,9 @@ class ParaViewPropertyInspector:
                 }
             )
 
-        properties = sorted(properties, key=lambda item: (
-            item["priority"], item["label"]))
+        properties = sorted(
+            properties, key=lambda item: (item["priority"], item["label"])
+        )
         if scope == "display":
             properties = [
                 item
@@ -107,20 +113,20 @@ class ParaViewPropertyInspector:
                 current_value = getattr(target_proxy, property_name)
                 current = self._normalize_property_value(
                     item["type"],
-                    current_value.SMProxy.GetXMLName()
-                    if hasattr(current_value, "SMProxy") and current_value.SMProxy is not None
-                    else current_value,
+                    (
+                        current_value.SMProxy.GetXMLName()
+                        if hasattr(current_value, "SMProxy")
+                        and current_value.SMProxy is not None
+                        else current_value
+                    ),
                 )
             else:
                 prop = target_proxy.GetProperty(property_name)
                 if prop is None or not hasattr(prop, "SetData"):
                     continue
-                current = self._normalize_property_value(
-                    item["type"], prop.GetData()
-                )
+                current = self._normalize_property_value(item["type"], prop.GetData())
             pending = item.get("pending_value")
-            normalized_pending = self._coerce_property_value(
-                item["type"], pending)
+            normalized_pending = self._coerce_property_value(item["type"], pending)
             normalized_pending_ui = self._normalize_property_value(
                 item["type"], normalized_pending
             )
@@ -143,18 +149,22 @@ class ParaViewPropertyInspector:
         self, proxy, name, type_name, value, sm_property, scope
     ):
         """Expose proxy-switch properties and selected sub-proxy fields."""
-        available = list(
-            getattr(proxy.GetProperty(name), "Available", []) or [])
+        available = list(getattr(proxy.GetProperty(name), "Available", []) or [])
         items = []
         parent_visibility = (
             sm_property.GetPanelVisibility()
-            if sm_property is not None and sm_property.GetPanelVisibility() in {"default", "advanced"}
+            if sm_property is not None
+            and sm_property.GetPanelVisibility() in {"default", "advanced"}
             else "default"
         )
         current_proxy_name = ""
         if value is None and hasattr(proxy, name):
             value = getattr(proxy, name)
-        if value is not None and hasattr(value, "SMProxy") and value.SMProxy is not None:
+        if (
+            value is not None
+            and hasattr(value, "SMProxy")
+            and value.SMProxy is not None
+        ):
             current_proxy_name = value.SMProxy.GetXMLName() or ""
 
         if available:
@@ -184,7 +194,10 @@ class ParaViewPropertyInspector:
             visibility = child_sm_property.GetPanelVisibility()
             if visibility not in {"default", "advanced"}:
                 continue
-            if child_sm_property.GetIsInternal() or child_sm_property.GetInformationOnly():
+            if (
+                child_sm_property.GetIsInternal()
+                or child_sm_property.GetInformationOnly()
+            ):
                 continue
 
             child_prop = value.GetProperty(child_name)
@@ -196,7 +209,8 @@ class ParaViewPropertyInspector:
             except Exception:
                 child_value = None
             effective_child_type = self._effective_property_type(
-                child_type, child_sm_property)
+                child_type, child_sm_property
+            )
 
             items.append(
                 {
@@ -209,8 +223,12 @@ class ParaViewPropertyInspector:
                     "pending_value": self._normalize_property_value(
                         effective_child_type, child_value
                     ),
-                    "options": self._property_options(value, child_name, child_type, child_value),
-                    "editable": self._is_editable_property(effective_child_type, child_value, []),
+                    "options": self._property_options(
+                        value, child_name, child_type, child_value
+                    ),
+                    "editable": self._is_editable_property(
+                        effective_child_type, child_value, []
+                    ),
                     "priority": self._property_priority(f"{name}.{child_name}", scope),
                 }
             )
@@ -399,9 +417,7 @@ class ParaViewPropertyInspector:
                     }
                 )
 
-        current = self._normalize_property_value(
-            "ArraySelectionProperty", value)
+        current = self._normalize_property_value("ArraySelectionProperty", value)
         if current not in {item["value"] for item in options} and current != "__none__":
-            options.append(
-                {"text": current.split(":", 1)[1], "value": current})
+            options.append({"text": current.split(":", 1)[1], "value": current})
         return options

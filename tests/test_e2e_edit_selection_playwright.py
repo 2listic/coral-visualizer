@@ -14,7 +14,6 @@ from PIL import Image
 
 from paraview_backend import is_paraview_available
 
-
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = ROOT_DIR / "test_data"
 TEST_GRID = TEST_DATA_DIR / "square.vtk"
@@ -244,8 +243,16 @@ def _changed_bbox(
 
     min_col_hits = max(4, int((height - 2 * margin) * 0.04))
     min_row_hits = max(2, int((width - 2 * margin) * 0.005))
-    active_cols = [x for x in range(margin, max(margin, usable_width)) if col_counts[x] >= min_col_hits]
-    active_rows = [y for y in range(margin, max(margin, height - margin)) if row_counts[y] >= min_row_hits]
+    active_cols = [
+        x
+        for x in range(margin, max(margin, usable_width))
+        if col_counts[x] >= min_col_hits
+    ]
+    active_rows = [
+        y
+        for y in range(margin, max(margin, height - margin))
+        if row_counts[y] >= min_row_hits
+    ]
 
     if not active_cols or not active_rows:
         return None
@@ -510,10 +517,9 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
         assert faces_bbox["height"] >= full_bbox["height"] * 0.30
         assert faces_bbox["width"] <= full_bbox["width"] * 0.18
         assert faces_bbox["x1"] <= full_bbox["x0"] + full_bbox["width"] * 0.32
-        assert (
-            (faces_bbox["x0"] + faces_bbox["x1"]) / 2.0
-            <= full_bbox["x0"] + full_bbox["width"] * 0.24
-        )
+        assert (faces_bbox["x0"] + faces_bbox["x1"]) / 2.0 <= full_bbox[
+            "x0"
+        ] + full_bbox["width"] * 0.24
 
         context.close()
     finally:

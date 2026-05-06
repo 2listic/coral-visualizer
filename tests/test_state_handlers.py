@@ -54,7 +54,9 @@ def test_selected_file_change_captures_loading_errors(tmp_path):
         state,
         is_paraview_backend=lambda: False,
         load_file_with_paraview_backend=lambda path: None,
-        load_file_with_vtk_backend=lambda path: (_ for _ in ()).throw(RuntimeError("boom")),
+        load_file_with_vtk_backend=lambda path: (_ for _ in ()).throw(
+            RuntimeError("boom")
+        ),
         apply_paraview_coloring=lambda value: None,
         apply_vtk_coloring=lambda value: None,
         apply_active_representation=lambda value: None,
@@ -112,13 +114,21 @@ def test_array_representation_and_pipeline_callbacks_dispatch_to_expected_runtim
     assert "update_ui" in calls
     assert "render" in calls
     assert "sync_edit" in calls
-    assert state.interactive_quality == INTERACTION_QUALITY_PRESETS["fast"]["interactive_quality"]
-    assert state.interactive_ratio == INTERACTION_QUALITY_PRESETS["fast"]["interactive_ratio"]
+    assert (
+        state.interactive_quality
+        == INTERACTION_QUALITY_PRESETS["fast"]["interactive_quality"]
+    )
+    assert (
+        state.interactive_ratio
+        == INTERACTION_QUALITY_PRESETS["fast"]["interactive_ratio"]
+    )
 
 
 def test_pick_mode_ignored_outside_paraview():
     calls = []
-    pv_backend = SimpleNamespace(set_interactor_rotation=lambda enabled: calls.append(enabled))
+    pv_backend = SimpleNamespace(
+        set_interactor_rotation=lambda enabled: calls.append(enabled)
+    )
     state = FakeState(edit_mode=False, error_message="")
 
     register_state_handlers(

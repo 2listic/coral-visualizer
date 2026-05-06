@@ -45,7 +45,9 @@ def test_filter_catalog_exposes_supported_and_experimental_options():
     available = catalog.get_available_filters()
 
     assert any(item["value"] == "clip" for item in available["supported"])
-    assert any(item["value"] == "factory:AppendGeometry" for item in available["experimental"])
+    assert any(
+        item["value"] == "factory:AppendGeometry" for item in available["experimental"]
+    )
     assert catalog.experimental_filter_spec("factory:AppendGeometry") == {
         "label": "Append Geometry",
         "factory": "AppendGeometry",
@@ -57,6 +59,12 @@ def test_filter_catalog_exposes_supported_and_experimental_options():
 def test_pipeline_icon_uses_filter_metadata_when_available():
     catalog = ParaViewFilterCatalog(FakeSimple(), show_experimental_filters=False)
 
-    assert catalog.pipeline_icon({"kind": "filter", "filter_key": "clip"}) == "mdi-content-cut"
-    assert catalog.pipeline_icon({"kind": "filter", "filter_key": "unknown"}) == "mdi-filter-outline"
+    assert (
+        catalog.pipeline_icon({"kind": "filter", "filter_key": "clip"})
+        == "mdi-content-cut"
+    )
+    assert (
+        catalog.pipeline_icon({"kind": "filter", "filter_key": "unknown"})
+        == "mdi-filter-outline"
+    )
     assert catalog.pipeline_icon({"kind": "source"}) == "mdi-database-outline"

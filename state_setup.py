@@ -4,7 +4,6 @@ import os
 
 from constants import ARRAY_SOLID, BOUNDARY, INTERACTION_QUALITY_PRESETS
 
-
 DEFAULT_REPRESENTATION = "Surface with Edges"
 
 
@@ -107,7 +106,9 @@ def initialize_state(
         {"text": "High", "value": "high"},
     ]
     state.interaction_quality = "high"
-    state.interactive_quality = INTERACTION_QUALITY_PRESETS["high"]["interactive_quality"]
+    state.interactive_quality = INTERACTION_QUALITY_PRESETS["high"][
+        "interactive_quality"
+    ]
     state.interactive_ratio = INTERACTION_QUALITY_PRESETS["high"]["interactive_ratio"]
     state.still_quality = 98
     state.still_ratio = 1

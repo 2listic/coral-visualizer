@@ -57,8 +57,7 @@ def test_reset_controllers_dispatch_to_backend_specific_implementations():
 
 def test_upload_dataset_updates_state_on_success(monkeypatch):
     ctrl = FakeCtrl()
-    state = SimpleNamespace(
-        upload_status="", upload_status_type="", selected_file=None)
+    state = SimpleNamespace(upload_status="", upload_status_type="", selected_file=None)
     calls = []
 
     monkeypatch.setattr(common_controllers, "ClientFile", FakeClientFile)
@@ -71,15 +70,14 @@ def test_upload_dataset_updates_state_on_success(monkeypatch):
         call_view_update=lambda **kwargs: None,
         reset_vtk_camera=lambda: None,
         reset_vtk_view=lambda: None,
-        persist_uploaded_file=lambda client_file: calls.append(
-            client_file.name) or "/tmp/data/upload.vtu",
+        persist_uploaded_file=lambda client_file: calls.append(client_file.name)
+        or "/tmp/data/upload.vtu",
         refresh_available_files=lambda: calls.append("refresh"),
         persist_uploaded_state_file=lambda client_file: "unused",
         refresh_available_state_files=lambda: None,
     )
 
-    ctrl.handlers["upload_dataset"](
-        [{"name": "upload.vtu", "content": b"vtk"}])
+    ctrl.handlers["upload_dataset"]([{"name": "upload.vtu", "content": b"vtk"}])
 
     assert calls == ["upload.vtu", "refresh"]
     assert state.selected_file == "/tmp/data/upload.vtu"
@@ -89,8 +87,7 @@ def test_upload_dataset_updates_state_on_success(monkeypatch):
 
 def test_upload_dataset_reports_empty_and_failed_uploads(monkeypatch):
     ctrl = FakeCtrl()
-    state = SimpleNamespace(
-        upload_status="", upload_status_type="", selected_file=None)
+    state = SimpleNamespace(upload_status="", upload_status_type="", selected_file=None)
 
     monkeypatch.setattr(common_controllers, "ClientFile", FakeClientFile)
 
@@ -102,8 +99,9 @@ def test_upload_dataset_reports_empty_and_failed_uploads(monkeypatch):
         call_view_update=lambda **kwargs: None,
         reset_vtk_camera=lambda: None,
         reset_vtk_view=lambda: None,
-        persist_uploaded_file=lambda client_file: (
-            _ for _ in ()).throw(RuntimeError("disk full")),
+        persist_uploaded_file=lambda client_file: (_ for _ in ()).throw(
+            RuntimeError("disk full")
+        ),
         refresh_available_files=lambda: None,
         persist_uploaded_state_file=lambda client_file: "unused",
         refresh_available_state_files=lambda: None,
@@ -113,8 +111,7 @@ def test_upload_dataset_reports_empty_and_failed_uploads(monkeypatch):
     assert state.upload_status == "Uploaded file was empty"
     assert state.upload_status_type == "error"
 
-    ctrl.handlers["upload_dataset"](
-        [{"name": "broken.vtu", "content": b"vtk"}])
+    ctrl.handlers["upload_dataset"]([{"name": "broken.vtu", "content": b"vtk"}])
     assert state.upload_status == "Upload failed: disk full"
     assert state.upload_status_type == "error"
 

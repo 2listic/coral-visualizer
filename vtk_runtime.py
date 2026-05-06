@@ -124,9 +124,13 @@ class VtkRuntime:
         if self.edit_state.merged_bnd_actor:
             apply_representation(None, self.edit_state.merged_bnd_actor, representation)
         if self.edit_state.vol_selection_actor:
-            apply_representation(None, self.edit_state.vol_selection_actor, representation)
+            apply_representation(
+                None, self.edit_state.vol_selection_actor, representation
+            )
         if self.edit_state.bnd_selection_actor:
-            apply_representation(None, self.edit_state.bnd_selection_actor, representation)
+            apply_representation(
+                None, self.edit_state.bnd_selection_actor, representation
+            )
 
     def apply_coloring(self, selected_array):
         """Apply coloring to the current VTK scene."""
