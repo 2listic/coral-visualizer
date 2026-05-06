@@ -2,7 +2,12 @@ import pytest
 
 from edit_session import EditSession
 from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIntArray, vtkPoints
-from vtkmodules.vtkCommonDataModel import vtkTetra, vtkTriangle, vtkUnstructuredGrid, vtkVertex
+from vtkmodules.vtkCommonDataModel import (
+    vtkTetra,
+    vtkTriangle,
+    vtkUnstructuredGrid,
+    vtkVertex,
+)
 from vtkmodules.vtkIOLegacy import vtkUnstructuredGridReader
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 
@@ -37,29 +42,6 @@ def _single_tetra_grid():
     tetra.GetPointIds().SetId(3, 3)
     grid.InsertNextCell(tetra.GetCellType(), tetra.GetPointIds())
     return grid
-
-
-def test_apply_volume_field_requires_overwrite_for_existing_field():
-    session = EditSession()
-    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_cell_grid())
-
-    original = vtkIntArray()
-    original.SetName("A field")
-    original.SetNumberOfComponents(1)
-    original.SetNumberOfTuples(1)
-    original.SetValue(0, 1)
-    session.working_dataset.GetCellData().AddArray(original)
-
-    assert session.has_cell_field("A field") is True
-
-    with pytest.raises(RuntimeError, match="already exists"):
-        session.apply_volume_field("A field", "", "2.5")
-
-    session.apply_volume_field("A field", "", "2.5", overwrite=True)
-    replaced = session.working_dataset.GetCellData().GetArray("A field")
-
-    assert replaced.GetClassName() == "vtkDoubleArray"
-    assert replaced.GetTuple1(0) == pytest.approx(2.5)
 
 
 def test_edit_session_save_supports_vtu_and_vtk(tmp_path):
@@ -104,7 +86,9 @@ def test_surface_mode_materialize_skips_existing_codim_one_cells():
     triangle.GetPointIds().SetId(0, 0)
     triangle.GetPointIds().SetId(1, 1)
     triangle.GetPointIds().SetId(2, 2)
-    session.working_dataset.InsertNextCell(triangle.GetCellType(), triangle.GetPointIds())
+    session.working_dataset.InsertNextCell(
+        triangle.GetCellType(), triangle.GetPointIds()
+    )
     session.working_dataset.Modified()
 
     assert session.replace_selection([1]) == 1
@@ -200,7 +184,7 @@ def test_surface_mode_save_keeps_cell_data_lengths_consistent(tmp_path):
     session = EditSession()
     session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
     session.geometry_mode = "surface"
-    session.apply_volume_field("BoundaryID", "", "1", overwrite=True)
+    session.create_field("BoundaryID", "cell", "1", overwrite=True)
     session.geometry_mode = "surface"
     session.replace_selection([0])
     assert session.materialize_surface_selection() == 4
@@ -245,20 +229,7 @@ def test_surface_mode_save_legacy_vtk_omits_internal_cell_centers(tmp_path):
     assert loaded.GetNumberOfPoints() == 4
     assert loaded.GetNumberOfCells() == 2
     assert loaded.GetCellData().GetArray("BoundaryID") is not None
-    assert loaded.GetCellData().GetArray("MaterialID").GetTuple1(1) == pytest.approx(42.0)
+    assert loaded.GetCellData().GetArray("MaterialID").GetTuple1(1) == pytest.approx(
+        42.0
+    )
     assert loaded.GetCellData().GetArray("CellCenters") is None
-
-
-def test_apply_surface_field_sets_default_on_all_cells_and_expression_on_selected_surface():
-    session = EditSession()
-    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_tetra_grid())
-    session.geometry_mode = "surface"
-    session.replace_selection([(0, 1, 2)])
-
-    session.apply_surface_field("BoundaryID", "1", "0", overwrite=True)
-    field = session.working_dataset.GetCellData().GetArray("BoundaryID")
-
-    assert field is not None
-    assert session.working_dataset.GetNumberOfCells() == 2
-    assert field.GetTuple1(0) == pytest.approx(0.0)
-    assert field.GetTuple1(1) == pytest.approx(1.0)

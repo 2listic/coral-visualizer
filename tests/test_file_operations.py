@@ -28,7 +28,13 @@ class FakeEditSession:
 
 
 class FakeParaViewBackend:
-    def __init__(self, *, source="active-source", default_name="pipeline_result", extension=".pvd"):
+    def __init__(
+        self,
+        *,
+        source="active-source",
+        default_name="pipeline_result",
+        extension=".pvd",
+    ):
         self.source = source
         self._default_name = default_name
         self._extension = extension
@@ -58,7 +64,8 @@ def test_refresh_available_files_delegates_to_file_utils(monkeypatch):
     expected = [{"text": "a", "value": "a.vtu"}]
 
     monkeypatch.setattr(
-        file_operations, "get_vtk_files_from_data_folder", lambda _: expected)
+        file_operations, "get_vtk_files_from_data_folder", lambda _: expected
+    )
 
     file_operations.refresh_available_files(state, "/tmp/data")
 
@@ -68,7 +75,8 @@ def test_refresh_available_files_delegates_to_file_utils(monkeypatch):
 def test_resolve_output_path_rejects_parent_escape(tmp_path):
     with pytest.raises(ValueError, match="inside --data-directory"):
         file_operations.resolve_output_path(
-            str(tmp_path), "../escape/out.vtu", "fallback")
+            str(tmp_path), "../escape/out.vtu", "fallback"
+        )
 
 
 def test_resolve_output_path_normalizes_absolute_names_inside_data_directory(tmp_path):
@@ -94,7 +102,9 @@ def test_persist_uploaded_file_deduplicates_names(tmp_path):
     assert Path(second_path).read_bytes() == b"second"
 
 
-def test_save_paraview_output_saves_edit_session_and_updates_state(tmp_path, monkeypatch):
+def test_save_paraview_output_saves_edit_session_and_updates_state(
+    tmp_path, monkeypatch
+):
     state = SimpleNamespace(
         save_filename="results/edited_mesh",
         save_status="",
@@ -107,8 +117,7 @@ def test_save_paraview_output_saves_edit_session_and_updates_state(tmp_path, mon
     monkeypatch.setattr(
         file_operations,
         "get_vtk_files_from_data_folder",
-        lambda directory: [
-            {"text": "edited", "value": "results/edited_mesh.vtu"}],
+        lambda directory: [{"text": "edited", "value": "results/edited_mesh.vtu"}],
     )
 
     output_path = file_operations.save_paraview_output(
@@ -125,10 +134,13 @@ def test_save_paraview_output_saves_edit_session_and_updates_state(tmp_path, mon
     assert state.save_status == "Saved edited dataset to results/edited_mesh.vtu"
     assert state.save_status_type == "success"
     assert state.available_files == [
-        {"text": "edited", "value": "results/edited_mesh.vtu"}]
+        {"text": "edited", "value": "results/edited_mesh.vtu"}
+    ]
 
 
-def test_save_paraview_output_edit_session_preserves_vtk_extension(tmp_path, monkeypatch):
+def test_save_paraview_output_edit_session_preserves_vtk_extension(
+    tmp_path, monkeypatch
+):
     state = SimpleNamespace(
         save_filename="results/edited_mesh.vtk",
         save_status="",
@@ -141,8 +153,7 @@ def test_save_paraview_output_edit_session_preserves_vtk_extension(tmp_path, mon
     monkeypatch.setattr(
         file_operations,
         "get_vtk_files_from_data_folder",
-        lambda directory: [
-            {"text": "edited", "value": "results/edited_mesh.vtk"}],
+        lambda directory: [{"text": "edited", "value": "results/edited_mesh.vtk"}],
     )
 
     output_path = file_operations.save_paraview_output(
@@ -177,7 +188,9 @@ def test_save_paraview_output_edit_session_rejects_unsupported_extension(tmp_pat
         )
 
 
-def test_save_paraview_output_saves_pipeline_result_with_backend_extension(tmp_path, monkeypatch):
+def test_save_paraview_output_saves_pipeline_result_with_backend_extension(
+    tmp_path, monkeypatch
+):
     state = SimpleNamespace(
         save_filename="exports/final",
         save_status="",
@@ -205,7 +218,9 @@ def test_save_paraview_output_saves_pipeline_result_with_backend_extension(tmp_p
     assert state.save_status == "Saved pipeline result to exports/final.vtu"
 
 
-def test_save_paraview_output_flushes_feedback_state_when_supported(tmp_path, monkeypatch):
+def test_save_paraview_output_flushes_feedback_state_when_supported(
+    tmp_path, monkeypatch
+):
     dirty_calls = []
     flush_calls = []
 
@@ -240,8 +255,7 @@ def test_save_paraview_output_flushes_feedback_state_when_supported(tmp_path, mo
         "available_files",
     ]
     assert flush_calls == [True]
-    assert state.available_files == [
-        {"text": "saved", "value": "exports/final.vtu"}]
+    assert state.available_files == [{"text": "saved", "value": "exports/final.vtu"}]
 
 
 def test_save_paraview_output_refuses_to_overwrite_existing_target_without_confirmation(
@@ -312,8 +326,7 @@ def test_save_paraview_output_overwrites_existing_target_after_confirmation(
 
 
 def test_save_paraview_output_requires_active_source_or_edit_session(tmp_path):
-    state = SimpleNamespace(
-        save_filename="", save_status="", save_status_type="info")
+    state = SimpleNamespace(save_filename="", save_status="", save_status_type="info")
     edit_session = FakeEditSession(active=False)
     pv_backend = FakeParaViewBackend(source=None)
 
@@ -342,8 +355,7 @@ def test_save_paraview_state_writes_snapshot_and_updates_state_list(tmp_path):
         pv_backend=pv_backend,
     )
 
-    saved_path = tmp_path / "states" / \
-        f"demo{file_operations.STATE_FILE_EXTENSION}"
+    saved_path = tmp_path / "states" / f"demo{file_operations.STATE_FILE_EXTENSION}"
     payload = saved_path.read_text(encoding="utf-8")
 
     assert output_path == str(saved_path)
@@ -362,8 +374,7 @@ def test_save_paraview_state_writes_snapshot_and_updates_state_list(tmp_path):
 
 
 def test_load_paraview_state_reads_snapshot_from_disk(tmp_path):
-    state_path = tmp_path / "states" / \
-        f"demo{file_operations.STATE_FILE_EXTENSION}"
+    state_path = tmp_path / "states" / f"demo{file_operations.STATE_FILE_EXTENSION}"
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(
         '{"version": 1, "selected_file": "square.vtk", "nodes": []}',

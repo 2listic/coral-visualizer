@@ -80,7 +80,10 @@ def test_initialize_state_populates_defaults_for_paraview_backend():
         state.interactive_quality
         == INTERACTION_QUALITY_PRESETS["high"]["interactive_quality"]
     )
-    assert state.interactive_ratio == INTERACTION_QUALITY_PRESETS["high"]["interactive_ratio"]
+    assert (
+        state.interactive_ratio
+        == INTERACTION_QUALITY_PRESETS["high"]["interactive_ratio"]
+    )
     assert state.selection_behavior_options == [
         {"text": "Touch", "value": "touch"},
         {"text": "Contained", "value": "inside"},
@@ -94,6 +97,7 @@ def test_initialize_state_populates_defaults_for_paraview_backend():
     ]
     assert state.edit_enable_picking is False
     assert "cursor: default" in state.edit_view_style
+
 
 def test_initialize_state_uses_empty_filter_catalog_without_paraview_backend():
     state = SimpleNamespace()

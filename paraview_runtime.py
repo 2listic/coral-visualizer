@@ -1,9 +1,16 @@
 """ParaView backend orchestration helpers."""
 
+from __future__ import annotations
+
 import json
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from vtkmodules.vtkCommonCore import vtkStringOutputWindow
+    from edit_session import EditSession
+    from paraview_backend import ParaViewBackend
 
 from constants import ARRAY_SOLID
-
 
 DEFAULT_REPRESENTATION = "Surface with Edges"
 
@@ -15,18 +22,18 @@ class ParaViewRuntime:
         self,
         *,
         state,
-        pv_backend,
-        edit_session,
-        output_window,
-        call_view_update,
+        pv_backend: ParaViewBackend,
+        edit_session: EditSession,
+        output_window: vtkStringOutputWindow | None,
+        call_view_update: Callable,
     ):
         self.state = state
-        self.pv_backend = pv_backend
+        self.pv_backend: ParaViewBackend = pv_backend
         # Keep backend-originated state writes (e.g. during load) in sync with Trame state.
         self.pv_backend.state = state
-        self.edit_session = edit_session
-        self.output_window = output_window
-        self.call_view_update = call_view_update
+        self.edit_session: EditSession = edit_session
+        self.output_window: vtkStringOutputWindow | None = output_window
+        self.call_view_update: Callable = call_view_update
         self.output_offset = 0
 
     def render_and_push(self):
@@ -49,7 +56,7 @@ class ParaViewRuntime:
         if len(output) <= self.output_offset:
             return
 
-        new_output = output[self.output_offset:]
+        new_output = output[self.output_offset :]
         self.output_offset = len(output)
         lines = [
             line.strip()
@@ -90,8 +97,7 @@ class ParaViewRuntime:
             association = "cell"
             infer = getattr(self.edit_session, "infer_field_association", None)
             if callable(infer):
-                association = infer(
-                    self.edit_session.field_name) or association
+                association = infer(self.edit_session.field_name) or association
             selected_choice = f"{association}:{self.edit_session.field_name}"
         elif (
             isinstance(getattr(self.state, "edit_field_choice", ""), str)
@@ -106,11 +112,12 @@ class ParaViewRuntime:
             else "cell"
         )
         if self.state.edit_field_association == "point":
-            getter = getattr(self.edit_session,
-                             "available_point_variables", None)
+            getter = getattr(self.edit_session, "available_point_variables", None)
             self.state.edit_available_variables = getter() if callable(getter) else []
         else:
-            self.state.edit_available_variables = self.edit_session.available_cell_variables()
+            self.state.edit_available_variables = (
+                self.edit_session.available_cell_variables()
+            )
         if self.state.edit_field_association == "point":
             self.state.edit_geometry_mode_options = list(
                 getattr(
@@ -140,9 +147,7 @@ class ParaViewRuntime:
             self.edit_session.active and self.state.pick_mode
         )
         self.state.edit_picking_modes = (
-            ["select"]
-            if self.edit_session.active and self.state.pick_mode
-            else []
+            ["select"] if self.edit_session.active and self.state.pick_mode else []
         )
         self.state.edit_interactor_events = ["EndAnimation"]
         if self.edit_session.active and self.state.pick_mode:
@@ -171,7 +176,9 @@ class ParaViewRuntime:
             if isinstance(event.get("selection"), list):
                 result = []
                 for item in event["selection"]:
-                    if isinstance(item, dict) and isinstance(item.get("compositeID"), int):
+                    if isinstance(item, dict) and isinstance(
+                        item.get("compositeID"), int
+                    ):
                         result.append(item["compositeID"])
                 if result:
                     return result
@@ -297,8 +304,7 @@ class ParaViewRuntime:
             self.call_view_update()
             return
 
-        build_dataset = getattr(
-            self.edit_session, "build_selected_dataset", None)
+        build_dataset = getattr(self.edit_session, "build_selected_dataset", None)
         if callable(build_dataset):
             dataset = build_dataset()
         else:
@@ -410,22 +416,38 @@ class ParaViewRuntime:
             "calculator_coordinate_variables"
         ]
         self.state.source_default_property_count = len(
-            [item for item in self.state.source_properties if item["visibility"] == "default"]
+            [
+                item
+                for item in self.state.source_properties
+                if item["visibility"] == "default"
+            ]
         )
         self.state.source_advanced_property_count = len(
-            [item for item in self.state.source_properties if item["visibility"] == "advanced"]
+            [
+                item
+                for item in self.state.source_properties
+                if item["visibility"] == "advanced"
+            ]
         )
         self.state.display_default_property_count = len(
-            [item for item in self.state.display_properties if item["visibility"] == "default"]
+            [
+                item
+                for item in self.state.display_properties
+                if item["visibility"] == "default"
+            ]
         )
         self.state.display_advanced_property_count = len(
-            [item for item in self.state.display_properties if item["visibility"] == "advanced"]
+            [
+                item
+                for item in self.state.display_properties
+                if item["visibility"] == "advanced"
+            ]
         )
         self.state.active_visibility = ui_state["active_visibility"]
-        self.state.available_arrays = ui_state["point_arrays"] + \
-            ui_state["cell_arrays"]
+        self.state.available_arrays = ui_state["point_arrays"] + ui_state["cell_arrays"]
         self.state.available_arrays.insert(
-            0, {"text": "Solid Color", "value": ARRAY_SOLID})
+            0, {"text": "Solid Color", "value": ARRAY_SOLID}
+        )
         self.state.selected_array = ui_state["selected_array"]
         self.state.representation = ui_state["representation"]
         self.state.show_cells = ui_state["show_cells"]
@@ -453,9 +475,11 @@ class ParaViewRuntime:
         self.state.save_target_label = (
             f"Edited dataset: {self.edit_session.source_label}"
             if self.edit_session.active
-            else f"Active pipeline result: {self.state.active_source_label}"
-            if self.state.active_source_label
-            else "Active pipeline result"
+            else (
+                f"Active pipeline result: {self.state.active_source_label}"
+                if self.state.active_source_label
+                else "Active pipeline result"
+            )
         )
         try:
             self.pv_backend.export_active_dataset_for_editing()

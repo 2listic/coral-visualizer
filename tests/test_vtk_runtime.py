@@ -144,12 +144,19 @@ def test_update_scalar_bars_uses_labels_and_boundary_bar_rules():
     runtime.update_scalar_bars(None, "point:U")
 
     assert scalar_bars.calls[0] == ("set", "bar_active_array", "lut", "Material ID")
-    assert scalar_bars.calls[1] == ("set", "bar_boundary", "boundary-lut", "Boundary ID")
+    assert scalar_bars.calls[1] == (
+        "set",
+        "bar_boundary",
+        "boundary-lut",
+        "Boundary ID",
+    )
     assert ("remove", "bar_active_array") in scalar_bars.calls
     assert ("remove", "bar_boundary") in scalar_bars.calls
 
 
-def test_render_and_push_and_apply_representation_touch_all_relevant_actors(monkeypatch):
+def test_render_and_push_and_apply_representation_touch_all_relevant_actors(
+    monkeypatch,
+):
     runtime, state, scalar_bars, edit_state = make_runtime()
     repr_calls = []
 
@@ -184,7 +191,9 @@ def test_apply_edit_coloring_covers_boundary_and_volume_modes(monkeypatch):
     monkeypatch.setattr(
         vtk_runtime_module,
         "apply_categorical_coloring",
-        lambda mapper, dataset, array_name: cat_calls.append((mapper, dataset, array_name))
+        lambda mapper, dataset, array_name: cat_calls.append(
+            (mapper, dataset, array_name)
+        )
         or ("lut", None),
     )
 
@@ -241,7 +250,9 @@ def test_load_file_populates_state_and_calls_pipeline_helpers(monkeypatch):
     )
     setup_calls = []
 
-    monkeypatch.setattr(vtk_runtime_module, "build_visualization", lambda path, renderer: viz)
+    monkeypatch.setattr(
+        vtk_runtime_module, "build_visualization", lambda path, renderer: viz
+    )
     monkeypatch.setattr(
         vtk_runtime_module,
         "get_available_arrays",

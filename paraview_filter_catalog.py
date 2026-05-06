@@ -226,7 +226,9 @@ class ParaViewFilterCatalog:
             lower_name = name.lower()
             if not any(keyword in lower_name for keyword in FILTER_DISCOVERY_KEYWORDS):
                 continue
-            if any(token in lower_name for token in FILTER_DISCOVERY_EXCLUDE_SUBSTRINGS):
+            if any(
+                token in lower_name for token in FILTER_DISCOVERY_EXCLUDE_SUBSTRINGS
+            ):
                 continue
             discovered.append(
                 {
