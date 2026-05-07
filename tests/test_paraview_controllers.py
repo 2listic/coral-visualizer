@@ -26,7 +26,6 @@ def test_pv_update_property_updates_pending_value_and_dirty_flag():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
@@ -67,7 +66,6 @@ def test_pv_apply_and_reset_properties_refresh_ui_and_render():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
@@ -111,7 +109,6 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
@@ -159,7 +156,6 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=SimpleNamespace(active=False),
         refresh_runtime_message=lambda **kwargs: None,
@@ -211,7 +207,6 @@ def test_pv_save_active_data_prefers_explicit_filename_from_client():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=SimpleNamespace(active=False),
         refresh_runtime_message=lambda **kwargs: None,
@@ -255,7 +250,6 @@ def test_pv_save_state_existing_target_opens_overwrite_dialog_and_confirm_retrie
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=SimpleNamespace(active=False),
         refresh_runtime_message=lambda **kwargs: None,
@@ -327,7 +321,6 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -403,7 +396,6 @@ def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -446,7 +438,6 @@ def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
@@ -486,7 +477,6 @@ def test_pv_set_cell_face_visibility_accepts_checkbox_pair_payload():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
@@ -556,7 +546,6 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
@@ -634,7 +623,6 @@ def test_pv_reload_active_file_skips_invalid_restored_preset():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
@@ -678,7 +666,6 @@ def test_pv_delete_active_clears_selected_file_when_pipeline_becomes_empty():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
@@ -718,7 +705,6 @@ def test_pv_add_filter_success_and_failure_paths():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=backend_success,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
@@ -754,7 +740,6 @@ def test_pv_add_filter_success_and_failure_paths():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=failing_backend,
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
@@ -803,7 +788,6 @@ def test_pv_apply_edit_field_requires_field_choice():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -853,7 +837,6 @@ def test_pv_color_control_handlers_apply_backend_updates():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=pv_backend,
         edit_session=SimpleNamespace(active=False),
         refresh_runtime_message=lambda **kwargs: None,
@@ -899,7 +882,6 @@ def test_pv_on_edit_field_choice_create_new_opens_dialog_from_event_value():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -951,7 +933,6 @@ def test_pv_create_edit_field_existing_name_opens_overwrite_dialog():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1007,7 +988,6 @@ def test_pv_confirm_overwrite_edit_field_creates_with_overwrite_true():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1057,7 +1037,6 @@ def test_pv_apply_edit_field_surface_mode_assigns_to_selected():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1110,7 +1089,6 @@ def test_surface_mode_selection_keeps_surface_mode_after_sync():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12]
         ),
@@ -1165,7 +1143,6 @@ def test_degenerate_box_selection_uses_click_picker():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_cell_ids=lambda x, y: calls.append(("click", x, y)) or [7],
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: (_ for _ in ()).throw(
@@ -1233,7 +1210,6 @@ def test_box_selection_scales_event_coordinates_to_paraview_view():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             view=SimpleNamespace(ViewSize=(200, 400)),
             pick_visible_cell_ids_in_rect=pick_rect,
@@ -1278,7 +1254,6 @@ def test_pick_rotate_handlers_update_mode_and_push_view():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1332,7 +1307,6 @@ def test_surface_mode_click_selection_uses_surface_picker_keys():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_surface_keys=lambda x, y: [(1, 2, 3)],
             pick_visible_cell_ids=lambda x, y: [99],
@@ -1388,7 +1362,6 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [
                 (4, 5, 6),
@@ -1459,7 +1432,6 @@ def test_surface_mode_box_selection_falls_back_from_inside_to_touch():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_surface_keys_in_rect=pick_surface_keys_in_rect,
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [],
@@ -1524,7 +1496,6 @@ def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12]
         ),
@@ -1599,7 +1570,6 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_cell_ids=lambda x, y: [41] if (x, y) == (12, 34) else []
         ),
@@ -1676,7 +1646,6 @@ def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payloa
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_cell_ids=lambda x, y: [1, 2, 3] if (x, y) == (12, 34) else []
         ),
@@ -1754,7 +1723,6 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12]
         ),
@@ -1829,7 +1797,6 @@ def test_surface_selection_passes_angle_threshold_to_edit_session():
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [(1, 2, 3)],
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [10],

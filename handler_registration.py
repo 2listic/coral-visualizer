@@ -2,174 +2,74 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from trame_server.controller import Controller
+    from trame_server.state import State
+
+    from file_operations import FileOperationService
     from paraview_runtime import ParaViewRuntime
+    from view_controls import ViewControllerProxy
 
 from runtime_setup import RuntimeContext
 from common_controllers import register_common_controllers
 from paraview_controllers import register_paraview_controllers
 from state_handlers import register_state_handlers
-from vtk_controllers import register_vtk_handlers
-
-
-def _noop(*args, **kwargs):
-    return None
-
-
-@dataclass(frozen=True)
-class EditOperations:
-    """VTK edit callbacks passed to the handler registry."""
-
-    update_selection_actor: object
-    assign_id_to_selection: object
-    save_as_vtu: object
 
 
 def register_app_handlers(
     *,
-    ctrl,
-    state,
+    ctrl: Controller,
+    state: State,
     runtime: RuntimeContext,
-    edit_operations,
-    file_operations,
-    interaction_quality_presets,
-    view_controls,
+    file_operations: FileOperationService,
+    interaction_quality_presets: dict,
+    view_controls: ViewControllerProxy,
 ):
-    """Register all app handlers against the active backend runtimes."""
-    backend = runtime.backend
+    """Register all app handlers against the active ParaView runtime."""
     pv_backend = runtime.pv_backend
     edit_session = runtime.edit_session
-    vtk_runtime = runtime.vtk_runtime
-    paraview_runtime: ParaViewRuntime | None = runtime.paraview_runtime
-
-    def is_paraview_backend():
-        return backend == "paraview"
-
-    def is_vtk_backend():
-        return backend == "vtk"
-
-    def get_vtk_visualization():
-        return vtk_runtime.viz
-
-    def get_active_vtk_lut():
-        return vtk_runtime.active_lut
-
-    render_and_push = (
-        paraview_runtime.render_and_push
-        if paraview_runtime
-        else vtk_runtime.render_and_push
-    )
-    refresh_runtime_message = (
-        paraview_runtime.refresh_runtime_message if paraview_runtime else _noop
-    )
-    update_paraview_ui_state = (
-        paraview_runtime.update_ui_state if paraview_runtime else _noop
-    )
-    sync_edit_session_state = (
-        paraview_runtime.sync_edit_session_state if paraview_runtime else _noop
-    )
-    normalize_edit_selection_ids = (
-        paraview_runtime.normalize_edit_selection_ids if paraview_runtime else _noop
-    )
-    sync_paraview_edit_selection_overlay = (
-        paraview_runtime.sync_edit_selection_overlay if paraview_runtime else _noop
-    )
-    summarize_edit_event = (
-        paraview_runtime.summarize_edit_event if paraview_runtime else _noop
-    )
-    apply_edit_coloring = vtk_runtime.apply_edit_coloring if vtk_runtime else _noop
-    update_scalar_bars = vtk_runtime.update_scalar_bars if vtk_runtime else _noop
-    apply_vtk_coloring = vtk_runtime.apply_coloring if vtk_runtime else _noop
-    apply_paraview_coloring = (
-        paraview_runtime.apply_coloring if paraview_runtime else _noop
-    )
-    load_file_with_vtk_backend = vtk_runtime.load_file if vtk_runtime else _noop
-    load_file_with_paraview_backend = (
-        paraview_runtime.load_file if paraview_runtime else _noop
-    )
-    reset_vtk_camera = vtk_runtime.reset_camera if vtk_runtime else _noop
-    reset_vtk_view = vtk_runtime.reset_view if vtk_runtime else _noop
-    apply_vtk_representation_to_scene = (
-        vtk_runtime.apply_representation if vtk_runtime else _noop
-    )
-
-    def apply_active_representation(representation):
-        """Apply the current representation using the active backend runtime."""
-        if paraview_runtime is not None:
-            paraview_runtime.apply_representation(representation)
-            return
-
-        vtk_runtime.apply_representation(representation)
-        vtk_runtime.render_and_push()
+    paraview_runtime: ParaViewRuntime = runtime.paraview_runtime
 
     register_paraview_controllers(
         ctrl,
         state,
-        is_paraview_backend=is_paraview_backend,
         pv_backend=pv_backend,
         edit_session=edit_session,
-        refresh_runtime_message=refresh_runtime_message,
-        update_paraview_ui_state=update_paraview_ui_state,
-        render_and_push=render_and_push,
-        save_paraview_output=getattr(file_operations, "save_paraview_output", _noop),
-        save_paraview_state=getattr(file_operations, "save_paraview_state", _noop),
-        load_paraview_state=getattr(file_operations, "load_paraview_state", _noop),
+        refresh_runtime_message=paraview_runtime.refresh_runtime_message,
+        update_paraview_ui_state=paraview_runtime.update_ui_state,
+        render_and_push=paraview_runtime.render_and_push,
+        save_paraview_output=file_operations.save_paraview_output,
+        save_paraview_state=file_operations.save_paraview_state,
+        load_paraview_state=file_operations.load_paraview_state,
         debug_view=view_controls.debug,
         call_view_update_geometry=view_controls.update_geometry,
         call_view_set_remote_rendering=view_controls.set_remote_rendering,
         call_view_update=view_controls.update,
-        sync_edit_session_state=sync_edit_session_state,
-        sync_paraview_edit_selection_overlay=sync_paraview_edit_selection_overlay,
-        summarize_edit_event=summarize_edit_event,
-        normalize_edit_selection_ids=normalize_edit_selection_ids,
-    )
-
-    register_vtk_handlers(
-        state,
-        ctrl,
-        is_vtk_backend=is_vtk_backend,
-        viz_getter=get_vtk_visualization,
-        edit_state=runtime.edit_state,
-        pick_interactor=runtime.pick_interactor,
-        data_directory=runtime.data_directory,
-        apply_edit_coloring=apply_edit_coloring,
-        render_and_push=render_and_push,
-        update_selection_actor=edit_operations.update_selection_actor,
-        assign_id_to_selection=edit_operations.assign_id_to_selection,
-        save_as_vtu=edit_operations.save_as_vtu,
-        refresh_available_files=file_operations.refresh_available_files,
-        update_scalar_bars=update_scalar_bars,
-        active_lut_getter=get_active_vtk_lut,
-        apply_vtk_coloring=apply_vtk_coloring,
-        apply_vtk_representation_to_scene=apply_vtk_representation_to_scene,
+        sync_edit_session_state=paraview_runtime.sync_edit_session_state,
+        sync_paraview_edit_selection_overlay=paraview_runtime.sync_edit_selection_overlay,
+        summarize_edit_event=paraview_runtime.summarize_edit_event,
+        normalize_edit_selection_ids=paraview_runtime.normalize_edit_selection_ids,
     )
 
     register_state_handlers(
         state,
-        is_paraview_backend=is_paraview_backend,
-        load_file_with_paraview_backend=load_file_with_paraview_backend,
-        load_file_with_vtk_backend=load_file_with_vtk_backend,
-        apply_paraview_coloring=apply_paraview_coloring,
-        apply_vtk_coloring=apply_vtk_coloring,
-        apply_active_representation=apply_active_representation,
+        load_file=paraview_runtime.load_file,
+        apply_coloring=paraview_runtime.apply_coloring,
+        apply_active_representation=paraview_runtime.apply_representation,
         pv_backend=pv_backend,
-        update_paraview_ui_state=update_paraview_ui_state,
-        render_and_push=render_and_push,
-        sync_edit_session_state=sync_edit_session_state,
+        update_paraview_ui_state=paraview_runtime.update_ui_state,
+        render_and_push=paraview_runtime.render_and_push,
+        sync_edit_session_state=paraview_runtime.sync_edit_session_state,
         interaction_quality_presets=interaction_quality_presets,
     )
 
     register_common_controllers(
         ctrl,
         state,
-        is_paraview_backend=is_paraview_backend,
         pv_backend=pv_backend,
         call_view_update=view_controls.update,
-        reset_vtk_camera=reset_vtk_camera,
-        reset_vtk_view=reset_vtk_view,
         persist_uploaded_file=file_operations.persist_uploaded_file,
         refresh_available_files=file_operations.refresh_available_files,
         persist_uploaded_state_file=file_operations.persist_uploaded_state_file,

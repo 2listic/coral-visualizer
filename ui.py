@@ -17,46 +17,33 @@ def _load_logo_data_uri():
 LOGO_DATA_URI = _load_logo_data_uri()
 
 
-def _build_view_widget(backend, render_target, ctrl=None):
-    """Create the correct Trame widget for the selected rendering backend."""
-    if backend == "paraview":
-        from trame.widgets import paraview as pv_widgets
+def _build_view_widget(render_target, ctrl):
+    """Create the ParaView remote/local view widget."""
+    from trame.widgets import paraview as pv_widgets
 
-        return pv_widgets.VtkRemoteLocalView(
-            render_target,
-            namespace="mainView",
-            ref="view",
-            mode=("mainViewMode", "remote"),
-            disable_auto_switch=True,
-            interactive_ratio=("interactive_ratio",),
-            still_ratio=("still_ratio",),
-            interactive_quality=("interactive_quality",),
-            still_quality=("still_quality",),
-            enable_picking=("edit_enable_picking",),
-            box_selection=("edit_session_active && pick_mode",),
-            picking_modes=("edit_picking_modes",),
-            interactor_events=("edit_interactor_events",),
-            interactor_settings=("edit_interactor_settings",),
-            click=(ctrl.pv_edit_click_selection, "[$event]"),
-            box_selection_change=(ctrl.pv_edit_box_selection, "[$event]"),
-            on_ready=ctrl.view_update,
-            classes="coral-main-viewport",
-            style=(
-                "edit_view_style",
-                "width: 100%; height: 100%; cursor: crosshair; outline: none;",
-            ),
-        )
-
-    from trame.widgets import vtk
-
-    return vtk.VtkRemoteView(
+    return pv_widgets.VtkRemoteLocalView(
         render_target,
+        namespace="mainView",
         ref="view",
+        mode=("mainViewMode", "remote"),
+        disable_auto_switch=True,
         interactive_ratio=("interactive_ratio",),
         still_ratio=("still_ratio",),
         interactive_quality=("interactive_quality",),
         still_quality=("still_quality",),
-        style="width: 100%; height: 100%;",
+        enable_picking=("edit_enable_picking",),
+        box_selection=("edit_session_active && pick_mode",),
+        picking_modes=("edit_picking_modes",),
+        interactor_events=("edit_interactor_events",),
+        interactor_settings=("edit_interactor_settings",),
+        click=(ctrl.pv_edit_click_selection, "[$event]"),
+        box_selection_change=(ctrl.pv_edit_box_selection, "[$event]"),
+        on_ready=ctrl.view_update,
+        classes="coral-main-viewport",
+        style=(
+            "edit_view_style",
+            "width: 100%; height: 100%; cursor: crosshair; outline: none;",
+        ),
     )
 
 
@@ -71,22 +58,13 @@ def _build_alerts():
         style="position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;",
     )
     vuetify.VAlert(
-        v_show=("backend_message",),
-        type="info",
-        dense=True,
-        dismissible=True,
-        v_model=("backend_message",),
-        children=("{{ backend_message }}",),
-        style="position: absolute; top: 68px; left: 10px; right: 10px; z-index: 999;",
-    )
-    vuetify.VAlert(
         v_show=("upload_status",),
         type=("upload_status_type",),
         dense=True,
         dismissible=True,
         v_model=("upload_status",),
         children=("{{ upload_status }}",),
-        style="position: absolute; top: 126px; left: 10px; right: 10px; z-index: 998;",
+        style="position: absolute; top: 68px; left: 10px; right: 10px; z-index: 999;",
     )
     vuetify.VAlert(
         v_show=("pv_runtime_message",),
@@ -95,11 +73,11 @@ def _build_alerts():
         dismissible=True,
         v_model=("pv_runtime_message",),
         children=("{{ pv_runtime_message }}",),
-        style="position: absolute; top: 184px; left: 10px; right: 10px; z-index: 997; white-space: pre-line;",
+        style="position: absolute; top: 126px; left: 10px; right: 10px; z-index: 998; white-space: pre-line;",
     )
 
 
-def _build_toolbar(ctrl, backend):
+def _build_toolbar(ctrl):
     html.Input(
         ref="filePicker",
         type="file",
@@ -130,148 +108,115 @@ def _build_toolbar(ctrl, backend):
         click="window.open('/api/download?file=' + encodeURIComponent(selected_file), '_blank')",
         classes="mr-2",
     )
-    if backend == "paraview":
-        vuetify.VBtn(
-            "Enter Edit Mode",
+    vuetify.VBtn(
+        "Enter Edit Mode",
+        small=True,
+        outlined=True,
+        click=ctrl.pv_begin_edit_session,
+        disabled=("!can_edit_active",),
+        v_if="!edit_session_active",
+        classes="mr-2",
+    )
+    vuetify.VBtn(
+        "{{ edit_session_active ? 'Save Edit Result' : 'Save Result' }}",
+        small=True,
+        color="primary",
+        click=(
+            ctrl.pv_save_active_data,
+            "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
+        ),
+        disabled=("!active_pipeline_item && !edit_session_active",),
+        classes="mr-2",
+    )
+    vuetify.VTextField(
+        v_model=("save_filename",),
+        ref="saveFilenameField",
+        label="Output filename",
+        dense=True,
+        outlined=True,
+        hide_details=True,
+        classes="mr-2",
+        style="max-width: 260px;",
+    )
+    with vuetify.VRow(
+        v_if="is_time_dependent",
+        dense=True,
+        align="center",
+        classes="ma-0 mr-4",
+        style="max-width: 640px; flex: 1;",
+    ):
+        with vuetify.VBtn(
+            icon=True,
             small=True,
-            outlined=True,
-            click=ctrl.pv_begin_edit_session,
-            disabled=("!can_edit_active",),
-            v_if="!edit_session_active",
-            classes="mr-2",
-        )
-        vuetify.VBtn(
-            "{{ edit_session_active ? 'Save Edit Result' : 'Save Result' }}",
-            small=True,
-            color="primary",
-            click=(
-                ctrl.pv_save_active_data,
-                "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
-            ),
-            disabled=("!active_pipeline_item && !edit_session_active",),
-            classes="mr-2",
-        )
-        vuetify.VTextField(
-            v_model=("save_filename",),
-            ref="saveFilenameField",
-            label="Output filename",
-            dense=True,
-            outlined=True,
-            hide_details=True,
-            classes="mr-2",
-            style="max-width: 260px;",
-        )
-        with vuetify.VRow(
-            v_if="is_time_dependent",
-            dense=True,
-            align="center",
-            classes="ma-0 mr-4",
-            style="max-width: 640px; flex: 1;",
+            click=ctrl.pv_first_time_step,
         ):
-            with vuetify.VBtn(
-                icon=True,
-                small=True,
-                click=ctrl.pv_first_time_step,
-            ):
-                vuetify.VIcon("mdi-skip-backward")
-            with vuetify.VBtn(
-                icon=True,
-                small=True,
-                click=ctrl.pv_prev_time_step,
-            ):
-                vuetify.VIcon("mdi-skip-previous")
-            with vuetify.VBtn(
-                icon=True,
-                small=True,
-                click=ctrl.pv_play_pause_time,
-            ):
-                vuetify.VIcon("{{ time_playing ? 'mdi-pause' : 'mdi-play' }}")
-            with vuetify.VBtn(
-                icon=True,
-                small=True,
-                click=ctrl.pv_next_time_step,
-            ):
-                vuetify.VIcon("mdi-skip-next")
-            with vuetify.VBtn(
-                icon=True,
-                small=True,
-                click=ctrl.pv_last_time_step,
-            ):
-                vuetify.VIcon("mdi-skip-forward")
-            with vuetify.VBtn(
-                icon=True,
-                small=True,
-                click=ctrl.pv_toggle_time_loop,
-                color=("time_loop ? 'primary' : ''",),
-            ):
-                vuetify.VIcon("mdi-repeat")
-            html.Div(
-                "{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})",
-                classes="ml-2 grey--text text--darken-2",
-                style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;",
-            )
-            vuetify.VSlider(
-                v_model=("time_index",),
-                min=0,
-                max=("total_timesteps - 1",),
-                step=1,
-                dense=True,
-                hide_details=True,
-                classes="ml-2 flex-grow-1",
-                change="pv_set_time(time_values[$event])",
-            )
-        vuetify.VBtn(
-            "Save And Add To Pipeline",
+            vuetify.VIcon("mdi-skip-backward")
+        with vuetify.VBtn(
+            icon=True,
             small=True,
-            outlined=True,
-            color="primary",
-            click=(
-                ctrl.pv_commit_edit_session,
-                "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
-            ),
-            v_if="edit_session_active",
-            classes="mr-2",
-        )
-        vuetify.VBtn(
-            "Discard",
+            click=ctrl.pv_prev_time_step,
+        ):
+            vuetify.VIcon("mdi-skip-previous")
+        with vuetify.VBtn(
+            icon=True,
             small=True,
-            outlined=True,
-            click=ctrl.pv_discard_edit_session,
-            v_if="edit_session_active",
-            classes="mr-2",
+            click=ctrl.pv_play_pause_time,
+        ):
+            vuetify.VIcon("{{ time_playing ? 'mdi-pause' : 'mdi-play' }}")
+        with vuetify.VBtn(
+            icon=True,
+            small=True,
+            click=ctrl.pv_next_time_step,
+        ):
+            vuetify.VIcon("mdi-skip-next")
+        with vuetify.VBtn(
+            icon=True,
+            small=True,
+            click=ctrl.pv_last_time_step,
+        ):
+            vuetify.VIcon("mdi-skip-forward")
+        with vuetify.VBtn(
+            icon=True,
+            small=True,
+            click=ctrl.pv_toggle_time_loop,
+            color=("time_loop ? 'primary' : ''",),
+        ):
+            vuetify.VIcon("mdi-repeat")
+        html.Div(
+            "{{ current_time.toFixed(4) }} ({{ time_index + 1 }}/{{ total_timesteps }})",
+            classes="ml-2 grey--text text--darken-2",
+            style="font-size: 0.85rem; font-family: monospace; white-space: nowrap;",
         )
-    if backend == "vtk":
-        vuetify.VSelect(
-            v_model=("selected_file",),
-            items=("available_files",),
-            label="Loaded Files",
-            hide_details=True,
+        vuetify.VSlider(
+            v_model=("time_index",),
+            min=0,
+            max=("total_timesteps - 1",),
+            step=1,
             dense=True,
-            outlined=True,
-            style="max-width: 240px;",
-            classes="mr-2",
-        )
-        vuetify.VSelect(
-            v_model=("selected_array",),
-            items=("available_arrays",),
-            label="Color by",
             hide_details=True,
-            dense=True,
-            outlined=True,
-            style="max-width: 170px;",
-            classes="mr-2",
-            disabled=("edit_mode",),
+            classes="ml-2 flex-grow-1",
+            change="pv_set_time(time_values[$event])",
         )
-        vuetify.VSelect(
-            v_model=("representation",),
-            items=([REPR_SURFACE, REPR_SURFACE_EDGES, REPR_WIREFRAME, REPR_POINTS],),
-            label="Representation",
-            hide_details=True,
-            dense=True,
-            outlined=True,
-            style="max-width: 180px;",
-            classes="mr-2",
-        )
+    vuetify.VBtn(
+        "Save And Add To Pipeline",
+        small=True,
+        outlined=True,
+        color="primary",
+        click=(
+            ctrl.pv_commit_edit_session,
+            "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
+        ),
+        v_if="edit_session_active",
+        classes="mr-2",
+    )
+    vuetify.VBtn(
+        "Discard",
+        small=True,
+        outlined=True,
+        click=ctrl.pv_discard_edit_session,
+        v_if="edit_session_active",
+        classes="mr-2",
+    )
     vuetify.VSpacer()
 
 
@@ -1767,174 +1712,7 @@ def _build_property_list(ctrl, state_key):
                                 vuetify.VListItemSubtitle("{{ item.value || ' ' }}")
 
 
-def _build_vtk_edit_panel(ctrl):
-    with vuetify.VNavigationDrawer(
-        v_model=("edit_mode",),
-        right=True,
-        absolute=True,
-        width="260",
-        style="z-index: 5;",
-    ):
-        with vuetify.VList(dense=True):
-            vuetify.VSubheader("Interaction Mode")
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    with vuetify.VRow(dense=True, classes="px-2"):
-                        with vuetify.VCol(cols=6):
-                            vuetify.VBtn(
-                                "Pick",
-                                small=True,
-                                block=True,
-                                color=("pick_mode ? 'primary' : ''",),
-                                outlined=("!pick_mode",),
-                                click="pick_mode = true",
-                            )
-                        with vuetify.VCol(cols=6):
-                            vuetify.VBtn(
-                                "Rotate",
-                                small=True,
-                                block=True,
-                                color=("!pick_mode ? 'primary' : ''",),
-                                outlined=("pick_mode",),
-                                click="pick_mode = false",
-                            )
-            vuetify.VDivider(classes="my-2")
-            vuetify.VSubheader("Edit Target")
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    with vuetify.VRow(dense=True, classes="px-2"):
-                        with vuetify.VCol(cols=6):
-                            vuetify.VBtn(
-                                "Boundary",
-                                small=True,
-                                block=True,
-                                color=("edit_target === 'boundary' ? 'primary' : ''",),
-                                outlined=("edit_target !== 'boundary'",),
-                                click="edit_target = 'boundary'",
-                            )
-                        with vuetify.VCol(cols=6):
-                            vuetify.VBtn(
-                                "Volume",
-                                small=True,
-                                block=True,
-                                color=("edit_target === 'volume' ? 'primary' : ''",),
-                                outlined=("edit_target !== 'volume'",),
-                                click="edit_target = 'volume'",
-                            )
-            vuetify.VSubheader("Selection")
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    vuetify.VListItemTitle("{{ selection_count }} cells selected")
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    with vuetify.VRow(dense=True, classes="px-2"):
-                        with vuetify.VCol(cols=6):
-                            vuetify.VBtn(
-                                "Clear",
-                                small=True,
-                                outlined=True,
-                                block=True,
-                                click=ctrl.clear_selection,
-                                disabled=("selection_count === 0",),
-                            )
-                        with vuetify.VCol(cols=6):
-                            vuetify.VBtn(
-                                "Select All",
-                                small=True,
-                                outlined=True,
-                                block=True,
-                                click=ctrl.select_all,
-                            )
-            with vuetify.VListItem(dense=True):
-                with vuetify.VListItemContent(classes="pt-0"):
-                    vuetify.VSwitch(
-                        v_model=("group_select",),
-                        label="Select Flat Region",
-                        hide_details=True,
-                        dense=True,
-                        classes="pl-2",
-                        disabled=("edit_target === 'volume'",),
-                    )
-            with vuetify.VListItem(dense=True):
-                with vuetify.VRow(
-                    dense=True,
-                    align="center",
-                    no_gutters=True,
-                    classes="px-2",
-                ):
-                    with vuetify.VCol():
-                        vuetify.VSlider(
-                            v_model=("angle_threshold",),
-                            label="Angle",
-                            min=0,
-                            max=90,
-                            step=1,
-                            hide_details=True,
-                            dense=True,
-                            disabled=("!group_select || edit_target === 'volume'",),
-                        )
-                    with vuetify.VCol(cols="auto"):
-                        vuetify.VChip(
-                            "{{ angle_threshold }}°",
-                            x_small=True,
-                            disabled=("!group_select || edit_target === 'volume'",),
-                        )
-
-            vuetify.VSubheader(
-                "{{ edit_target === 'volume' ? 'Assign Material ID' : 'Assign Boundary ID' }}"
-            )
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    vuetify.VTextField(
-                        v_model=("assign_id_value",),
-                        label="Value",
-                        type="number",
-                        dense=True,
-                        outlined=True,
-                        hide_details=True,
-                    )
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    vuetify.VBtn(
-                        "Assign to Selected",
-                        small=True,
-                        color="primary",
-                        block=True,
-                        click=ctrl.assign_id,
-                        disabled=("selection_count === 0",),
-                    )
-            vuetify.VDivider(classes="my-2")
-            vuetify.VSubheader("Save")
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    vuetify.VTextField(
-                        v_model=("save_filename",),
-                        label="Filename",
-                        dense=True,
-                        outlined=True,
-                        hide_details=True,
-                        suffix=".vtu",
-                    )
-            with vuetify.VListItem():
-                with vuetify.VListItemContent():
-                    vuetify.VBtn(
-                        "Save as .vtu",
-                        small=True,
-                        color="success",
-                        block=True,
-                        click=ctrl.save_vtu,
-                    )
-            with vuetify.VListItem(v_show=("save_status",)):
-                with vuetify.VListItemContent():
-                    vuetify.VAlert(
-                        type=("save_status_type",),
-                        dense=True,
-                        children=["{{ save_status }}"],
-                        classes="ma-0",
-                    )
-
-
-def build_ui(server, render_target, backend):
+def build_ui(server, render_target):
     """Build the Trame UI layout."""
     ctrl = server.controller
     server.state.trame__title = "Coral VTK Manipulator"
@@ -1969,68 +1747,32 @@ def build_ui(server, render_target, backend):
                         text=True,
                     )
 
-        if backend == "paraview":
-            with vuetify.VDialog(v_model=("save_overwrite_dialog",), max_width=560):
-                with vuetify.VCard():
-                    vuetify.VCardTitle("Overwrite Existing File?")
-                    with vuetify.VCardText():
-                        vuetify.VAlert(
-                            type="warning",
-                            dense=True,
-                            outlined=True,
-                            children=[
-                                "{{ save_overwrite_action === 'state_save' ? ('The state file ' + save_overwrite_target + ' already exists. Overwrite it with the current application state?') : ('The file ' + save_overwrite_target + ' already exists. Overwrite it with the newly saved result?') }}"
-                            ],
-                        )
-                    with vuetify.VCardActions():
-                        vuetify.VSpacer()
-                        vuetify.VBtn(
-                            "Cancel", click=ctrl.pv_cancel_save_overwrite, text=True
-                        )
-                        vuetify.VBtn(
-                            "Overwrite",
-                            click=ctrl.pv_confirm_save_overwrite,
-                            color="warning",
-                            text=True,
-                        )
-        elif backend == "vtk":
-            with vuetify.VDialog(v_model=("save_overwrite_dialog",), max_width=560):
-                with vuetify.VCard():
-                    vuetify.VCardTitle("Overwrite Existing File?")
-                    with vuetify.VCardText():
-                        vuetify.VAlert(
-                            type="warning",
-                            dense=True,
-                            outlined=True,
-                            children=[
-                                "The file '{{ save_overwrite_target }}' already exists. "
-                                "Overwrite it with the newly saved result?"
-                            ],
-                        )
-                    with vuetify.VCardActions():
-                        vuetify.VSpacer()
-                        vuetify.VBtn(
-                            "Cancel", click=ctrl.cancel_save_overwrite_vtu, text=True
-                        )
-                        vuetify.VBtn(
-                            "Overwrite",
-                            click=ctrl.confirm_save_overwrite_vtu,
-                            color="warning",
-                            text=True,
-                        )
+        with vuetify.VDialog(v_model=("save_overwrite_dialog",), max_width=560):
+            with vuetify.VCard():
+                vuetify.VCardTitle("Overwrite Existing File?")
+                with vuetify.VCardText():
+                    vuetify.VAlert(
+                        type="warning",
+                        dense=True,
+                        outlined=True,
+                        children=[
+                            "{{ save_overwrite_action === 'state_save' ? ('The state file ' + save_overwrite_target + ' already exists. Overwrite it with the current application state?') : ('The file ' + save_overwrite_target + ' already exists. Overwrite it with the newly saved result?') }}"
+                        ],
+                    )
+                with vuetify.VCardActions():
+                    vuetify.VSpacer()
+                    vuetify.VBtn(
+                        "Cancel", click=ctrl.pv_cancel_save_overwrite, text=True
+                    )
+                    vuetify.VBtn(
+                        "Overwrite",
+                        click=ctrl.pv_confirm_save_overwrite,
+                        color="warning",
+                        text=True,
+                    )
 
         with layout.toolbar:
-            _build_toolbar(ctrl, backend)
-            if backend == "vtk":
-                vuetify.VBtn(
-                    "Edit Mode",
-                    small=True,
-                    outlined=("!edit_mode",),
-                    color=("edit_mode ? 'primary' : ''",),
-                    click="edit_mode = !edit_mode",
-                    classes="mr-2",
-                    v_show=("has_boundary",),
-                )
+            _build_toolbar(ctrl)
 
         with layout.content:
             with vuetify.VContainer(
@@ -2058,19 +1800,15 @@ def build_ui(server, render_target, backend):
                 _build_alerts()
                 _build_remote_browser_dialog(ctrl)
                 _build_state_browser_dialog(ctrl)
-                if backend == "paraview":
-                    _build_paraview_pipeline_panel(ctrl)
-                    _build_paraview_inspector_panel(ctrl)
-                else:
-                    _build_vtk_edit_panel(ctrl)
+                _build_paraview_pipeline_panel(ctrl)
+                _build_paraview_inspector_panel(ctrl)
 
-                view = _build_view_widget(backend, render_target, ctrl)
+                view = _build_view_widget(render_target, ctrl)
                 ctrl.view_update = view.update
-                if backend == "paraview":
-                    ctrl.view_update_geometry = view.update_geometry
-                    ctrl.view_update_image = view.update_image
-                    ctrl.view_reset_camera = view.reset_camera
-                    ctrl.view_set_local_rendering = view.set_local_rendering
-                    ctrl.view_set_remote_rendering = view.set_remote_rendering
+                ctrl.view_update_geometry = view.update_geometry
+                ctrl.view_update_image = view.update_image
+                ctrl.view_reset_camera = view.reset_camera
+                ctrl.view_set_local_rendering = view.set_local_rendering
+                ctrl.view_set_remote_rendering = view.set_remote_rendering
 
     return layout

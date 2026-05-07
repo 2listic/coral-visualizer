@@ -42,20 +42,16 @@ def test_resolve_initial_file_falls_back_to_first_available_item():
     assert result == "first.vtu"
 
 
-def test_initialize_state_populates_defaults_for_paraview_backend():
+def test_initialize_state_populates_defaults():
     state = SimpleNamespace()
 
     initialize_state(
         state,
         available_files=[{"text": "mesh", "value": "mesh.vtu"}],
         initial_file="mesh.vtu",
-        backend="paraview",
-        backend_message="ready",
         pv_backend=FakeParaViewBackend(),
     )
 
-    assert state.backend == "paraview"
-    assert state.backend_message == "ready"
     assert state.selected_file == "mesh.vtu"
     assert state.available_arrays == [{"text": "Solid Color", "value": ARRAY_SOLID}]
     assert state.selected_array == ARRAY_SOLID
@@ -97,23 +93,3 @@ def test_initialize_state_populates_defaults_for_paraview_backend():
     ]
     assert state.edit_enable_picking is False
     assert "cursor: default" in state.edit_view_style
-
-
-def test_initialize_state_uses_empty_filter_catalog_without_paraview_backend():
-    state = SimpleNamespace()
-
-    initialize_state(
-        state,
-        available_files=[],
-        initial_file=None,
-        backend="vtk",
-        backend_message="vtk only",
-        pv_backend=None,
-    )
-
-    assert state.backend == "vtk"
-    assert state.filter_supported_options == []
-    assert state.filter_experimental_options == []
-    assert state.show_experimental_filters is False
-    assert state.selected_file is None
-    assert state.assign_id_value == "0"

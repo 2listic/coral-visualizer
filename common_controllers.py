@@ -1,45 +1,38 @@
-"""Generic Trame controller registrations shared across backends."""
+"""Generic Trame controller registrations."""
+
+from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from trame.app.file_upload import ClientFile
+
+if TYPE_CHECKING:
+    from paraview_backend import ParaViewBackend
 
 
 def register_common_controllers(
     ctrl,
     state,
     *,
-    is_paraview_backend,
-    pv_backend,
+    pv_backend: ParaViewBackend,
     call_view_update,
-    reset_vtk_camera,
-    reset_vtk_view,
     persist_uploaded_file,
     refresh_available_files,
     persist_uploaded_state_file,
     refresh_available_state_files,
 ):
-    """Register backend-agnostic controller callbacks."""
+    """Register controller callbacks."""
 
     @ctrl.add("reset_camera")
     def reset_camera():
-        """Reset the active camera for the selected backend."""
-        if is_paraview_backend():
-            pv_backend.reset_camera()
-            call_view_update()
-            return
-
-        reset_vtk_camera()
+        pv_backend.reset_camera()
+        call_view_update()
 
     @ctrl.add("reset_view")
     def reset_view():
-        """Restore a canonical XYZ view and reset the camera framing."""
-        if is_paraview_backend():
-            pv_backend.reset_view()
-            call_view_update(reset_camera=True)
-            return
-
-        reset_vtk_view()
+        pv_backend.reset_view()
+        call_view_update(reset_camera=True)
 
     @ctrl.add("upload_dataset")
     def upload_dataset(files):

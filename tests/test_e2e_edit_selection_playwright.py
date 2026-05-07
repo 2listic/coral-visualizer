@@ -322,7 +322,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
@@ -407,7 +407,7 @@ def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("text=Display", timeout=40000)
@@ -475,7 +475,7 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("text=Display", timeout=40000)
@@ -562,7 +562,7 @@ def test_paraview_show_faces_only_keeps_explicit_cube_boundary_faces(shared_brow
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("text=Display", timeout=40000)
@@ -634,7 +634,7 @@ def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
@@ -734,7 +734,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
@@ -893,7 +893,7 @@ def test_paraview_cube_surface_selection_assigns_created_cell_field(shared_brows
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
@@ -983,7 +983,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
 
     try:
         _wait_for_http_ready(url)
-        context = shared_browser.new_context(viewport={"width": 1600, "height": 1000})
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
         page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)

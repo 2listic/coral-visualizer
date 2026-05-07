@@ -1,27 +1,30 @@
 """Shared Trame state-change registrations."""
 
+from __future__ import annotations
+
 import os
 import traceback
+from typing import TYPE_CHECKING
 
 from diagnostics import debug_log, devtools_enabled
+
+if TYPE_CHECKING:
+    from paraview_backend import ParaViewBackend
 
 
 def register_state_handlers(
     state,
     *,
-    is_paraview_backend,
-    load_file_with_paraview_backend,
-    load_file_with_vtk_backend,
-    apply_paraview_coloring,
-    apply_vtk_coloring,
+    load_file,
+    apply_coloring,
     apply_active_representation,
-    pv_backend,
+    pv_backend: ParaViewBackend,
     update_paraview_ui_state,
     render_and_push,
     sync_edit_session_state,
     interaction_quality_presets,
 ):
-    """Register backend-aware state callbacks shared across the app."""
+    """Register state callbacks for the ParaView backend."""
 
     @state.change("selected_file")
     def on_file_change(selected_file, **kwargs):
@@ -31,14 +34,7 @@ def register_state_handlers(
 
         try:
             debug_log(f"\nLoading file: {selected_file}")
-
-            if state.edit_mode:
-                state.edit_mode = False
-
-            if is_paraview_backend():
-                load_file_with_paraview_backend(selected_file)
-            else:
-                load_file_with_vtk_backend(selected_file)
+            load_file(selected_file)
         except Exception as exc:
             state.error_message = f"Error loading file: {exc}"
             debug_log(f"Error: {exc}")
@@ -48,11 +44,7 @@ def register_state_handlers(
     @state.change("selected_array")
     def on_array_change(selected_array, **kwargs):
         """Update coloring when the user picks a different array."""
-        if is_paraview_backend():
-            apply_paraview_coloring(selected_array)
-            return
-
-        apply_vtk_coloring(selected_array)
+        apply_coloring(selected_array)
 
     @state.change("representation")
     def on_representation_change(representation, **kwargs):
@@ -62,7 +54,7 @@ def register_state_handlers(
     @state.change("active_pipeline_item")
     def on_active_pipeline_item_change(active_pipeline_item, **kwargs):
         """Switch active ParaView node when the pipeline selection changes."""
-        if not is_paraview_backend() or not active_pipeline_item:
+        if not active_pipeline_item:
             return
         if not pv_backend.set_active_node(active_pipeline_item):
             return
@@ -82,15 +74,10 @@ def register_state_handlers(
     @state.change("pick_mode", "edit_session_active")
     def on_interaction_mode_change(pick_mode, edit_session_active, **kwargs):
         """Update ParaView interactor rotation and cursor style based on pick mode."""
-        if not is_paraview_backend():
-            sync_edit_session_state()
-            return
-
-        if pv_backend is not None:
-            # Only disable rotation if an edit session is active and we are in pick mode.
-            # In non-edit mode, rotation should always be enabled.
-            rotation_enabled = not (edit_session_active and pick_mode)
-            pv_backend.set_interactor_rotation(rotation_enabled)
+        # Only disable rotation if an edit session is active and we are in pick mode.
+        # In non-edit mode, rotation should always be enabled.
+        rotation_enabled = not (edit_session_active and pick_mode)
+        pv_backend.set_interactor_rotation(rotation_enabled)
 
         # Update cursor style: crosshair only when picking in an active edit session.
         state.edit_view_style = (
@@ -98,17 +85,6 @@ def register_state_handlers(
             if edit_session_active and pick_mode
             else "width: 100%; height: 100%; cursor: default; outline: none;"
         )
-
-        sync_edit_session_state()
-
-    @state.change("edit_mode")
-    def on_edit_mode_change(edit_mode, **kwargs):
-        """Ensure rotation is restored when exiting edit mode."""
-        if not is_paraview_backend() or edit_mode:
-            return
-
-        if pv_backend is not None:
-            pv_backend.set_interactor_rotation(True)
 
         sync_edit_session_state()
 

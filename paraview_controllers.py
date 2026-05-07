@@ -21,8 +21,7 @@ def register_paraview_controllers(
     ctrl,
     state,
     *,
-    is_paraview_backend: Callable[[], bool],
-    pv_backend: ParaViewBackend | None,
+    pv_backend: ParaViewBackend,
     edit_session: EditSession,
     refresh_runtime_message: _RefreshRuntimeMessage,
     update_paraview_ui_state: Callable[[], None],
@@ -528,8 +527,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_update_property")
     def pv_update_property(scope, name, value):
         """Update a pending ParaView property edit in Trame state."""
-        if not is_paraview_backend():
-            return
 
         target = (
             state.source_properties if scope == "source" else state.display_properties
@@ -557,8 +554,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_apply_properties")
     def pv_apply_properties():
         """Apply pending generated ParaView property edits."""
-        if not is_paraview_backend():
-            return
 
         refresh_runtime_message(clear=True)
         pv_backend.apply_property_changes(
@@ -571,15 +566,13 @@ def register_paraview_controllers(
     @ctrl.add("pv_reset_properties")
     def pv_reset_properties():
         """Discard pending property edits and refresh the generated inspector."""
-        if not is_paraview_backend():
-            return
 
         update_paraview_ui_state()
 
     @ctrl.add("pv_toggle_visibility")
     def pv_toggle_visibility():
         """Toggle visibility of the active ParaView node."""
-        if not is_paraview_backend() or not state.active_pipeline_item:
+        if not state.active_pipeline_item:
             return
 
         pv_backend.set_visibility(
@@ -591,7 +584,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_toggle_visibility_for")
     def pv_toggle_visibility_for(node_id):
         """Toggle visibility for a specific ParaView pipeline node."""
-        if not is_paraview_backend() or not node_id:
+        if not node_id:
             return
 
         visible = pv_backend.get_visibility(node_id)
@@ -605,7 +598,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_set_cell_face_visibility")
     def pv_set_cell_face_visibility(cells_visible=None, faces_visible=None):
         """Show or hide semantic cells/faces for the active ParaView node."""
-        if not is_paraview_backend() or not state.active_pipeline_item:
+        if not state.active_pipeline_item:
             return
 
         if (
@@ -631,7 +624,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_reload_active_file")
     def pv_reload_active_file():
         """Reload the file backing the active ParaView pipeline node."""
-        if not is_paraview_backend() or not state.active_pipeline_item:
+        if not state.active_pipeline_item:
             return
 
         try:
@@ -683,7 +676,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_delete_active")
     def pv_delete_active():
         """Delete the active ParaView node from the pipeline."""
-        if not is_paraview_backend() or not state.active_pipeline_item:
+        if not state.active_pipeline_item:
             return
 
         pv_backend.delete_node(state.active_pipeline_item)
@@ -696,7 +689,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_add_filter")
     def pv_add_filter(filter_key):
         """Add a supported filter to the active ParaView node."""
-        if not is_paraview_backend() or not state.active_pipeline_item:
+        if not state.active_pipeline_item:
             return
         if not filter_key:
             return
@@ -714,8 +707,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_save_active_data")
     def pv_save_active_data(filename=None):
         """Save the active ParaView output or edit-session result to a new file."""
-        if not is_paraview_backend():
-            return
 
         try:
             _apply_pending_save_filename(filename)
@@ -729,8 +720,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_save_state")
     def pv_save_state(filename=None):
         """Save the current ParaView application state to disk."""
-        if not is_paraview_backend():
-            return
 
         try:
             if filename is not None:
@@ -747,8 +736,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_load_state")
     def pv_load_state(filename=None):
         """Load a previously saved ParaView application state from disk."""
-        if not is_paraview_backend():
-            return
 
         try:
             if filename is not None:
@@ -764,8 +751,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_confirm_save_overwrite")
     def pv_confirm_save_overwrite():
         """Confirm overwrite for ParaView save operations."""
-        if not is_paraview_backend():
-            return
 
         action = getattr(state, "save_overwrite_action", "")
         try:
@@ -795,8 +780,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_begin_edit_session")
     def pv_begin_edit_session():
         """Initialize an edit session from the active ParaView pipeline node."""
-        if not is_paraview_backend():
-            return
 
         try:
             debug_view("pv_begin_edit_session.start", mode=state.mainViewMode)
@@ -850,13 +833,12 @@ def register_paraview_controllers(
             clear_edit_target()
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
-        if is_paraview_backend() and pv_backend is not None:
-            state.save_filename = pv_backend.default_output_filename()
-            state.save_target_label = (
-                f"Active pipeline result: {state.active_source_label}"
-                if state.active_source_label
-                else "Active pipeline result"
-            )
+        state.save_filename = pv_backend.default_output_filename()
+        state.save_target_label = (
+            f"Active pipeline result: {state.active_source_label}"
+            if state.active_source_label
+            else "Active pipeline result"
+        )
         state.edit_apply_status = ""
         state.edit_selection_status = ""
         state.edit_selection_event = ""
@@ -872,7 +854,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_commit_edit_session")
     def pv_commit_edit_session(filename=None):
         """Save the current edit session and append it as a new pipeline source."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
 
         try:
@@ -887,7 +869,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_apply_color_map_preset")
     def pv_apply_color_map_preset(preset=None):
         """Apply the selected color-map preset to the active scalar coloring."""
-        if not is_paraview_backend() or pv_backend.display is None:
+        if pv_backend.display is None:
             return
         preset = (preset or getattr(state, "color_map_preset", "") or "").strip()
         if not preset:
@@ -903,7 +885,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_apply_color_range")
     def pv_apply_color_range():
         """Apply manual min/max values to the active scalar color range."""
-        if not is_paraview_backend() or pv_backend.display is None:
+        if pv_backend.display is None:
             return
         try:
             pv_backend.apply_color_range(
@@ -918,7 +900,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_rescale_color_range_to_data")
     def pv_rescale_color_range_to_data():
         """Rescale the active color map to the visible data range."""
-        if not is_paraview_backend() or pv_backend.display is None:
+        if pv_backend.display is None:
             return
         try:
             pv_backend.rescale_color_range_to_data()
@@ -930,7 +912,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_rescale_color_range_over_time")
     def pv_rescale_color_range_over_time():
         """Rescale the active color map over all timesteps."""
-        if not is_paraview_backend() or pv_backend.display is None:
+        if pv_backend.display is None:
             return
         try:
             pv_backend.rescale_color_range_over_time()
@@ -943,8 +925,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_set_time")
     def pv_set_time(time_value):
         """Set the current time from the UI."""
-        if not is_paraview_backend():
-            return
         try:
             pv_backend.set_time(time_value)
             update_paraview_ui_state()
@@ -956,8 +936,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_next_time_step")
     def pv_next_time_step():
         """Move to the next available timestep."""
-        if not is_paraview_backend():
-            return
         try:
             pv_backend.set_time_step(1)
             update_paraview_ui_state()
@@ -969,8 +947,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_prev_time_step")
     def pv_prev_time_step():
         """Move to the previous available timestep."""
-        if not is_paraview_backend():
-            return
         try:
             pv_backend.set_time_step(-1)
             update_paraview_ui_state()
@@ -982,8 +958,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_first_time_step")
     def pv_first_time_step():
         """Move to the first available timestep."""
-        if not is_paraview_backend():
-            return
         try:
             if state.time_values:
                 pv_backend.set_time(state.time_values[0])
@@ -996,8 +970,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_last_time_step")
     def pv_last_time_step():
         """Move to the last available timestep."""
-        if not is_paraview_backend():
-            return
         try:
             if state.time_values:
                 pv_backend.set_time(state.time_values[-1])
@@ -1062,7 +1034,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_set_scalar_bar_visible")
     def pv_set_scalar_bar_visible(visible=None):
         """Toggle the active scalar color legend."""
-        if not is_paraview_backend() or pv_backend.display is None:
+        if pv_backend.display is None:
             return
         visible = bool(
             getattr(state, "color_bar_visible", False) if visible is None else visible
@@ -1080,8 +1052,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_set_orientation_axes_visible")
     def pv_set_orientation_axes_visible(visible=None):
         """Toggle the orientation axes in the render view."""
-        if not is_paraview_backend():
-            return
         visible = bool(
             getattr(state, "orientation_axes_visible", True)
             if visible is None
@@ -1100,7 +1070,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_set_categorical_coloring")
     def pv_set_categorical_coloring(enabled=None):
         """Toggle categorical interpretation on the active scalar color map."""
-        if not is_paraview_backend() or pv_backend.display is None:
+        if pv_backend.display is None:
             return
         enabled = bool(
             getattr(state, "categorical_coloring", False)
@@ -1122,7 +1092,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_on_edit_field_choice")
     def pv_on_edit_field_choice(choice=None):
         """React to field selection changes (existing field or create new)."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
 
         raw_choice = (
@@ -1171,7 +1141,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_create_edit_field")
     def pv_create_edit_field():
         """Create a new edit field and select it."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
         try:
             association = (state.edit_new_field_association or "cell").strip().lower()
@@ -1204,7 +1174,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_apply_edit_field")
     def pv_apply_edit_field():
         """Apply the current edit-session field operation."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
 
         try:
@@ -1217,7 +1187,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_confirm_overwrite_edit_field")
     def pv_confirm_overwrite_edit_field():
         """Confirm overwrite for create-field dialog and create the new field."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
 
         try:
@@ -1251,7 +1221,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_edit_click_selection")
     def pv_edit_click_selection(event):
         """Capture single-click picking events for edit-session selection."""
-        if not is_paraview_backend() or not edit_session.active or not state.pick_mode:
+        if not edit_session.active or not state.pick_mode:
             return
 
         timing = SelectionTiming("click")
@@ -1303,7 +1273,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_set_pick_mode")
     def pv_set_pick_mode():
         """Switch edit interaction to picking mode."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
         state.pick_mode = True
         sync_edit_session_state()
@@ -1312,7 +1282,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_set_rotate_mode")
     def pv_set_rotate_mode():
         """Switch edit interaction to rotation/navigation mode."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
         state.pick_mode = False
         sync_edit_session_state()
@@ -1321,7 +1291,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_edit_box_selection")
     def pv_edit_box_selection(event):
         """Capture native local-view box-selection events."""
-        if not is_paraview_backend() or not edit_session.active or not state.pick_mode:
+        if not edit_session.active or not state.pick_mode:
             return
 
         timing = SelectionTiming("box")
@@ -1391,8 +1361,6 @@ def register_paraview_controllers(
     @ctrl.add("pv_clear_edit_preview")
     def pv_clear_edit_preview():
         """Clear the temporary selection preview state for ParaView edit mode."""
-        if not is_paraview_backend():
-            return
 
         _sync_edit_mode_from_state()
         edit_session.clear_selection()
@@ -1406,7 +1374,7 @@ def register_paraview_controllers(
     @ctrl.add("pv_select_all_edit_cells")
     def pv_select_all_edit_cells():
         """Select every editable cell in the current edit-session dataset."""
-        if not is_paraview_backend() or not edit_session.active:
+        if not edit_session.active:
             return
 
         mode = _sync_edit_mode_from_state()

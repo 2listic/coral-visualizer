@@ -22,26 +22,35 @@ class FakeClientFile:
         self.is_empty = payload.get("is_empty", False)
 
 
-def test_reset_controllers_dispatch_to_backend_specific_implementations():
+def _register(ctrl, state, **overrides):
+    defaults = dict(
+        pv_backend=SimpleNamespace(
+            reset_camera=lambda: None,
+            reset_view=lambda: None,
+        ),
+        call_view_update=lambda **kwargs: None,
+        persist_uploaded_file=lambda client_file: "unused",
+        refresh_available_files=lambda: None,
+        persist_uploaded_state_file=lambda client_file: "unused",
+        refresh_available_state_files=lambda: None,
+    )
+    defaults.update(overrides)
+    common_controllers.register_common_controllers(ctrl, state, **defaults)
+
+
+def test_reset_controllers_call_pv_backend_and_view_update():
     ctrl = FakeCtrl()
     state = SimpleNamespace()
     calls = []
 
-    common_controllers.register_common_controllers(
+    _register(
         ctrl,
         state,
-        is_paraview_backend=lambda: True,
         pv_backend=SimpleNamespace(
             reset_camera=lambda: calls.append("pv_reset_camera"),
             reset_view=lambda: calls.append("pv_reset_view"),
         ),
         call_view_update=lambda **kwargs: calls.append(("update", kwargs)),
-        reset_vtk_camera=lambda: calls.append("vtk_reset_camera"),
-        reset_vtk_view=lambda: calls.append("vtk_reset_view"),
-        persist_uploaded_file=lambda client_file: "unused",
-        refresh_available_files=lambda: None,
-        persist_uploaded_state_file=lambda client_file: "unused",
-        refresh_available_state_files=lambda: None,
     )
 
     ctrl.handlers["reset_camera"]()
@@ -62,19 +71,12 @@ def test_upload_dataset_updates_state_on_success(monkeypatch):
 
     monkeypatch.setattr(common_controllers, "ClientFile", FakeClientFile)
 
-    common_controllers.register_common_controllers(
+    _register(
         ctrl,
         state,
-        is_paraview_backend=lambda: False,
-        pv_backend=None,
-        call_view_update=lambda **kwargs: None,
-        reset_vtk_camera=lambda: None,
-        reset_vtk_view=lambda: None,
         persist_uploaded_file=lambda client_file: calls.append(client_file.name)
         or "/tmp/data/upload.vtu",
         refresh_available_files=lambda: calls.append("refresh"),
-        persist_uploaded_state_file=lambda client_file: "unused",
-        refresh_available_state_files=lambda: None,
     )
 
     ctrl.handlers["upload_dataset"]([{"name": "upload.vtu", "content": b"vtk"}])
@@ -91,20 +93,12 @@ def test_upload_dataset_reports_empty_and_failed_uploads(monkeypatch):
 
     monkeypatch.setattr(common_controllers, "ClientFile", FakeClientFile)
 
-    common_controllers.register_common_controllers(
+    _register(
         ctrl,
         state,
-        is_paraview_backend=lambda: False,
-        pv_backend=None,
-        call_view_update=lambda **kwargs: None,
-        reset_vtk_camera=lambda: None,
-        reset_vtk_view=lambda: None,
         persist_uploaded_file=lambda client_file: (_ for _ in ()).throw(
             RuntimeError("disk full")
         ),
-        refresh_available_files=lambda: None,
-        persist_uploaded_state_file=lambda client_file: "unused",
-        refresh_available_state_files=lambda: None,
     )
 
     ctrl.handlers["upload_dataset"]([{"name": "empty.vtu", "is_empty": True}])
@@ -120,19 +114,7 @@ def test_open_remote_file_updates_state_selection():
     ctrl = FakeCtrl()
     state = SimpleNamespace(remote_browser_dialog=True, selected_file=None)
 
-    common_controllers.register_common_controllers(
-        ctrl,
-        state,
-        is_paraview_backend=lambda: False,
-        pv_backend=None,
-        call_view_update=lambda **kwargs: None,
-        reset_vtk_camera=lambda: None,
-        reset_vtk_view=lambda: None,
-        persist_uploaded_file=lambda client_file: None,
-        refresh_available_files=lambda: None,
-        persist_uploaded_state_file=lambda client_file: None,
-        refresh_available_state_files=lambda: None,
-    )
+    _register(ctrl, state)
 
     ctrl.handlers["open_remote_file"]("/tmp/mesh.vtu")
 

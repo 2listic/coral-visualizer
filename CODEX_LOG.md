@@ -6,6 +6,18 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Removed VTK backend entirely, leaving ParaView as the only rendering path:
+  - deleted `vtk_runtime.py`, `vtk_controllers.py`, `vtk_pipeline.py`, `mesh_edit.py`, `interactor.py`, `scalar_bars.py` and their test files
+  - removed `--backend` CLI flag and all `is_paraview_backend` / `is_vtk_backend` dispatch closures
+  - collapsed `_noop` sentinel and all ternary `if x else _noop` patterns to direct calls
+  - removed `EditOperations` dataclass and all VTK-only parameters from `register_app_handlers`, `register_state_handlers`, `register_common_controllers`
+  - simplified `RuntimeContext` from 14 fields to 6; removed `| None` unions that existed only for the dual-backend duality
+  - removed `backend` / `backend_message` state vars and the `_build_vtk_edit_panel` UI function
+  - retained `vtk_metadata.py` (shared utility used by `edit_session.py` and `paraview_backend.py`)
+  - updated README, CLAUDE.md, CODEX_LOG.md, and TODO.md to reflect the single-backend state
+  - added type annotations to `runtime_setup.py`, `file_operations.py`, `state_handlers.py`, `common_controllers.py`
+  - all 143 unit tests pass after the refactor
+
 - Fixed recurring `vtkSMColorMapEditorHelper` LUT warning on file load:
   - added `[view-debug]` trace logs inside `load_file` and `_disable_scalar_coloring` to pinpoint the exact call where the warning was emitted
   - root cause: `_disable_scalar_coloring` unconditionally called `SetScalarBarVisibility(False)` on the display before checking whether a LUT was actually bound; when `had_lookup_table=False` (fresh display from `Show()` with ParaView-internal auto-coloring, or already-cleared display) the call caused `vtkSMColorMapEditorHelper` to traverse its LUT-resolution path and fail with "Failed to determine the LookupTable being used"
@@ -356,7 +368,6 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - The right inspector updates from the selected source.
 - Source/display generated properties are visible.
 - A subset of generated properties is editable and applied back to ParaView.
-- The VTK backend still supports mesh editing.
 - The ParaView backend can now initialize an edit session from compatible outputs (`vtkUnstructuredGrid`) and save that working copy as a new file.
 - A saved edit-session result can now be materialized back into the ParaView pipeline as a new source node.
 - Calculator guidance is now exposed in the inspector instead of relying on the user to inspect array names manually in `Information`.
@@ -409,8 +420,7 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - `Could not initialize a device`
   - `Failed to initialize OpenGL functions`
   - In the current setup those warnings do not prevent startup or offscreen screenshots, but the graphics path is not fully clean yet.
-- `app.py` still owns backend-selection wiring and a few inline dependency adapters for file operations.
-  - The heavy VTK/ParaView operational paths, state defaults, and handler registration logic now live outside the file.
+- `app.py` is now reduced to startup, state/runtime construction, view helpers, top-level handler wiring, and the download endpoint.
 
 ## Backlog
 
@@ -422,7 +432,6 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Add better visibility toggles directly in pipeline rows.
 - Add duplicate / rename / remove-all pipeline actions.
 - Add persistence for session state.
-- Integrate the existing VTK editing tools (`mesh_edit.py`, `interactor.py`) against the new `EditSession`.
 - Add richer helper panels for other filters with non-obvious symbols or inputs (`Streamline`, `Glyph`, `Threshold`).
 - Optionally add click-to-insert variable names for Calculator expressions.
 - Implement `Surface` mode by appending selected 2D cells to the unstructured grid.
@@ -445,4 +454,4 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Verify `Apply` / `Reset` for generated source properties on a few representative datasets.
 - Verify each supported filter can be created from the UI and that the key generated properties are editable in practice.
 - Verify browser-side interaction quality and remote rendering responsiveness with the new Docker ParaView image on a couple of hosts.
-- Continue shrinking `app.py` by reducing remaining backend-selection wiring and replacing inline dependency lambdas with more explicit objects or dataclasses.
+- Continue shrinking `app.py` by replacing remaining inline dependency lambdas with more explicit objects or dataclasses.
