@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from trame_server.controller import Controller
+    from trame_server.state import State
+
+    from file_operations import FileOperationService
     from paraview_runtime import ParaViewRuntime
+    from view_controls import ViewControllerProxy
 
 from runtime_setup import RuntimeContext
 from common_controllers import register_common_controllers
@@ -15,12 +20,12 @@ from state_handlers import register_state_handlers
 
 def register_app_handlers(
     *,
-    ctrl,
-    state,
+    ctrl: Controller,
+    state: State,
     runtime: RuntimeContext,
-    file_operations,
-    interaction_quality_presets,
-    view_controls,
+    file_operations: FileOperationService,
+    interaction_quality_presets: dict,
+    view_controls: ViewControllerProxy,
 ):
     """Register all app handlers against the active ParaView runtime."""
     pv_backend = runtime.pv_backend
