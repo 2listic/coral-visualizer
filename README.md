@@ -245,6 +245,12 @@ Two workflows run on push and pull requests to `main`:
 - **Publish** (`.github/workflows/docker-publish.yml`): builds and pushes the Docker
   image to the GitHub Container Registry on pushes to `main` and on version tags (`v*.*.*`).
 
+## Architecture
+
+[docs/logic_flows.md](docs/logic_flows.md) documents the main execution paths:
+startup, file load, UI state sync, the controller → backend pattern, edit session
+lifecycle, filter system, and a breakpoint guide for debugging with VS Code.
+
 ## Troubleshooting
 
 - `ModuleNotFoundError: No module named 'trame'` or `'paraview'`: use the conda
@@ -259,7 +265,9 @@ Two workflows run on push and pull requests to `main`:
 - If a local Docker HTTP check fails with permission errors, rerun the check
   outside a restricted sandbox or with permission to access localhost/Docker.
 
-## Inspecting VTU files
+## Tools 
+
+### Inspecting VTU files
 
 `inspect_vtu.py` decodes and prints all cell types and data arrays from a `.vtu` file (binary/compressed and not human-readable).
 
@@ -268,17 +276,9 @@ python tools/inspect_vtu.py data/output.vtu            # print to console
 python tools/inspect_vtu.py data/output.vtu -o out.txt # write to file
 ```
 
-## Exploring the ParaView Python API
+### Exploring the ParaView Python API
 
-### Quick docstring lookup
-
-```bash
-python -c "from paraview import simple; help(simple.Show)"
-```
-
-Replace `simple.Show` with any other symbol (`simple.OpenDataFile`, `simple.ColorBy`, etc.).
-
-### Jump-to-source lookup
+#### Jump-to-source lookup
 
 `tools/pv_lookup.py` resolves a dotted ParaView symbol and prints the exact file and line number you can open in an editor:
 
@@ -286,3 +286,11 @@ Replace `simple.Show` with any other symbol (`simple.OpenDataFile`, `simple.Colo
 python tools/pv_lookup.py simple.Show
 python tools/pv_lookup.py servermanager.Proxy
 ```
+
+#### Quick docstring lookup
+
+```bash
+python -c "from paraview import simple; help(simple.Show)"
+```
+
+Replace `simple.Show` with any other symbol (`simple.OpenDataFile`, `simple.ColorBy`, etc.).

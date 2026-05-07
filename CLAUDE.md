@@ -1,14 +1,12 @@
 # CLAUDE.md
 
-Operational onboarding for Claude/Codex/other agents working in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## First Read
+## Overview
 
-This is a Trame/Vuetify mesh visualizer and editor built on the ParaView library. It supports pipeline construction, filters, edit sessions, selection, saving, and advanced display/color controls.
+Trame/Vuetify mesh visualizer and editor built on ParaView (the only rendering backend — VTK standalone was removed). Supports pipeline construction, filters, edit sessions (volume/surface/point), selection, saving, and advanced display/color controls. Deployment target: HPC server with browser-only thin client.
 
 ## Environment
-
-### Environment
 
 Use the conda environment `coral-paraview`. Create it if missing:
 
@@ -122,6 +120,13 @@ manually with the conda env. The `coral-paraview` conda env must be active so
 - `paraview_controllers.py`: user actions from the UI: pipeline actions, filters, edit sessions, selection, field creation, display/color controls.
 - `paraview_property_inspector.py`: collects editable ParaView proxy properties for Source/Display tabs.
 - `selection_debug.py`: builds and emits optional edit-selection debug payloads.
+- `edit_session.py`: domain logic for the edit session — geometry modes (volume/surface/point), adjacency growth, flood-fill, expression evaluation via `vtkArrayCalculator`, surface boundary materialization. Independent of Trame.
+- `common_controllers.py`: file upload (`upload_dataset`, `upload_state_file`) and remote file refresh controllers. Wraps `ClientFile` errors into UI feedback.
+- `file_operations.py`: path-safe save helpers — `resolve_output_path()` and `resolve_state_path()` strip absolute prefixes and reject `..` paths to confine writes to `--data-directory`. State files use `.coral.state.json`.
+- `vtk_metadata.py`: strips `InformationKey` blocks from VTU XML before save (they can break rereads). `sanitized_vtk_xml_path()` creates a cleaned temporary copy.
+- `constants.py`: array sentinels (`__solid__`), `point:`/`cell:` prefixes, representation names, categorical arrays (`MaterialID`, `ManifoldID`), interaction quality presets.
+- `paraview_filter_catalog.py`: `SUPPORTED_FILTERS` hard-coded list and `FILTER_DISCOVERY_KEYWORDS`/`FILTER_DISCOVERY_EXCLUDE_SUBSTRINGS` for auto-discovery filtering.
+- `diagnostics.py`: `debug_log()` prints only when devtools mode is active.
 
 Important ParaView UI state:
 
@@ -162,6 +167,16 @@ Do not implement replace as a toggle. ParaView native payloads can contain toggl
 
 Selection overlays can interfere with native picking. `paraview_backend.py` clears transient edit-selection overlays before pick queries.
 
+### EditSession Geometry Modes
+
+`edit_session.py` supports three modes selected per-field:
+
+- **volume**: 3D cells; adjacency by shared faces/edges.
+- **surface**: codim-1 boundary faces/edges; builds boundary maps tracking which faces appear exactly once across all top cells. When the edit session commits, `materialize_surface_selection()` appends any missing codim-1 cells to the dataset.
+- **point**: point picking; selecting a point field in the UI forces this mode automatically.
+
+Adjacency grows use angle thresholds: surface neighbors are filtered by dihedral angle; volume neighbors use face/edge sharing. `CellCenters` array is auto-added for expression evaluation and stripped on save.
+
 ### Display Color Controls
 
 Display -> Advanced Display Controls -> Color Bar contains:
@@ -173,6 +188,18 @@ Display -> Advanced Display Controls -> Color Bar contains:
 - interpret values as categories.
 
 The color-scale visibility is user state. Range/preset/category updates must preserve it and reapply it after touching the lookup table.
+
+## Test Organization
+
+Unit tests (`tests/test_*.py`, excluding `test_e2e_*`): logic isolated from Trame — `test_edit_session.py`, `test_file_operations.py`, `test_paraview_backend.py`, `test_paraview_controllers.py`, `test_paraview_runtime.py`, `test_state_handlers.py`, and others.
+
+E2E tests (Playwright, require browser):
+- `test_e2e_edit_selection_playwright.py`: edit session, selection modes, color bar controls.
+- `test_e2e_edit_selection_cube_modes_playwright.py`: cube mesh geometry mode variations.
+- `test_e2e_non_edit_rotation.py`, `test_e2e_rotation_lock.py`: camera interaction.
+- `test_e2e_pvd_animation.py`: PVD timeseries animation with time slider.
+
+`tests/conftest.py` provides `shared_browser` (session-scoped Playwright, headless unless `--show-browser`) and `tmp_renderer` (bare `vtkRenderer` for non-windowed unit tests).
 
 ## Tests To Prefer
 
@@ -196,6 +223,7 @@ conda run -n coral-paraview pytest -q tests/ --ignore-glob=tests/test_e2e*.py
 
 ## Debugging Notes
 
+- `docs/logic_flows.md` has detailed flow diagrams and **key breakpoints**: file load (`paraview_runtime.py:506`), state change (`state_handlers.py:29`), UI button action (`paraview_controllers.py` → `@ctrl.add("pv_…")`), UI state flush (`paraview_runtime.py:362`), edit pick dispatch (`paraview_controllers.py:1222`), render push (`paraview_runtime.py:39`).
 - If `conda run -n coral-paraview python` resolves to `.venv/bin/python` (ParaView unavailable): a `.venv` is active and its `PATH` entry wins. Run `deactivate` first, then retry.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.

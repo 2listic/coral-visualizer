@@ -7,6 +7,7 @@ import importlib.util
 import os
 import time
 from math import isfinite
+from typing import Any, TypedDict
 
 from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
 from diagnostics import debug_log
@@ -70,6 +71,20 @@ def is_paraview_available():
         return False
 
 
+class PipelineNode(TypedDict, total=False):
+    id: str
+    source: Any
+    display: Any
+    filename: str
+    kind: str
+    label: str
+    parent_id: str | None
+    filter_key: str | None
+    visibility: bool
+    cell_dimension_visibility: dict[str, bool]
+    cell_dimension_extracts: dict
+
+
 class ParaViewBackend:
     """Thin adapter around ``paraview.simple`` with lightweight pipeline state."""
 
@@ -86,7 +101,7 @@ class ParaViewBackend:
         self.simple = simple
         self.servermanager = servermanager
         self.view = None
-        self.pipeline_nodes = []
+        self.pipeline_nodes: list[PipelineNode] = []
         self.active_node_id = None
         self.data_directory = (
             os.path.abspath(data_directory) if data_directory else None
@@ -1243,7 +1258,7 @@ class ParaViewBackend:
                 displays.append(display)
         return displays
 
-    def _apply_cell_dimension_visibility(self, node):
+    def _apply_cell_dimension_visibility(self, node: PipelineNode):
         """Apply stored cell/face flags using per-dimension extract displays."""
         if node is None or node.get("display") is None:
             return
@@ -1277,7 +1292,9 @@ class ParaViewBackend:
             )
             self._set_extract_visibility_for_dimension(node, dimension, visible)
 
-    def _semantic_cell_dimension_roles(self, node, dimensions=None):
+    def _semantic_cell_dimension_roles(
+        self, node: PipelineNode | None, dimensions=None
+    ):
         """Return UI cell/face roles mapped to intrinsic VTK cell dimensions."""
         if node is None:
             return {}
@@ -1300,7 +1317,9 @@ class ParaViewBackend:
                 dimensions.add(dimension)
         return dimensions
 
-    def _set_extract_visibility_for_dimension(self, node, dimension_key, visible):
+    def _set_extract_visibility_for_dimension(
+        self, node: PipelineNode, dimension_key, visible
+    ):
         """Ensure a cell-dimension extract exists when it needs to be visible."""
         entry = (
             self._ensure_cell_dimension_extract(node, dimension_key)
@@ -1312,7 +1331,7 @@ class ParaViewBackend:
         display = entry.get("display") if isinstance(entry, dict) else None
         self._set_proxy_visibility(display, visible)
 
-    def _ensure_cell_dimension_extract(self, node, dimension_key):
+    def _ensure_cell_dimension_extract(self, node: PipelineNode, dimension_key):
         """Create an ExtractCellsByType display for one intrinsic dimension."""
         extracts = node.setdefault("cell_dimension_extracts", {})
         entry = extracts.get(dimension_key)
@@ -1379,7 +1398,7 @@ class ParaViewBackend:
             except Exception:
                 pass
 
-    def _delete_cell_dimension_extracts(self, node):
+    def _delete_cell_dimension_extracts(self, node: PipelineNode):
         """Remove auxiliary extract proxies for a pipeline node."""
         extracts = node.get("cell_dimension_extracts") or {}
         for entry in list(extracts.values()):
@@ -1397,7 +1416,7 @@ class ParaViewBackend:
                 pass
         extracts.clear()
 
-    def _set_extract_displays_visibility(self, node, visible):
+    def _set_extract_displays_visibility(self, node: PipelineNode, visible):
         for entry in (node.get("cell_dimension_extracts") or {}).values():
             display = entry.get("display") if isinstance(entry, dict) else None
             self._set_proxy_visibility(display, visible)
@@ -1407,7 +1426,9 @@ class ParaViewBackend:
         if display is not None and hasattr(display, "Visibility"):
             display.Visibility = 1 if visible else 0
 
-    def _apply_representation_to_extract_displays(self, node, representation):
+    def _apply_representation_to_extract_displays(
+        self, node: PipelineNode, representation
+    ):
         for entry in (node.get("cell_dimension_extracts") or {}).values():
             display = entry.get("display") if isinstance(entry, dict) else None
             if display is not None:
@@ -3405,7 +3426,7 @@ class ParaViewBackend:
             self.source.UpdatePipeline()
         self.render()
 
-    def _get_active_node(self):
+    def _get_active_node(self) -> PipelineNode | None:
         """Return the active pipeline node."""
         return self._find_node(self.active_node_id)
 
@@ -3508,14 +3529,14 @@ class ParaViewBackend:
         if focal_property is not None and hasattr(focal_property, "SetData"):
             focal_property.SetData(center)
 
-    def _find_node(self, node_id):
+    def _find_node(self, node_id) -> PipelineNode | None:
         """Find a pipeline node by id."""
         for node in self.pipeline_nodes:
             if node["id"] == node_id:
                 return node
         return None
 
-    def _collect_descendants(self, node_id):
+    def _collect_descendants(self, node_id) -> list[PipelineNode]:
         """Return all descendants of the provided node id."""
         descendants = []
         direct_children = [
@@ -3762,7 +3783,7 @@ class ParaViewBackend:
         label,
         parent_id=None,
         filter_key=None,
-    ):
+    ) -> PipelineNode:
         """Build a pipeline node descriptor."""
         return {
             "id": ParaViewBackend._node_id(source),
@@ -3782,7 +3803,7 @@ class ParaViewBackend:
             "cell_dimension_extracts": {},
         }
 
-    def _pipeline_label(self, node):
+    def _pipeline_label(self, node: PipelineNode):
         """Return a readable pipeline label with lightweight hierarchy cues."""
         depth = 0
         parent_id = node.get("parent_id")
@@ -3795,7 +3816,7 @@ class ParaViewBackend:
         prefix = "  " * depth
         return f"{prefix}{node.get('label') or os.path.basename(node.get('filename') or 'source')}"
 
-    def _pipeline_depth(self, node):
+    def _pipeline_depth(self, node: PipelineNode):
         """Return hierarchy depth for a pipeline node."""
         depth = 0
         parent_id = node.get("parent_id")
@@ -3807,7 +3828,7 @@ class ParaViewBackend:
             parent_id = parent.get("parent_id")
         return depth
 
-    def _pipeline_icon(self, node):
+    def _pipeline_icon(self, node: PipelineNode):
         """Return a kind-aware icon for a pipeline entry."""
         return self.filter_catalog.pipeline_icon(node)
 
