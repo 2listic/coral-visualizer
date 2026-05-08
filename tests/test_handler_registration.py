@@ -30,16 +30,13 @@ def _make_paraview_runtime():
             calls.append(("summarize_edit_event", event))
             return "summary"
 
-        def apply_coloring(self, value):
-            calls.append(("apply_coloring", value))
-
         def load_file(self, value):
             calls.append(("load_file", value))
 
-        def apply_representation(self, value):
-            calls.append(("apply_representation", value))
-
-    return ParaViewRuntime(), calls
+    runtime = ParaViewRuntime()
+    runtime.pv_backend = SimpleNamespace()
+    runtime.edit_session = SimpleNamespace()
+    return runtime, calls
 
 
 def test_register_app_handlers_wires_paraview_runtime(monkeypatch):
@@ -66,11 +63,7 @@ def test_register_app_handlers_wires_paraview_runtime(monkeypatch):
     handler_registration.register_app_handlers(
         ctrl=SimpleNamespace(),
         state=SimpleNamespace(),
-        runtime=SimpleNamespace(
-            pv_backend=SimpleNamespace(),
-            edit_session=SimpleNamespace(),
-            paraview_runtime=paraview_runtime,
-        ),
+        paraview_runtime=paraview_runtime,
         file_operations=SimpleNamespace(
             refresh_available_files=lambda: None,
             persist_uploaded_file=lambda client_file: None,
@@ -90,7 +83,7 @@ def test_register_app_handlers_wires_paraview_runtime(monkeypatch):
     )
 
     assert set(captured) == {"paraview", "state", "common"}
-
-    captured["state"]["apply_active_representation"]("Wireframe")
-
-    assert ("apply_representation", "Wireframe") in paraview_calls
+    assert captured["state"]["paraview_runtime"] is paraview_runtime
+    assert captured["state"]["interaction_quality_presets"] == {
+        "high": {"interactive_quality": 95}
+    }

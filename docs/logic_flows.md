@@ -11,7 +11,7 @@ app.py
  ├── get_server()                 → Trame websocket server (Vue 2)
  ├── initialize_state()           → seed all Trame state variables with defaults
  ├── build_ui()                   → declare Vuetify layout, bind state vars and ctrl methods
- ├── attach_runtime_services()    → create ParaViewRuntime (Trame-aware wrapper)
+ ├── ParaViewRuntime(...)         → create Trame-aware runtime wrapper (state + view_controls now available)
  └── register_app_handlers()
       ├── register_paraview_controllers()   → ctrl.add("pv_*") — user action handlers
       ├── register_state_handlers()         → @state.change("...") — reactive callbacks
@@ -29,8 +29,8 @@ Triggered when the user picks a file in the left drawer → `state.selected_file
 
 ```
 state.selected_file change
- └── on_file_change()                          [state_handlers.py:30]
-      └── paraview_runtime.load_file(path)     [paraview_runtime.py:506]
+ └── on_file_change()                          [state_handlers.py:24]
+      └── paraview_runtime.load_file(path)     [paraview_runtime.py:327]
            ├── refresh_runtime_message(clear=True)   — reset VTK output window offset
            ├── pv_backend.load_file(path)             — ParaView Reader → pipeline node
            ├── apply_representation("Surface with Edges")
@@ -49,7 +49,7 @@ state.selected_file change
 Called after almost every action. It is the "flush everything" step.
 
 ```
-paraview_runtime.update_ui_state()     [paraview_runtime.py:362]
+paraview_runtime.update_ui_state()     [paraview_runtime.py:198]
  ├── pv_backend.get_ui_state()         — collects pipeline_items, arrays, display props, time info
  ├── writes ~30 state.* variables      — pipeline_items, selected_array, color_controls_*, etc.
  ├── state.can_edit_active             — probes whether export-for-editing is possible
@@ -171,55 +171,124 @@ When `--show-experimental-filters` is passed, `ParaViewFilterCatalog` scans
 `factory:{FactoryName}`. They appear in a separate "Experimental" section of the
 filter menu and go through the same `add_filter` code path as curated filters.
 
-### Breakpoints for filter debugging
-
-| What to trace | Location |
-|---|---|
-| Filter menu click | `paraview_controllers.py` — `pv_add_filter` |
-| Filter proxy creation | `paraview_backend.py` — `add_filter` |
-| Catalog discovery | `paraview_filter_catalog.py` — `ParaViewFilterCatalog.__init__` |
-| State after filter added | `paraview_runtime.py:362` — `update_ui_state` |
-
 ---
 
-## 7. Debugging
+## 7. Color / Color-Bar Logic
 
-### VS Code launch configs (`.vscode/launch.json`)
+### Color-by change
 
-**Python: Trame App (ParaView)** — the main config. Runs `app.py` under the
-`coral-paraview` conda environment with `debugpy`. Set breakpoints in VS Code and
-press F5; the `justMyCode: false` flag lets you step into ParaView/VTK internals.
+Triggered when the user picks an array in the "Color by" selector.
 
-```json
-{
-  "name": "Python: Trame App (ParaView)",
-  "python": "/home/pablo/miniforge3/envs/coral-paraview/bin/python",
-  "args": ["--backend", "paraview", "--data-directory", "test_data",
-           "--host", "127.0.0.1", "--port", "8008", "--no-devtools"]
-}
+```
+state.selected_array change
+ └── on_array_change()                         [state_handlers.py:39]
+      ├── pv_backend.apply_coloring(value)
+      │    ├── ColorBy(display, (assoc, name))  — binds array to display
+      │    ├── _ensure_display_lookup_table()   — creates LUT if missing
+      │    ├── _restore_scalar_bar_visibility() — reapplies user visibility flag
+      │    └── render()
+      ├── update_ui_state()                     — refreshes color_controls_* + all other state
+      └── call_view_update()
 ```
 
-**Python: Inspect VTU** — standalone script for inspecting binary/compressed VTU output.
+### Scalar bar visibility — two-layer preservation
 
-### Breakpoint guide
+Scalar bar visibility is tracked in two places that must stay in sync:
 
-| What to trace | File : line |
-|---|---|
-| Any file load | `paraview_runtime.py:506` — `load_file` |
-| Any state change reaction | `state_handlers.py:29` — `on_file_change` (or whichever `@state.change`) |
-| Any button action entry | `paraview_controllers.py` — find the `@ctrl.add("pv_…")` |
-| UI state flush | `paraview_runtime.py:362` — `update_ui_state` |
-| Edit pick dispatch | `paraview_controllers.py:1222` — `pv_edit_click_selection` |
-| Backend pick call | `paraview_backend.py` — `pick_visible_cell_ids` |
-| Render push | `paraview_runtime.py:39` — `render_and_push` |
+- `pv_backend._scalar_bar_visible` — Python flag, the authoritative user intent
+- `state.color_bar_visible` — Trame state, what the UI toggle reflects
 
-### Useful env vars
+**Why preservation is needed at all:** ParaView's `RescaleTransferFunctionToDataRange`
+internally calls `UpdateScalarBars` as a side effect, which hides the scalar bar.
+This is the confirmed case from the CODEX_LOG. `ApplyPreset` and
+`RescaleTransferFunction` are treated the same way defensively.
 
-```bash
-# Stream app stdout/stderr live during e2e tests
-E2E_STREAM_APP_LOGS=1 conda run -n coral-paraview pytest -q tests/test_e2e_edit_selection_playwright.py
+**Layer 1 — backend** (`_restore_scalar_bar_visibility` [paraview_backend.py:961]):
+Called at the end of `apply_color_map_preset`, `apply_color_range`, and
+`rescale_color_range_to_data`. Immediately re-asserts `_scalar_bar_visible`
+back onto the display via `SetScalarBarVisibility` after the ParaView call.
+By the time the backend method returns, ParaView-side visibility is already correct.
 
-# Slow down Playwright actions for visual debugging
-conda run -n coral-paraview pytest tests/test_e2e_edit_selection_playwright.py \
-  --show-browser --slow-mo 500
+**Layer 2 — controller** (`_refresh_color_controls_preserving_visibility` [paraview_controllers.py:258]):
+Saves `state.color_bar_visible` before the full Trame flush and re-asserts it after.
+This guards against `update_paraview_ui_state()` overwriting the Trame state with a
+stale or drifted value. For preset/range/rescale this layer is redundant (layer 1
+already fixed ParaView-side state), but it is the *only* guard for
+`set_categorical_coloring`, which mutates the LUT but does not call
+`_restore_scalar_bar_visibility` at the backend level.
+
+```
+visible = state.color_bar_visible      — save Trame state before flush
+update_paraview_ui_state()             — full flush; reads _scalar_bar_visible from backend
+state.color_bar_visible = visible      — re-assert (no-op for preset/range/rescale;
+                                         real guard for categorical coloring)
+render_and_push()
+```
+
+### Color-bar control actions
+
+```
+UI action → ctrl.pv_*()                        [paraview_controllers.py]
+
+pv_apply_color_map_preset(preset)
+ ├── pv_backend.apply_color_map_preset(preset)
+ │    ├── lut.ApplyPreset(candidate, True)        — modifies LUT RGB points
+ │    ├── _restore_scalar_bar_visibility()         — layer 1: re-asserts on ParaView
+ │    └── render()
+ └── _refresh_color_controls_preserving_visibility()  — layer 2: guards Trame state
+
+pv_apply_color_range()
+ ├── pv_backend.apply_color_range(min, max)
+ │    ├── lut.RescaleTransferFunction(min, max)
+ │    ├── _restore_scalar_bar_visibility()
+ │    └── render()
+ └── _refresh_color_controls_preserving_visibility()
+
+pv_rescale_color_range_to_data()
+ ├── pv_backend.rescale_color_range_to_data()
+ │    ├── display.RescaleTransferFunctionToDataRange()  ← confirmed: hides scalar bar
+ │    ├── _restore_scalar_bar_visibility()               — layer 1 fix
+ │    └── render()
+ └── _refresh_color_controls_preserving_visibility()
+
+pv_rescale_color_range_over_time()
+ ├── pv_backend.rescale_color_range_over_time()
+ │    └── (same pattern as above)
+ └── _refresh_color_controls_preserving_visibility()
+
+pv_set_categorical_coloring(enabled)
+ ├── pv_backend.set_categorical_coloring()
+ │    ├── lut.InterpretValuesAsCategories / IndexedLookup = ...
+ │    └── render()                               — NO _restore_scalar_bar_visibility here
+ └── _refresh_color_controls_preserving_visibility()  — layer 2 is the only guard
+
+pv_set_scalar_bar_visible(visible)
+ ├── pv_backend.set_scalar_bar_visible()
+ │    ├── display.SetScalarBarVisibility(view, visible)
+ │    └── _scalar_bar_visible = visible           — updates the flag directly
+ └── render_and_push()                            — no flush; state written before call
+
+pv_set_orientation_axes_visible(visible)
+ ├── pv_backend.set_orientation_axes_visible()    — view.OrientationAxesVisibility
+ └── render_and_push()                            — no flush; state written before call
+```
+
+### `get_color_control_state` — reading color state from the backend
+
+Called inside `get_ui_state()` on every full flush.
+
+```
+pv_backend.get_color_control_state()           [paraview_backend.py:773]
+ ├── _get_selected_array()              — check if a non-solid array is active
+ ├── _active_lookup_table()             [paraview_backend.py:1003]
+ │    └── GetColorTransferFunction(array_name) on active display
+ ├── _lookup_table_range(lut)           — lut.RGBPoints[0] and lut.RGBPoints[-4]
+ ├── _lookup_table_categorical(lut)     — lut.Annotations != []
+ └── returns {
+          color_controls_enabled,      — False when solid color or no display
+          color_range_min/max,          — empty strings when disabled
+          color_bar_visible,            — _scalar_bar_visible instance flag
+          orientation_axes_visible,     — view.OrientationAxesVisibility
+          categorical_coloring          — bool
+     }
 ```

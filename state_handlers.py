@@ -9,19 +9,13 @@ from typing import TYPE_CHECKING
 from diagnostics import debug_log, devtools_enabled
 
 if TYPE_CHECKING:
-    from paraview_backend import ParaViewBackend
+    from paraview_runtime import ParaViewRuntime
 
 
 def register_state_handlers(
     state,
     *,
-    load_file,
-    apply_coloring,
-    apply_active_representation,
-    pv_backend: ParaViewBackend,
-    update_paraview_ui_state,
-    render_and_push,
-    sync_edit_session_state,
+    paraview_runtime: ParaViewRuntime,
     interaction_quality_presets,
 ):
     """Register state callbacks for the ParaView backend."""
@@ -34,7 +28,7 @@ def register_state_handlers(
 
         try:
             debug_log(f"\nLoading file: {selected_file}")
-            load_file(selected_file)
+            paraview_runtime.load_file(selected_file)
         except Exception as exc:
             state.error_message = f"Error loading file: {exc}"
             debug_log(f"Error: {exc}")
@@ -44,23 +38,30 @@ def register_state_handlers(
     @state.change("selected_array")
     def on_array_change(selected_array, **kwargs):
         """Update coloring when the user picks a different array."""
-        apply_coloring(selected_array)
+        if selected_array and paraview_runtime.pv_backend.source is not None:
+            paraview_runtime.pv_backend.apply_coloring(selected_array)
+            paraview_runtime.update_ui_state()
+            paraview_runtime.call_view_update()
 
     @state.change("representation")
     def on_representation_change(representation, **kwargs):
         """Update actor representation when the user picks a different mode."""
-        apply_active_representation(representation)
+        if paraview_runtime.pv_backend.display is None:
+            return
+        paraview_runtime.pv_backend.apply_representation(representation)
+        paraview_runtime.update_ui_state()
+        paraview_runtime.call_view_update()
 
     @state.change("active_pipeline_item")
     def on_active_pipeline_item_change(active_pipeline_item, **kwargs):
         """Switch active ParaView node when the pipeline selection changes."""
         if not active_pipeline_item:
             return
-        if not pv_backend.set_active_node(active_pipeline_item):
+        if not paraview_runtime.pv_backend.set_active_node(active_pipeline_item):
             return
 
-        update_paraview_ui_state()
-        render_and_push()
+        paraview_runtime.update_ui_state()
+        paraview_runtime.render_and_push()
 
     @state.change("interaction_quality")
     def on_interaction_quality_change(interaction_quality, **kwargs):
@@ -77,7 +78,7 @@ def register_state_handlers(
         # Only disable rotation if an edit session is active and we are in pick mode.
         # In non-edit mode, rotation should always be enabled.
         rotation_enabled = not (edit_session_active and pick_mode)
-        pv_backend.set_interactor_rotation(rotation_enabled)
+        paraview_runtime.pv_backend.set_interactor_rotation(rotation_enabled)
 
         # Update cursor style: crosshair only when picking in an active edit session.
         state.edit_view_style = (
@@ -86,7 +87,7 @@ def register_state_handlers(
             else "width: 100%; height: 100%; cursor: default; outline: none;"
         )
 
-        sync_edit_session_state()
+        paraview_runtime.sync_edit_session_state()
 
     @state.change("remote_search_term", "available_files")
     def on_remote_search_change(remote_search_term, available_files, **kwargs):

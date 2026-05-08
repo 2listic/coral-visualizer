@@ -708,7 +708,7 @@ class ParaViewBackend:
         )
         return arrays
 
-    def apply_coloring(self, array_value):
+    def apply_coloring(self, array_value: str | None) -> None:
         """Apply solid or scalar coloring to the active representation."""
         display = self.display
         if display is None:
