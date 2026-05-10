@@ -11,8 +11,9 @@ def resolve_initial_file(requested_file, available_files):
     """Pick the initial dataset path to expose in state."""
     if requested_file and os.path.exists(requested_file):
         return requested_file
-    if available_files:
-        return available_files[0]["value"]
+    for item in available_files or []:
+        if item.get("value"):
+            return item["value"]
     return None
 
 

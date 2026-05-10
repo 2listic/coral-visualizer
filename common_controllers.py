@@ -91,10 +91,24 @@ def register_common_controllers(
         state.remote_browser_dialog = False
         state.selected_file = path
 
+    @ctrl.add("open_remote_browser")
+    def open_remote_browser():
+        """Open the remote data browser with a fresh file listing."""
+        state.remote_search_term = ""
+        refresh_available_files()
+        state.remote_browser_dialog = True
+
     @ctrl.add("refresh_remote_files")
     def refresh_remote_files():
         """Force a refresh of the available remote data files."""
         refresh_available_files()
+
+    @ctrl.add("open_remote_state_browser")
+    def open_remote_state_browser():
+        """Open the remote state browser with a fresh state-file listing."""
+        state.state_browser_search_term = ""
+        refresh_available_state_files()
+        state.state_browser_dialog = True
 
     @ctrl.add("refresh_remote_state_files")
     def refresh_remote_state_files():

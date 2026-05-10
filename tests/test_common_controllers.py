@@ -120,3 +120,30 @@ def test_open_remote_file_updates_state_selection():
 
     assert state.remote_browser_dialog is False
     assert state.selected_file == "/tmp/mesh.vtu"
+
+
+def test_open_remote_browsers_refresh_and_show_dialogs():
+    ctrl = FakeCtrl()
+    state = SimpleNamespace(
+        remote_browser_dialog=False,
+        remote_search_term="mesh",
+        state_browser_dialog=False,
+        state_browser_search_term="session",
+    )
+    calls = []
+
+    _register(
+        ctrl,
+        state,
+        refresh_available_files=lambda: calls.append("refresh_files"),
+        refresh_available_state_files=lambda: calls.append("refresh_state_files"),
+    )
+
+    ctrl.handlers["open_remote_browser"]()
+    ctrl.handlers["open_remote_state_browser"]()
+
+    assert calls == ["refresh_files", "refresh_state_files"]
+    assert state.remote_search_term == ""
+    assert state.remote_browser_dialog is True
+    assert state.state_browser_search_term == ""
+    assert state.state_browser_dialog is True
