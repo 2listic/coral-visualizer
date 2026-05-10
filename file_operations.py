@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 from file_utils import get_vtk_files_from_data_folder
 
 if TYPE_CHECKING:
+    from trame_server.state import State
+
     from edit_session import EditSession
     from paraview_backend import ParaViewBackend
 
@@ -23,7 +25,7 @@ DEFAULT_STATE_FILENAME = f"session{STATE_FILE_EXTENSION}"
 class FileOperationService:
     """Stateful file operations used by Trame controller wiring."""
 
-    state: object
+    state: State
     data_directory: str
     pv_backend: ParaViewBackend
     edit_session: EditSession

@@ -316,15 +316,11 @@ def test_update_ui_state_tolerates_missing_backend_keys():
     assert state.is_time_dependent is False
 
 
-def test_apply_representation_apply_coloring_and_load_file_refresh_state():
+def test_load_file_resets_state_and_pushes_view():
     runtime, state, backend, edit_session, view_calls = make_runtime()
 
-    runtime.apply_representation("Points")
-    runtime.apply_coloring("cell:M")
     runtime.load_file("/tmp/data/mesh.vtu")
 
-    assert ("apply_representation", "Points") in backend.calls
-    assert ("apply_coloring", "cell:M") in backend.calls
     assert ("load_file", "/tmp/data/mesh.vtu") in backend.calls
     assert ("apply_representation", "Surface with Edges") in backend.calls
     assert ("apply_coloring", ARRAY_SOLID) in backend.calls

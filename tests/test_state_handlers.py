@@ -18,22 +18,34 @@ class FakeState(SimpleNamespace):
         return decorator
 
 
-def _register(state, **overrides):
+def _make_runtime(**kwargs):
     defaults = dict(
-        load_file=lambda path: None,
-        apply_coloring=lambda value: None,
-        apply_active_representation=lambda value: None,
         pv_backend=SimpleNamespace(
+            source=object(),
+            display=object(),
+            apply_coloring=lambda value: None,
+            apply_representation=lambda value: None,
             set_active_node=lambda node_id: True,
             set_interactor_rotation=lambda enabled: None,
         ),
-        update_paraview_ui_state=lambda: None,
+        load_file=lambda path: None,
+        update_ui_state=lambda: None,
+        call_view_update=lambda: None,
         render_and_push=lambda: None,
         sync_edit_session_state=lambda: None,
-        interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
     )
-    defaults.update(overrides)
-    register_state_handlers(state, **defaults)
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
+
+
+def _register(
+    state, *, interaction_quality_presets=INTERACTION_QUALITY_PRESETS, **runtime_kwargs
+):
+    register_state_handlers(
+        state,
+        paraview_runtime=_make_runtime(**runtime_kwargs),
+        interaction_quality_presets=interaction_quality_presets,
+    )
 
 
 def test_selected_file_change_loads_file(tmp_path):
@@ -67,6 +79,10 @@ def test_selected_file_change_captures_loading_errors(tmp_path):
 def test_array_representation_and_pipeline_callbacks_dispatch():
     calls = []
     pv_backend = SimpleNamespace(
+        source=object(),
+        display=object(),
+        apply_coloring=lambda value: calls.append(("color", value)),
+        apply_representation=lambda value: calls.append(("repr", value)),
         set_active_node=lambda node_id: node_id == "node-1",
         set_interactor_rotation=lambda enabled: calls.append(("rotate", enabled)),
     )
@@ -79,10 +95,9 @@ def test_array_representation_and_pipeline_callbacks_dispatch():
 
     _register(
         state,
-        apply_coloring=lambda value: calls.append(("color", value)),
-        apply_active_representation=lambda value: calls.append(("repr", value)),
         pv_backend=pv_backend,
-        update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_ui_state=lambda: calls.append("update_ui"),
+        call_view_update=lambda: calls.append("view_update"),
         render_and_push=lambda: calls.append("render"),
         sync_edit_session_state=lambda: calls.append("sync_edit"),
     )
@@ -98,6 +113,7 @@ def test_array_representation_and_pipeline_callbacks_dispatch():
     assert ("repr", "Wireframe") in calls
     assert ("rotate", True) in calls
     assert "update_ui" in calls
+    assert "view_update" in calls
     assert "render" in calls
     assert "sync_edit" in calls
     assert (

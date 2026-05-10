@@ -4,7 +4,8 @@ import os
 from ui import build_ui
 from view_controls import ViewControllerProxy
 from state_setup import initialize_state, resolve_initial_file
-from runtime_setup import attach_runtime_services, create_runtime_context
+from runtime_setup import create_runtime_context
+from paraview_runtime import ParaViewRuntime
 from handler_registration import register_app_handlers
 from file_operations import FileOperationService
 from file_utils import get_vtk_files_from_data_folder
@@ -58,18 +59,24 @@ initialize_state(
 
 build_ui(server, runtime.render_target)
 
-attach_runtime_services(runtime, state=state, view_controls=view_controls)
+paraview_runtime = ParaViewRuntime(
+    state=state,
+    pv_backend=runtime.pv_backend,
+    edit_session=runtime.edit_session,
+    output_window=runtime.pv_output_window,
+    call_view_update=view_controls.update,
+)
 file_operations = FileOperationService(
     state=state,
     data_directory=data_directory,
-    pv_backend=runtime.pv_backend,
-    edit_session=runtime.edit_session,
+    pv_backend=paraview_runtime.pv_backend,
+    edit_session=paraview_runtime.edit_session,
 )
 file_operations.refresh_available_state_files()
 register_app_handlers(
     ctrl=ctrl,
     state=state,
-    runtime=runtime,
+    paraview_runtime=paraview_runtime,
     file_operations=file_operations,
     interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
     view_controls=view_controls,

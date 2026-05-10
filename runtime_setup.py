@@ -9,23 +9,20 @@ from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkStringOutputWindow
 
 from edit_session import EditSession
 from paraview_backend import ParaViewBackend
-from paraview_runtime import ParaViewRuntime
 
 if TYPE_CHECKING:
     from app_config import AppConfig
-    from view_controls import ViewControllerProxy
 
 
 @dataclass
 class RuntimeContext:
-    """Mutable application runtime objects."""
+    """Pre-Trame application objects, created before the server is available."""
 
     data_directory: str
     render_target: object
     edit_session: EditSession
     pv_backend: ParaViewBackend
     pv_output_window: vtkStringOutputWindow
-    paraview_runtime: ParaViewRuntime | None = None
 
 
 def create_runtime_context(config: AppConfig) -> RuntimeContext:
@@ -42,17 +39,4 @@ def create_runtime_context(config: AppConfig) -> RuntimeContext:
         edit_session=EditSession(),
         pv_backend=pv_backend,
         pv_output_window=pv_output_window,
-    )
-
-
-def attach_runtime_services(
-    context: RuntimeContext, *, state, view_controls: ViewControllerProxy
-) -> None:
-    """Create Trame-dependent backend services after server setup."""
-    context.paraview_runtime = ParaViewRuntime(
-        state=state,
-        pv_backend=context.pv_backend,
-        edit_session=context.edit_session,
-        output_window=context.pv_output_window,
-        call_view_update=view_controls.update,
     )

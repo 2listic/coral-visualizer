@@ -107,7 +107,7 @@ manually with the conda env. The `coral-paraview` conda env must be active so
 
 - `app.py`: entry point and server/runtime construction.
 - `app_config.py`: CLI parsing and devtools/hot-reload setup.
-- `runtime_setup.py`: ParaView rendering object construction and runtime service attachment.
+- `runtime_setup.py`: `RuntimeContext` dataclass and `create_runtime_context()` — ParaView objects created before Trame is available. `ParaViewRuntime` is constructed directly in `app.py` once `state` and `view_controls` exist.
 - `handler_registration.py`: wires controllers and state handlers.
 - `state_setup.py`: initializes all Trame state. If adding UI controls, add defaults here.
 - `state_handlers.py`: shared `@state.change(...)` callbacks for selected file, color-by, representation, active pipeline node, interaction quality, edit mode.
@@ -116,7 +116,8 @@ manually with the conda env. The `coral-paraview` conda env must be active so
 ### ParaView Backend Path
 
 - `paraview_backend.py`: owns ParaView sources/displays, pipeline nodes, filters, coloring, display controls, picking, selection overlays, saving/export.
-- `paraview_runtime.py`: synchronizes backend state into Trame state, handles render pushes, edit-session overlay sync, event normalization.
+- `paraview_runtime.py`: synchronizes backend state into Trame state, handles render pushes, edit-session overlay sync. Forwards event normalization calls to `paraview_event_utils.py`.
+- `paraview_event_utils.py`: pure helpers for normalizing ParaView picking event payloads (`normalize_edit_selection_ids`, `summarize_edit_event`, coordinate mapping). No Trame dependency.
 - `paraview_controllers.py`: user actions from the UI: pipeline actions, filters, edit sessions, selection, field creation, display/color controls.
 - `paraview_property_inspector.py`: collects editable ParaView proxy properties for Source/Display tabs.
 - `selection_debug.py`: builds and emits optional edit-selection debug payloads.
@@ -223,7 +224,7 @@ conda run -n coral-paraview pytest -q tests/ --ignore-glob=tests/test_e2e*.py
 
 ## Debugging Notes
 
-- `docs/logic_flows.md` has detailed flow diagrams and **key breakpoints**: file load (`paraview_runtime.py:506`), state change (`state_handlers.py:29`), UI button action (`paraview_controllers.py` → `@ctrl.add("pv_…")`), UI state flush (`paraview_runtime.py:362`), edit pick dispatch (`paraview_controllers.py:1222`), render push (`paraview_runtime.py:39`).
+- `docs/logic_flows.md` has detailed flow diagrams.
 - If `conda run -n coral-paraview python` resolves to `.venv/bin/python` (ParaView unavailable): a `.venv` is active and its `PATH` entry wins. Run `deactivate` first, then retry.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.

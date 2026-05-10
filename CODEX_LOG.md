@@ -6,6 +6,11 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Reduced indirection in the ParaView runtime layer:
+  - refactored `register_state_handlers` to accept `paraview_runtime: ParaViewRuntime` directly instead of 7 individual callables
+  - refactored `register_app_handlers` to directly accept `paraview_runtime: ParaViewRuntime` instead of `runtime: RuntimeContext`
+  - `ParaViewRuntime` is now constructed directly in `app.py` after Trame setup
+
 - Removed VTK backend entirely, leaving ParaView as the only rendering path:
   - deleted `vtk_runtime.py`, `vtk_controllers.py`, `vtk_pipeline.py`, `mesh_edit.py`, `interactor.py`, `scalar_bars.py` and their test files
   - removed `--backend` CLI flag and all `is_paraview_backend` / `is_vtk_backend` dispatch closures
@@ -454,4 +459,3 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 - Verify `Apply` / `Reset` for generated source properties on a few representative datasets.
 - Verify each supported filter can be created from the UI and that the key generated properties are editable in practice.
 - Verify browser-side interaction quality and remote rendering responsiveness with the new Docker ParaView image on a couple of hosts.
-- Continue shrinking `app.py` by replacing remaining inline dependency lambdas with more explicit objects or dataclasses.
