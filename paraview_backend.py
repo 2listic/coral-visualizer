@@ -36,18 +36,45 @@ except Exception:
     vtkCellTypeUtilities = _DummyCellTypeUtilities
 
     class _DummyCellTypes:
+        _TYPE_NAMES = {
+            1: "vtkVertex",
+            3: "vtkLine",
+            5: "vtkTriangle",
+            9: "vtkQuad",
+            10: "vtkTetra",
+            12: "vtkHexahedron",
+        }
+        _TYPE_DIMENSIONS = {
+            1: 0,
+            3: 1,
+            5: 2,
+            9: 2,
+            10: 3,
+            12: 3,
+        }
+
         def __init__(self):
-            pass
+            self._types = []
+
+        def InsertNextType(self, cell_type):
+            self._types.append(int(cell_type))
 
         def GetNumberOfTypes(self):
-            return 0
+            return len(self._types)
 
         def GetCellType(self, index):
-            return 0
+            return self._types[index]
 
         @staticmethod
         def GetClassNameFromTypeId(cell_type):
-            return ""
+            return _DummyCellTypes._TYPE_NAMES.get(int(cell_type), "")
+
+    _DummyCellTypeUtilities.GetDimension = staticmethod(
+        lambda cell_type: _DummyCellTypes._TYPE_DIMENSIONS.get(int(cell_type), 0)
+    )
+    _DummyCellTypeUtilities.GetClassNameFromTypeId = staticmethod(
+        _DummyCellTypes.GetClassNameFromTypeId
+    )
 
     vtkCellTypes = _DummyCellTypes
 
@@ -746,13 +773,6 @@ class ParaViewBackend:
                     target_display.LookupTable = lut
                 except Exception:
                     pass
-            # Warn if still missing
-            if getattr(target_display, "LookupTable", None) is None:
-                import warnings
-
-                warnings.warn(
-                    "[coral] Warning: LookupTable is still None after ColorBy and _ensure_display_lookup_table. This may cause ParaView warning."
-                )
             target_display.RescaleTransferFunctionToDataRange(True, False)
 
         can_show_scalar_bar = self._display_has_lookup_table(display, array_value)

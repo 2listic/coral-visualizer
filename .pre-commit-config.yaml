@@ -14,7 +14,7 @@ repos:
         name: pytest
         entry: pytest
         args: [-v, --tb=short, "--ignore-glob=tests/test_e2e*.py"]
-        language: unsupported  # no isolated venv — uses the active venv's pytest and dependencies directly ("system" is a deprecated alias since pre-commit 4.4.0)
+        language: python  # no isolated venv — uses the active venv's pytest and dependencies directly ("system" is a deprecated alias since pre-commit 4.4.0)
         pass_filenames: false
         always_run: true
         verbose: true
