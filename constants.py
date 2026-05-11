@@ -27,3 +27,10 @@ SCALAR_BAR_BOUNDARY = "bar_boundary"
 # deal.II default ID values
 BOUNDARY_ID_DEFAULT = 0
 MANIFOLD_ID_DEFAULT = -1
+
+# Remote rendering interaction presets
+INTERACTION_QUALITY_PRESETS = {
+    "fast": {"interactive_quality": 60, "interactive_ratio": 0.7},
+    "balanced": {"interactive_quality": 80, "interactive_ratio": 0.85},
+    "high": {"interactive_quality": 95, "interactive_ratio": 1},
+}

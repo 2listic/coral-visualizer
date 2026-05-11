@@ -1,4 +1,17 @@
-.venv
-__pycache__
+.venv/
+.pvenv/
+.pv-conda-bootstrap/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+playwright-report/
+test-results/
 
-.vscode
+.vscode/
+
+data/uploads/
+data/*_edited.vtu
+test_data/*_edited.vtu
+out.txt

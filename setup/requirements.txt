@@ -1,5 +1,4 @@
-# Runtime dependencies — used by Docker
-trame
-trame-vtk
-trame-vuetify
-vtk
+# Runtime dependencies installed on top of the conda ParaView environment.
+trame==3.12.0
+trame-vtk==2.11.6
+trame-vuetify==3.2.1
