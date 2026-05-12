@@ -255,9 +255,9 @@ lifecycle, filter system, and a breakpoint guide for debugging with VS Code.
 
 - `ModuleNotFoundError: No module named 'trame'` or `'paraview'`: use the conda
   `coral-paraview` environment or rebuild the Docker image.
-- **ParaView unavailable even with `conda run`**: if a `.venv` is active in
-  your shell, `conda run` inherits its `PATH` and `python` resolves to
-  `.venv/bin/python`. Run `deactivate` first, then retry.
+- **ParaView unavailable even with `conda run`**: if a stale virtualenv is
+  active in your shell, `conda run` inherits its `PATH` and `python` may
+  resolve to the wrong interpreter. Run `deactivate` first, then retry.
 - `Page.wait_for_selector` failures in e2e: verify the app starts cleanly, then
   rerun with `--show-browser` or `E2E_STREAM_APP_LOGS=1`.
 - ParaView startup warnings about X/EGL/OSMesa can be non-fatal in Docker. The

@@ -2,33 +2,75 @@
 
 ## Priorita alta
 
-- Introdurre una app factory/test harness che costruisca server, state, runtime
-  e handler senza side effect di import e senza chiamare `server.start()`.
-- Separare `paraview_backend.py` in servizi di dominio più piccoli:
-  pipeline/filter, display-colorbar, selection/picking, edit-session I/O,
-  salvataggio/export.
+- Separare `paraview_backend.py` in servizi di dominio più piccoli (3900 righe).
+  Strategia: mantenere `paraview_backend.py` come facade durante la transizione,
+  poi rimuoverlo. Iniziare con `selection.py` (dominio più isolato, target per
+  futuri miglioramenti di performance). Aggiungere type annotations mentre si
+  estrae ogni modulo per verificare le assunzioni.
+
+  | New module              | Responsibility                                      |
+  |-------------------------|-----------------------------------------------------|
+  | `backend/pipeline.py`   | Sources, pipeline nodes, filter application, PVD    |
+  | `backend/display.py`    | Representation, color-by array, lookup table wiring |
+  | `backend/colorbar.py`   | Color bar preset, min/max, rescale, show/hide        |
+  | `backend/selection.py`  | Picking, rubber-band, edit-selection overlays        |
+  | `backend/export.py`     | VTU/state save, vtk_metadata sanitization           |
 
 ## Priorita media
 
-- Ridurre l'accoppiamento fra `app.py`, `ui.py` e `paraview_backend.py`.
+- Ridurre l'accoppiamento fra `ui.py` e `paraview_backend.py` (accoppiamento
+  con `app.py` risolto — ora è un wrapper di 16 righe).
 - Separare `paraview_controllers.py` in controller per pipeline, display,
   edit-field, edit-selection e file/export.
 - Spezzare `ui.py` in moduli/pannelli (`toolbar`, `pipeline_panel`,
   `display_panel`, `edit_panel`, `dialogs`) mantenendo invariato il layout.
+  Low regression risk. Prerequisito per il lavoro di UX.
 - Centralizzare le opzioni UI dichiarative oggi duplicate tra `state_setup.py`,
   `ui.py` e controller.
 
+## Miglioramenti futuri
+
+- **Performance selezione su dataset grandi**: identificare il bottleneck (pick
+  query, overlay rebuild, state sync). Da affrontare dopo aver estratto e
+  compreso `backend/selection.py`.
+- **Riorganizzazione UI/UX**: migliorare l'esperienza utente dopo aver spezzato
+  `ui.py` in moduli navigabili.
+
+## Riorganizzazione cartelle
+
+Cosmetic — does not block any other work. Do one group at a time, update imports
+atomically per move, run tests after each step.
+
+`factory.py` e `make_download_handler` già esistono alla root; si spostano in
+`core/` come parte di questo step.
+
+Recommended order: `io/` first (no inward imports), then `domain/`, `controllers/`,
+`core/`, `backend/` last (highest risk).
+
+    trame-simple-visualizer/
+    ├── app.py, app_config.py, constants.py, diagnostics.py   (root)
+    ├── core/        handler_registration, runtime_setup, state_setup,
+    │                state_handlers, view_controls, factory
+    ├── backend/     pipeline, display, colorbar, selection, export,
+    │                paraview_runtime, paraview_event_utils,
+    │                paraview_filter_catalog, paraview_property_inspector,
+    │                selection_debug, selection_timing
+    ├── domain/      edit_session
+    ├── controllers/ paraview_controllers, common_controllers
+    ├── io/          file_operations, file_utils, vtk_metadata
+    └── ui/          ui (then panels after split)
+
 ## Test
 
-- Aggiungere test più alti di livello sul wiring UI/client e sui callback Trame
-  dove oggi c'è solo copertura unitaria o e2e specifica.
 - Aggiungere un test/script CI per il container Docker che faccia build, version
   probe e HTTP smoke test su porta locale.
+- I Trame `@state.change` callback non sono testabili in modo sincrono senza
+  event loop: rimane il gap tra test unitari (mock) e e2e (Playwright). Da
+  valutare se vale la pena introdurre un harness asincrono o se i test factory
+  attuali coprono abbastanza.
 
 ## Pulizia codice
 
-- Ridurre la dimensione dei file monolitici `ui.py` (1800 righe) e
-  `paraview_backend.py` (3900 righe).
 - Rimuovere helper morti o sperimentali rimasti dentro `paraview_backend.py`
   dopo il passaggio a `VtkRemoteLocalView`.
 - Estendere type hints/dataclass a `paraview_backend.py` e `paraview_runtime.py`,

@@ -105,9 +105,10 @@ manually with the conda env. The `coral-paraview` conda env must be active so
 
 ### Entry And Registration
 
-- `app.py`: entry point and server/runtime construction.
+- `app.py`: thin entry point — calls `create_app()`, registers the download route, starts the server.
+- `factory.py`: `create_app()` wires server, state, runtime, handlers, and UI without calling `server.start()`; `AppComponents` dataclass holds all wired objects; `make_download_handler()` builds the file-download HTTP handler.
 - `app_config.py`: CLI parsing and devtools/hot-reload setup.
-- `runtime_setup.py`: `RuntimeContext` dataclass and `create_runtime_context()` — ParaView objects created before Trame is available. `ParaViewRuntime` is constructed directly in `app.py` once `state` and `view_controls` exist.
+- `runtime_setup.py`: `RuntimeContext` dataclass and `create_runtime_context()` — ParaView objects created before Trame is available. `ParaViewRuntime` is constructed in `factory.py` once `state` and `view_controls` exist.
 - `handler_registration.py`: wires controllers and state handlers.
 - `state_setup.py`: initializes all Trame state. If adding UI controls, add defaults here.
 - `state_handlers.py`: shared `@state.change(...)` callbacks for selected file, color-by, representation, active pipeline node, interaction quality, edit mode.
@@ -225,7 +226,7 @@ conda run -n coral-paraview pytest -q tests/ --ignore-glob=tests/test_e2e*.py
 ## Debugging Notes
 
 - `docs/logic_flows.md` has detailed flow diagrams.
-- If `conda run -n coral-paraview python` resolves to `.venv/bin/python` (ParaView unavailable): a `.venv` is active and its `PATH` entry wins. Run `deactivate` first, then retry.
+- If `conda run -n coral-paraview python` resolves to the wrong Python (ParaView unavailable): a stale virtualenv may be active and its `PATH` entry wins. Run `deactivate` first, then retry.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.
 - Selection e2e logs can include `[selection-record] ...`; use `E2E_STREAM_APP_LOGS=1` to see app output live.
