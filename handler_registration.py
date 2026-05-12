@@ -37,6 +37,7 @@ def register_app_handlers(
         edit_session=edit_session,
         refresh_runtime_message=paraview_runtime.refresh_runtime_message,
         update_paraview_ui_state=paraview_runtime.update_ui_state,
+        update_color_state=paraview_runtime.update_color_state,
         render_and_push=paraview_runtime.render_and_push,
         save_paraview_output=file_operations.save_paraview_output,
         save_paraview_state=file_operations.save_paraview_state,

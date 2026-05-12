@@ -40,7 +40,7 @@ def register_state_handlers(
         """Update coloring when the user picks a different array."""
         if selected_array and paraview_runtime.pv_backend.source is not None:
             paraview_runtime.pv_backend.apply_coloring(selected_array)
-            paraview_runtime.update_ui_state()
+            paraview_runtime.update_color_state()
             paraview_runtime.call_view_update()
 
     @state.change("representation")

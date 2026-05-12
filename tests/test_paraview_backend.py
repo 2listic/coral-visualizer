@@ -758,6 +758,22 @@ def test_categorical_coloring_populates_annotations_and_indexed_colors():
     assert len(colors) == 3
 
 
+def test_set_categorical_coloring_restores_scalar_bar_visibility():
+    backend = make_backend()
+    lut = FakeLookupTable()
+    source = FakeSource("1", FakeDataInformation(point_names=["U"]))
+    display = FakeDisplay(color_array=("POINTS", "U"), lookup_table=lut)
+    node = backend._make_node(source, display, "/tmp/data/mesh.vtu", "source", "mesh")
+    backend.pipeline_nodes = [node]
+    backend.active_node_id = node["id"]
+    backend._scalar_bar_visible = True
+
+    display.scalar_bar_calls.clear()
+    backend.set_categorical_coloring(True)
+
+    assert (backend.view, True) in display.scalar_bar_calls
+
+
 def test_apply_color_map_preset_tries_paraview_aliases():
     backend = make_backend()
     lut = FakeLookupTableWithRejectedPresets()

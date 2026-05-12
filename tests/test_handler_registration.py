@@ -16,6 +16,9 @@ def _make_paraview_runtime():
         def update_ui_state(self):
             calls.append("update_ui_state")
 
+        def update_color_state(self):
+            calls.append("update_color_state")
+
         def sync_edit_session_state(self):
             calls.append("sync_edit_session_state")
 

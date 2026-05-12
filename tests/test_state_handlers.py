@@ -30,6 +30,7 @@ def _make_runtime(**kwargs):
         ),
         load_file=lambda path: None,
         update_ui_state=lambda: None,
+        update_color_state=lambda: None,
         call_view_update=lambda: None,
         render_and_push=lambda: None,
         sync_edit_session_state=lambda: None,
@@ -76,13 +77,71 @@ def test_selected_file_change_captures_loading_errors(tmp_path):
     assert state.error_message == "Error loading file: boom"
 
 
-def test_array_representation_and_pipeline_callbacks_dispatch():
+def test_array_change_uses_targeted_color_flush():
     calls = []
     pv_backend = SimpleNamespace(
         source=object(),
         display=object(),
         apply_coloring=lambda value: calls.append(("color", value)),
+        apply_representation=lambda value: None,
+        set_active_node=lambda node_id: True,
+        set_interactor_rotation=lambda enabled: None,
+    )
+    state = FakeState(error_message="")
+
+    _register(
+        state,
+        pv_backend=pv_backend,
+        update_color_state=lambda: calls.append("update_color"),
+        update_ui_state=lambda: calls.append("update_ui"),
+        call_view_update=lambda: calls.append("view_update"),
+    )
+
+    state._handlers["selected_array"]("point:U")
+
+    assert ("color", "point:U") in calls
+    assert "update_color" in calls
+    assert "view_update" in calls
+    # array change must NOT trigger the heavy full-state flush
+    assert "update_ui" not in calls
+
+
+def test_representation_change_uses_full_ui_flush():
+    calls = []
+    pv_backend = SimpleNamespace(
+        source=object(),
+        display=object(),
+        apply_coloring=lambda value: None,
         apply_representation=lambda value: calls.append(("repr", value)),
+        set_active_node=lambda node_id: True,
+        set_interactor_rotation=lambda enabled: None,
+    )
+    state = FakeState(error_message="")
+
+    _register(
+        state,
+        pv_backend=pv_backend,
+        update_color_state=lambda: calls.append("update_color"),
+        update_ui_state=lambda: calls.append("update_ui"),
+        call_view_update=lambda: calls.append("view_update"),
+    )
+
+    state._handlers["representation"]("Wireframe")
+
+    assert ("repr", "Wireframe") in calls
+    assert "update_ui" in calls
+    assert "view_update" in calls
+    # representation changes display_properties — must NOT use the color-only flush
+    assert "update_color" not in calls
+
+
+def test_pipeline_and_interaction_callbacks_dispatch():
+    calls = []
+    pv_backend = SimpleNamespace(
+        source=object(),
+        display=object(),
+        apply_coloring=lambda value: None,
+        apply_representation=lambda value: None,
         set_active_node=lambda node_id: node_id == "node-1",
         set_interactor_rotation=lambda enabled: calls.append(("rotate", enabled)),
     )
@@ -96,24 +155,16 @@ def test_array_representation_and_pipeline_callbacks_dispatch():
     _register(
         state,
         pv_backend=pv_backend,
-        update_ui_state=lambda: calls.append("update_ui"),
-        call_view_update=lambda: calls.append("view_update"),
         render_and_push=lambda: calls.append("render"),
         sync_edit_session_state=lambda: calls.append("sync_edit"),
     )
 
-    state._handlers["selected_array"]("point:U")
-    state._handlers["representation"]("Wireframe")
     state._handlers["active_pipeline_item"]("node-1")
     state._handlers["interaction_quality"]("fast")
     # In non-edit mode, even if pick_mode=True, rotation should be ENABLED (True)
     state._handlers["pick_mode"](True, False)
 
-    assert ("color", "point:U") in calls
-    assert ("repr", "Wireframe") in calls
     assert ("rotate", True) in calls
-    assert "update_ui" in calls
-    assert "view_update" in calls
     assert "render" in calls
     assert "sync_edit" in calls
     assert (

@@ -33,7 +33,7 @@ def _wait_for_http_ready(url, timeout_s=45):
 
 def test_paraview_non_edit_mode_rotates_on_drag(shared_browser):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"

@@ -30,6 +30,7 @@ def test_pv_update_property_updates_pending_value_and_dirty_flag():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -70,6 +71,7 @@ def test_pv_apply_and_reset_properties_refresh_ui_and_render():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -113,6 +115,7 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda **kwargs: (_ for _ in ()).throw(
             RuntimeError("cannot save")
@@ -160,6 +163,7 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
         edit_session=SimpleNamespace(active=False),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=save_with_confirmation,
         debug_view=lambda *args, **kwargs: None,
@@ -211,6 +215,7 @@ def test_pv_save_active_data_prefers_explicit_filename_from_client():
         edit_session=SimpleNamespace(active=False),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=save_with_confirmation,
         debug_view=lambda *args, **kwargs: None,
@@ -254,6 +259,7 @@ def test_pv_save_state_existing_target_opens_overwrite_dialog_and_confirm_retrie
         edit_session=SimpleNamespace(active=False),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda **kwargs: None,
         debug_view=lambda *args, **kwargs: None,
@@ -325,6 +331,7 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=save_with_confirmation,
         debug_view=lambda *args, **kwargs: calls.append(("debug", args[0])),
@@ -400,6 +407,7 @@ def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=save_result,
         debug_view=lambda *args, **kwargs: None,
@@ -442,6 +450,7 @@ def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -481,6 +490,7 @@ def test_pv_set_cell_face_visibility_accepts_checkbox_pair_payload():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -550,6 +560,7 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -627,6 +638,7 @@ def test_pv_reload_active_file_skips_invalid_restored_preset():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -670,6 +682,7 @@ def test_pv_delete_active_clears_selected_file_when_pipeline_becomes_empty():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=update_ui_state,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -709,6 +722,7 @@ def test_pv_add_filter_success_and_failure_paths():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: calls.append(("runtime", kwargs)),
         update_paraview_ui_state=lambda: calls.append("update_ui"),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -744,6 +758,7 @@ def test_pv_add_filter_success_and_failure_paths():
         edit_session=SimpleNamespace(),
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -792,6 +807,7 @@ def test_pv_apply_edit_field_requires_field_choice():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -842,6 +858,7 @@ def test_pv_color_control_handlers_apply_backend_updates():
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: calls.append("sync-ui")
         or setattr(state, "color_bar_visible", True),
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -871,6 +888,57 @@ def test_pv_color_control_handlers_apply_backend_updates():
     assert state.color_controls_status_type == "success"
 
 
+def test_color_action_handlers_route_through_update_color_state_not_full_ui_flush():
+    ctrl = FakeCtrl()
+    color_state_calls = []
+    full_flush_calls = []
+    state = SimpleNamespace(
+        color_map_preset="Cool to Warm",
+        color_range_min="1",
+        color_range_max="9",
+        color_bar_visible=True,
+        orientation_axes_visible=True,
+        categorical_coloring=False,
+        color_controls_status="",
+        color_controls_status_type="info",
+    )
+    pv_backend = SimpleNamespace(
+        display=object(),
+        apply_color_map_preset=lambda _: None,
+        apply_color_range=lambda _l, _h: None,
+        rescale_color_range_to_data=lambda: None,
+        set_categorical_coloring=lambda _: None,
+    )
+
+    register_paraview_controllers(
+        ctrl,
+        state,
+        pv_backend=pv_backend,
+        edit_session=SimpleNamespace(active=False),
+        refresh_runtime_message=lambda **kwargs: None,
+        update_paraview_ui_state=lambda: full_flush_calls.append("full"),
+        update_color_state=lambda: color_state_calls.append("color"),
+        render_and_push=lambda: None,
+        save_paraview_output=lambda: None,
+        debug_view=lambda *args, **kwargs: None,
+        call_view_update_geometry=lambda **kwargs: None,
+        call_view_set_remote_rendering=lambda enabled: None,
+        call_view_update=lambda **kwargs: None,
+        sync_edit_session_state=lambda: None,
+        sync_paraview_edit_selection_overlay=lambda: None,
+        summarize_edit_event=lambda event: "",
+        normalize_edit_selection_ids=lambda ids: ids,
+    )
+
+    ctrl.handlers["pv_apply_color_map_preset"]("Viridis (matplotlib)")
+    ctrl.handlers["pv_apply_color_range"]()
+    ctrl.handlers["pv_rescale_color_range_to_data"]()
+    ctrl.handlers["pv_set_categorical_coloring"](True)
+
+    assert color_state_calls == ["color", "color", "color", "color"]
+    assert full_flush_calls == []
+
+
 def test_pv_on_edit_field_choice_create_new_opens_dialog_from_event_value():
     ctrl = FakeCtrl()
     state = SimpleNamespace(
@@ -886,6 +954,7 @@ def test_pv_on_edit_field_choice_create_new_opens_dialog_from_event_value():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -937,6 +1006,7 @@ def test_pv_create_edit_field_existing_name_opens_overwrite_dialog():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -992,6 +1062,7 @@ def test_pv_confirm_overwrite_edit_field_creates_with_overwrite_true():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1041,6 +1112,7 @@ def test_pv_apply_edit_field_surface_mode_assigns_to_selected():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1095,6 +1167,7 @@ def test_surface_mode_selection_keeps_surface_mode_after_sync():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1152,6 +1225,7 @@ def test_degenerate_box_selection_uses_click_picker():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1217,6 +1291,7 @@ def test_box_selection_scales_event_coordinates_to_paraview_view():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1258,6 +1333,7 @@ def test_pick_rotate_handlers_update_mode_and_push_view():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: None,
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1314,6 +1390,7 @@ def test_surface_mode_click_selection_uses_surface_picker_keys():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1372,6 +1449,7 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1439,6 +1517,7 @@ def test_surface_mode_box_selection_falls_back_from_inside_to_touch():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1502,6 +1581,7 @@ def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1576,6 +1656,7 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1652,6 +1733,7 @@ def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payloa
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1729,6 +1811,7 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,
@@ -1804,6 +1887,7 @@ def test_surface_selection_passes_angle_threshold_to_edit_session():
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
         update_paraview_ui_state=lambda: None,
+        update_color_state=lambda: None,
         render_and_push=lambda: calls.append("render"),
         save_paraview_output=lambda: None,
         debug_view=lambda *args, **kwargs: None,

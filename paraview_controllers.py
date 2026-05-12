@@ -9,6 +9,9 @@ from selection_debug import SelectionDebugLogger
 from selection_timing import SelectionTiming
 
 if TYPE_CHECKING:
+    from trame_server.controller import Controller
+    from trame_server.state import State
+
     from edit_session import EditSession
     from paraview_backend import ParaViewBackend
 
@@ -18,13 +21,14 @@ class _RefreshRuntimeMessage(Protocol):
 
 
 def register_paraview_controllers(
-    ctrl,
-    state,
+    ctrl: Controller,
+    state: State,
     *,
     pv_backend: ParaViewBackend,
     edit_session: EditSession,
     refresh_runtime_message: _RefreshRuntimeMessage,
     update_paraview_ui_state: Callable[[], None],
+    update_color_state: Callable[[], None],
     render_and_push: Callable[[], None],
     save_paraview_output,
     debug_view,
@@ -255,10 +259,8 @@ def register_paraview_controllers(
             }
         )
 
-    def _refresh_color_controls_preserving_visibility():
-        visible = bool(getattr(state, "color_bar_visible", False))
-        update_paraview_ui_state()
-        state.color_bar_visible = visible
+    def _refresh_color_state():
+        update_color_state()
         render_and_push()
 
     def _restore_active_color_controls(*, visible, range_min, range_max):
@@ -877,7 +879,7 @@ def register_paraview_controllers(
         try:
             state.color_map_preset = preset
             pv_backend.apply_color_map_preset(preset)
-            _refresh_color_controls_preserving_visibility()
+            _refresh_color_state()
             _set_color_status(f"Applied color map '{preset}'.")
         except Exception as exc:
             _set_color_status(f"Color map update failed: {exc}", "error")
@@ -892,7 +894,7 @@ def register_paraview_controllers(
                 getattr(state, "color_range_min", ""),
                 getattr(state, "color_range_max", ""),
             )
-            _refresh_color_controls_preserving_visibility()
+            _refresh_color_state()
             _set_color_status("Applied color range.")
         except Exception as exc:
             _set_color_status(f"Color range update failed: {exc}", "error")
@@ -904,7 +906,7 @@ def register_paraview_controllers(
             return
         try:
             pv_backend.rescale_color_range_to_data()
-            _refresh_color_controls_preserving_visibility()
+            _refresh_color_state()
             _set_color_status("Rescaled color range to data.")
         except Exception as exc:
             _set_color_status(f"Color range rescale failed: {exc}", "error")
@@ -916,7 +918,7 @@ def register_paraview_controllers(
             return
         try:
             pv_backend.rescale_color_range_over_time()
-            _refresh_color_controls_preserving_visibility()
+            _refresh_color_state()
             _set_color_status("Rescaled color range over time.")
             state.rescale_over_time_dialog = False
         except Exception as exc:
@@ -1080,7 +1082,7 @@ def register_paraview_controllers(
         try:
             state.categorical_coloring = enabled
             pv_backend.set_categorical_coloring(enabled)
-            _refresh_color_controls_preserving_visibility()
+            _refresh_color_state()
             _set_color_status(
                 "Categorical colors enabled."
                 if enabled
