@@ -297,7 +297,7 @@ def _drain_proc_stdout(proc):
 
 def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"
@@ -338,8 +338,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         assert _selection_count(page) == 0
 
         page.click("button:has-text('Select All')")
-        time.sleep(0.8)
-        all_count = _selection_count(page)
+        all_count = _wait_for_selection_count(page, lambda count: count > 1)
         assert all_count is not None and all_count > 1
 
         view = page.locator('[style*="cursor: crosshair"]').first
@@ -382,7 +381,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
 
 def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"
@@ -448,9 +447,76 @@ def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser
                 proc.kill()
 
 
+def test_paraview_display_color_scale_visibility_survives_categorical_toggle(
+    shared_browser,
+):
+    if not is_paraview_available():
+        pytest.skip("Warning test skipped: ParaView is not installed")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--server",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_GRID),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("text=Display", timeout=40000)
+
+        _select_vselect_option(page, "Color by", "MaterialID")
+        page.wait_for_selector("text=Color Bar", timeout=40000)
+
+        # Color scale starts visible; categorical coloring starts off
+        assert _switch_checked(page, "Show color scale") is True
+        assert _switch_checked(page, "Interpret values as categories") is False
+
+        # Hide the color scale, then toggle categorical on — must stay hidden
+        _set_switch(page, "Show color scale", False)
+        assert _switch_checked(page, "Show color scale") is False
+        _set_switch(page, "Interpret values as categories", True)
+        time.sleep(0.5)
+        assert _switch_checked(page, "Show color scale") is False
+
+        # Toggle categorical back off — must still stay hidden
+        _set_switch(page, "Interpret values as categories", False)
+        time.sleep(0.5)
+        assert _switch_checked(page, "Show color scale") is False
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_browser):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"
@@ -537,7 +603,7 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
 
 def test_paraview_show_faces_only_keeps_explicit_cube_boundary_faces(shared_browser):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"
@@ -609,7 +675,7 @@ def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(
     shared_browser,
 ):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"
@@ -704,7 +770,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
     shared_browser,
 ):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     output_name = "e2e_surface_boundaryid_left.vtu"
     output_path = TEST_DATA_DIR / output_name
@@ -868,7 +934,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
 
 def test_paraview_cube_surface_selection_assigns_created_cell_field(shared_browser):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"
@@ -958,7 +1024,7 @@ def test_paraview_cube_surface_selection_assigns_created_cell_field(shared_brows
 
 def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
 
     port = _free_tcp_port()
     url = f"http://127.0.0.1:{port}"

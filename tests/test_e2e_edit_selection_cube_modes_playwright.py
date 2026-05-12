@@ -130,7 +130,7 @@ def test_paraview_cube_center_box_selection_in_available_edit_modes(
     shared_browser, mode_label, requires_point_field
 ):
     if not is_paraview_available():
-        pytest.skip("ParaView backend is not available in this environment")
+        pytest.skip("Warning test skipped: ParaView is not installed")
     if not TEST_GRID.exists():
         pytest.skip(f"Missing required test dataset: {TEST_GRID}")
 

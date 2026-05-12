@@ -912,6 +912,7 @@ class ParaViewBackend:
                 lut.IndexedLookup = 1 if enabled else 0
             except Exception:
                 pass
+        self._restore_scalar_bar_visibility()
         self.render()
 
     def _disable_scalar_coloring(self, display, *, hide_unused_scalar_bars=True):

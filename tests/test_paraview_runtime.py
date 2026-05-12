@@ -316,6 +316,27 @@ def test_update_ui_state_tolerates_missing_backend_keys():
     assert state.is_time_dependent is False
 
 
+def test_update_color_state_maps_backend_values_to_trame_state():
+    runtime, state, backend, _, _ = make_runtime()
+    backend.get_color_control_state = lambda: {
+        "color_controls_enabled": True,
+        "color_range_min": "2.5",
+        "color_range_max": "7.5",
+        "color_bar_visible": False,
+        "orientation_axes_visible": True,
+        "categorical_coloring": True,
+    }
+
+    runtime.update_color_state()
+
+    assert state.color_controls_enabled is True
+    assert state.color_range_min == "2.5"
+    assert state.color_range_max == "7.5"
+    assert state.color_bar_visible is False
+    assert state.orientation_axes_visible is True
+    assert state.categorical_coloring is True
+
+
 def test_load_file_resets_state_and_pushes_view():
     runtime, state, backend, edit_session, view_calls = make_runtime()
 

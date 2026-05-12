@@ -26,7 +26,7 @@ class ParaViewRuntime:
         pv_backend: ParaViewBackend,
         edit_session: EditSession,
         output_window: vtkStringOutputWindow | None,
-        call_view_update: Callable,
+        call_view_update: Callable[[], None],
     ):
         self.state = state
         self.pv_backend: ParaViewBackend = pv_backend
@@ -34,13 +34,23 @@ class ParaViewRuntime:
         self.pv_backend.state = state
         self.edit_session: EditSession = edit_session
         self.output_window: vtkStringOutputWindow | None = output_window
-        self.call_view_update: Callable = call_view_update
+        self.call_view_update: Callable[[], None] = call_view_update
         self.output_offset = 0
 
     def render_and_push(self):
         """Render the active ParaView view and push the update to the client."""
         self.pv_backend.render()
         self.call_view_update()
+
+    def update_color_state(self):
+        """Synchronize only the color-bar Trame state from the active display."""
+        color_state = self.pv_backend.get_color_control_state()
+        self.state.color_controls_enabled = color_state["color_controls_enabled"]
+        self.state.color_range_min = color_state["color_range_min"]
+        self.state.color_range_max = color_state["color_range_max"]
+        self.state.color_bar_visible = color_state["color_bar_visible"]
+        self.state.orientation_axes_visible = color_state["orientation_axes_visible"]
+        self.state.categorical_coloring = color_state["categorical_coloring"]
 
     def refresh_runtime_message(self, clear=False):
         """Drain recent ParaView/VTK runtime output into a user-facing alert."""

@@ -187,7 +187,22 @@ state.selected_array change
       │    ├── _ensure_display_lookup_table()   — creates LUT if missing
       │    ├── _restore_scalar_bar_visibility() — reapplies user visibility flag
       │    └── render()
-      ├── update_ui_state()                     — refreshes color_controls_* + all other state
+      ├── update_color_state()                  — targeted 6-key color flush
+      └── call_view_update()
+```
+
+### Representation change
+
+Triggered when the user picks a display mode (Surface, Wireframe, Points, …).
+
+```
+state.representation change
+ └── on_representation_change()                [state_handlers.py:46]
+      ├── pv_backend.apply_representation(value)
+      │    ├── display.SetRepresentationType() — switches ParaView display mode
+      │    ├── _apply_representation_to_extract_displays()
+      │    └── render()
+      ├── update_ui_state()                     — full flush: display_properties vary by mode
       └── call_view_update()
 ```
 
@@ -209,19 +224,15 @@ Called at the end of `apply_color_map_preset`, `apply_color_range`, and
 back onto the display via `SetScalarBarVisibility` after the ParaView call.
 By the time the backend method returns, ParaView-side visibility is already correct.
 
-**Layer 2 — controller** (`_refresh_color_controls_preserving_visibility` [paraview_controllers.py:258]):
-Saves `state.color_bar_visible` before the full Trame flush and re-asserts it after.
-This guards against `update_paraview_ui_state()` overwriting the Trame state with a
-stale or drifted value. For preset/range/rescale this layer is redundant (layer 1
-already fixed ParaView-side state), but it is the *only* guard for
-`set_categorical_coloring`, which mutates the LUT but does not call
-`_restore_scalar_bar_visibility` at the backend level.
+**Layer 2 — controller** (`_refresh_color_state` [paraview_controllers.py]):
+Calls `update_color_state()` (a targeted 6-key Trame flush) then `render_and_push()`.
+`update_color_state()` reads `_scalar_bar_visible` from the backend — since layer 1
+already corrected it before returning, this always writes the right value.
+The old save/restore of `state.color_bar_visible` was removed because it was always
+a no-op once layer 1 was present for all LUT-mutating operations.
 
 ```
-visible = state.color_bar_visible      — save Trame state before flush
-update_paraview_ui_state()             — full flush; reads _scalar_bar_visible from backend
-state.color_bar_visible = visible      — re-assert (no-op for preset/range/rescale;
-                                         real guard for categorical coloring)
+update_color_state()    — reads _scalar_bar_visible → writes 6 color state keys
 render_and_push()
 ```
 
@@ -233,49 +244,50 @@ UI action → ctrl.pv_*()                        [paraview_controllers.py]
 pv_apply_color_map_preset(preset)
  ├── pv_backend.apply_color_map_preset(preset)
  │    ├── lut.ApplyPreset(candidate, True)        — modifies LUT RGB points
- │    ├── _restore_scalar_bar_visibility()         — layer 1: re-asserts on ParaView
+ │    ├── _restore_scalar_bar_visibility()         — layer 1
  │    └── render()
- └── _refresh_color_controls_preserving_visibility()  — layer 2: guards Trame state
+ └── _refresh_color_state()                        — layer 2: targeted color flush
 
 pv_apply_color_range()
  ├── pv_backend.apply_color_range(min, max)
  │    ├── lut.RescaleTransferFunction(min, max)
  │    ├── _restore_scalar_bar_visibility()
  │    └── render()
- └── _refresh_color_controls_preserving_visibility()
+ └── _refresh_color_state()
 
 pv_rescale_color_range_to_data()
  ├── pv_backend.rescale_color_range_to_data()
  │    ├── display.RescaleTransferFunctionToDataRange()  ← confirmed: hides scalar bar
  │    ├── _restore_scalar_bar_visibility()               — layer 1 fix
  │    └── render()
- └── _refresh_color_controls_preserving_visibility()
+ └── _refresh_color_state()
 
 pv_rescale_color_range_over_time()
  ├── pv_backend.rescale_color_range_over_time()
  │    └── (same pattern as above)
- └── _refresh_color_controls_preserving_visibility()
+ └── _refresh_color_state()
 
 pv_set_categorical_coloring(enabled)
  ├── pv_backend.set_categorical_coloring()
  │    ├── lut.InterpretValuesAsCategories / IndexedLookup = ...
- │    └── render()                               — NO _restore_scalar_bar_visibility here
- └── _refresh_color_controls_preserving_visibility()  — layer 2 is the only guard
+ │    ├── _restore_scalar_bar_visibility()         — layer 1 (added to match other ops)
+ │    └── render()
+ └── _refresh_color_state()
 
 pv_set_scalar_bar_visible(visible)
  ├── pv_backend.set_scalar_bar_visible()
  │    ├── display.SetScalarBarVisibility(view, visible)
  │    └── _scalar_bar_visible = visible           — updates the flag directly
- └── render_and_push()                            — no flush; state written before call
+ └── render_and_push()                            — no color flush needed; state written before call
 
 pv_set_orientation_axes_visible(visible)
  ├── pv_backend.set_orientation_axes_visible()    — view.OrientationAxesVisibility
- └── render_and_push()                            — no flush; state written before call
+ └── render_and_push()                            — no color flush needed; state written before call
 ```
 
 ### `get_color_control_state` — reading color state from the backend
 
-Called inside `get_ui_state()` on every full flush.
+Called inside both `get_ui_state()` (full flush) and `update_color_state()` (targeted flush).
 
 ```
 pv_backend.get_color_control_state()           [paraview_backend.py:773]
