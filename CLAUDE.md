@@ -95,11 +95,26 @@ and unit tests (`pytest`). E2E tests are excluded from the hook — run them
 manually with the conda env. The `coral-paraview` conda env must be active so
 `pytest` is on the path.
 
-## Git Conventions
+## Git and PR Conventions
 
 - Do not add `Co-Authored-By: Claude` trailers.
 - There may be untracked generated data or local env folders (`.pvenv`, `.pv-conda-bootstrap`, `data/*.vtu`, uploads). Do not add them unless the user explicitly asks.
 - Commit only files relevant to the current task.
+
+### PR body format
+
+```
+## Overview
+<narrative context — why this change, what problem it solves>
+
+## Summary
+<bullet points of what changed>
+
+## Test plan
+<markdown checklist>
+```
+
+See PRs #27, #28, #29 for examples.
 
 ## Current Architecture
 
