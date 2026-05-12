@@ -27,19 +27,20 @@
 
 ## Pulizia codice
 
-- Ridurre la dimensione dei file monolitici `app.py`, `ui.py` e `paraview_backend.py`.
+- Ridurre la dimensione dei file monolitici `ui.py` (1800 righe) e
+  `paraview_backend.py` (3900 righe).
 - Rimuovere helper morti o sperimentali rimasti dentro `paraview_backend.py`
   dopo il passaggio a `VtkRemoteLocalView`.
 - Estendere type hints/dataclass a `paraview_backend.py` e `paraview_runtime.py`,
   ancora privi di contratto esplicito (parzialmente fatto su `runtime_setup.py`,
-  `file_operations.py`, `state_handlers.py`, `common_controllers.py`).
+  `file_operations.py`, `state_handlers.py`, `common_controllers.py`,
+  `handler_registration.py`, `view_controls.py`).
 - Migliorare i nomi delle funzioni che oggi fanno sia sync di stato sia side
-  effect di rendering.
+  effect di rendering (parzialmente fatto: `update_color_state` vs
+  `update_ui_state`, `_refresh_color_state`).
 - Valutare un componente/helper dedicato per i controlli Display avanzati, ora
   implementati direttamente fra `ui.py`, `paraview_controllers.py` e
   `paraview_backend.py`.
-- Spostare la normalizzazione coordinate/picking fuori da `paraview_backend.py`
-  in un helper testabile dedicato.
 
 ## Tooling e sviluppo
 
@@ -51,5 +52,3 @@
 ## Documentazione
 
 - Documentare i limiti noti del backend ParaView e i casi ancora sperimentali.
-- Documentare la nuova architettura `app_config` / `runtime_setup` /
-  `handler_registration` con una breve mappa dei flussi principali.
