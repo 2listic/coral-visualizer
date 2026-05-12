@@ -42,6 +42,19 @@ def test_resolve_initial_file_falls_back_to_first_available_item():
     assert result == "first.vtu"
 
 
+def test_resolve_initial_file_skips_group_headers_and_dividers():
+    result = resolve_initial_file(
+        "missing.vtu",
+        [
+            {"header": "nested"},
+            {"divider": True},
+            {"text": "mesh", "value": "nested/mesh.vtu"},
+        ],
+    )
+
+    assert result == "nested/mesh.vtu"
+
+
 def test_initialize_state_populates_defaults():
     state = SimpleNamespace()
 

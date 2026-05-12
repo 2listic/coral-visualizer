@@ -126,16 +126,20 @@ def _switch_checked(page, label):
     return "v-input--is-label-active" in classes
 
 
-def _set_switch(page, label, checked):
-    if _switch_checked(page, label) == checked:
-        return
-    page.click(f"label:has-text('{label}')")
-    deadline = time.time() + 5
+def _wait_for_switch_checked(page, label, checked, timeout_s=5):
+    deadline = time.time() + timeout_s
     while time.time() < deadline:
         if _switch_checked(page, label) == checked:
             return
         time.sleep(0.1)
     assert _switch_checked(page, label) == checked
+
+
+def _set_switch(page, label, checked):
+    if _switch_checked(page, label) == checked:
+        return
+    page.click(f"label:has-text('{label}')")
+    _wait_for_switch_checked(page, label, checked)
 
 
 def _parse_env_box(name, default):
@@ -415,7 +419,7 @@ def test_paraview_display_color_scale_visibility_survives_rescale(shared_browser
         _select_vselect_option(page, "Color by", "MaterialID")
         page.wait_for_selector("text=Color Bar", timeout=40000)
 
-        assert _switch_checked(page, "Show color scale") is True
+        _wait_for_switch_checked(page, "Show color scale", True)
 
         _set_switch(page, "Show color scale", False)
         assert _switch_checked(page, "Show color scale") is False

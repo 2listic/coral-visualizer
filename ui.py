@@ -97,7 +97,7 @@ def _build_toolbar(ctrl):
         "Open Remote",
         small=True,
         outlined=True,
-        click="remote_search_term = ''; remote_browser_dialog = true; trigger('refresh_remote_files')",
+        click=ctrl.open_remote_browser,
         classes="mr-2",
     )
     vuetify.VBtn(
@@ -881,7 +881,7 @@ def _build_paraview_pipeline_panel(ctrl):
                             small=True,
                             block=True,
                             outlined=True,
-                            click="state_browser_search_term = ''; state_browser_dialog = true; trigger('refresh_remote_state_files')",
+                            click=ctrl.open_remote_state_browser,
                             classes="mb-2",
                         )
                     with vuetify.VCol(cols=12):
