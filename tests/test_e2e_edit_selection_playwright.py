@@ -338,8 +338,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         assert _selection_count(page) == 0
 
         page.click("button:has-text('Select All')")
-        time.sleep(0.8)
-        all_count = _selection_count(page)
+        all_count = _wait_for_selection_count(page, lambda count: count > 1)
         assert all_count is not None and all_count > 1
 
         view = page.locator('[style*="cursor: crosshair"]').first
