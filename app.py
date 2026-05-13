@@ -1,132 +1,20 @@
-import mimetypes
-import os
-
-from ui import build_ui
-from view_controls import ViewControllerProxy
-from state_setup import initialize_state, resolve_initial_file
-from runtime_setup import create_runtime_context
-from paraview_runtime import ParaViewRuntime
-from handler_registration import register_app_handlers
-from file_operations import FileOperationService
-from file_utils import get_vtk_files_from_data_folder
-from constants import (
-    INTERACTION_QUALITY_PRESETS,
-)
-from trame.app import get_server
-from app_config import configure_app, enable_paraview_web_venv_if_requested
+from app_config import enable_paraview_web_venv_if_requested
 
 enable_paraview_web_venv_if_requested()
 
-
-config = configure_app()
-data_directory = config.data_directory
-
-
-# -----------------------------------------------------------------------------
-# Rendering setup
-# -----------------------------------------------------------------------------
-
-runtime = create_runtime_context(config)
-
-available_files = get_vtk_files_from_data_folder(data_directory)
-initial_file = resolve_initial_file(config.file, available_files)
-
-
-# -----------------------------------------------------------------------------
-# Trame Server Setup
-# -----------------------------------------------------------------------------
-
-server = get_server(client_type="vue2")
-state = server.state
-ctrl = server.controller
-view_controls = ViewControllerProxy(
-    ctrl,
-    state,
-    devtools_enabled=config.devtools_enabled,
+from factory import (  # noqa: E402 — must follow venv hook
+    create_app,
+    make_download_handler,
 )
-
-initialize_state(
-    state,
-    available_files=available_files,
-    initial_file=initial_file,
-    pv_backend=runtime.pv_backend,
-)
-
-
-# -----------------------------------------------------------------------------
-# Build UI
-# -----------------------------------------------------------------------------
-
-build_ui(server, runtime.render_target)
-
-paraview_runtime = ParaViewRuntime(
-    state=state,
-    pv_backend=runtime.pv_backend,
-    edit_session=runtime.edit_session,
-    output_window=runtime.pv_output_window,
-    call_view_update=view_controls.update,
-)
-file_operations = FileOperationService(
-    state=state,
-    data_directory=data_directory,
-    pv_backend=paraview_runtime.pv_backend,
-    edit_session=paraview_runtime.edit_session,
-)
-file_operations.refresh_available_state_files()
-register_app_handlers(
-    ctrl=ctrl,
-    state=state,
-    paraview_runtime=paraview_runtime,
-    file_operations=file_operations,
-    interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
-    view_controls=view_controls,
-)
-
-
-# -----------------------------------------------------------------------------
-# Download endpoint
-# -----------------------------------------------------------------------------
-
-
-async def _handle_file_download(request):
-    """Serve a file from within data_directory for browser download."""
-    from aiohttp.web import Response
-
-    file_param = request.rel_url.query.get("file", "").strip()
-    if not file_param:
-        return Response(status=400, text="Missing file parameter")
-    data_dir_abs = os.path.realpath(data_directory)
-    abs_path = (
-        os.path.realpath(file_param)
-        if os.path.isabs(file_param)
-        else os.path.realpath(os.path.join(data_dir_abs, file_param))
-    )
-
-    if not abs_path.startswith(data_dir_abs + os.sep):
-        return Response(status=403, text="Forbidden")
-
-    if not os.path.isfile(abs_path):
-        return Response(status=404, text="Not found")
-
-    filename = os.path.basename(abs_path)
-    mime = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
-    with open(abs_path, "rb") as fh:
-        content = fh.read()
-    return Response(
-        body=content,
-        content_type=mime,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@ctrl.add("on_server_bind")
-def _register_download_route(wslink_server):
-    wslink_server.app.router.add_route("GET", "/api/download", _handle_file_download)
-
-
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    server.start()
+    app = create_app()
+    ctrl = app.ctrl
+
+    @ctrl.add("on_server_bind")
+    def _(wslink_server):
+        wslink_server.app.router.add_route(
+            "GET", "/api/download", make_download_handler(app.config.data_directory)
+        )
+
+    app.server.start()

@@ -14,7 +14,7 @@ repos:
         name: pytest
         entry: pytest
         args: [-v, --tb=short, "--ignore-glob=tests/test_e2e*.py"]
-        language: python
+        language: unsupported
         pass_filenames: false
         always_run: true
         verbose: true

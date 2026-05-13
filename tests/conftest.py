@@ -1,6 +1,18 @@
 import pathlib
+import sys
 import pytest
-from vtkmodules.vtkRenderingCore import vtkRenderer
+
+try:
+    from vtkmodules.vtkRenderingCore import vtkRenderer
+except ModuleNotFoundError:
+    print(
+        "\n[conftest] ParaView/vtkmodules not found. "
+        "Deactivate any virtualenv first, then: conda activate coral-paraview. "
+        "If the pre-commit hook is broken, reinstall it from the conda env: "
+        "conda run -n coral-paraview pre-commit install\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 DATA_DIR = pathlib.Path(__file__).parent.parent / "test_data"
 
