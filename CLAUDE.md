@@ -92,8 +92,15 @@ docker run -it --rm -p 8008:8080 coral-visualizer-standalone
 
 On every `git commit`, pre-commit runs formatting (`black`), linting (`ruff`),
 and unit tests (`pytest`). E2E tests are excluded from the hook — run them
-manually with the conda env. The `coral-paraview` conda env must be active so
-`pytest` is on the path.
+manually with the conda env.
+
+The pytest hook uses `language: unsupported`, which means it picks up whatever
+`pytest` is on `$PATH`. The `coral-paraview` conda env must be active before
+committing, or use:
+
+```bash
+conda run -n coral-paraview git commit
+```
 
 ## Git and PR Conventions
 
@@ -241,7 +248,7 @@ conda run -n coral-paraview pytest -q tests/ --ignore-glob=tests/test_e2e*.py
 ## Debugging Notes
 
 - `docs/logic_flows.md` has detailed flow diagrams.
-- If `conda run -n coral-paraview python` resolves to the wrong Python (ParaView unavailable): a stale virtualenv may be active and its `PATH` entry wins. Run `deactivate` first, then retry.
+- If `pytest` or `python` resolves to the wrong environment (ParaView unavailable): a stale virtualenv may be active and its `PATH` entry wins. Run `deactivate` if a venv is active (`deactivate` is only defined while a venv is sourced — if not found, no venv is active), then `conda activate coral-paraview`.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.
 - Selection e2e logs can include `[selection-record] ...`; use `E2E_STREAM_APP_LOGS=1` to see app output live.

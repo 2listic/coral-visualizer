@@ -7,7 +7,9 @@ try:
 except ModuleNotFoundError:
     print(
         "\n[conftest] ParaView/vtkmodules not found. "
-        "Deactivate any virtualenv first, then: conda activate coral-paraview\n",
+        "Deactivate any virtualenv first, then: conda activate coral-paraview. "
+        "If the pre-commit hook is broken, reinstall it from the conda env: "
+        "conda run -n coral-paraview pre-commit install\n",
         file=sys.stderr,
     )
     sys.exit(1)
