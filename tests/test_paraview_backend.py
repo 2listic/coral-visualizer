@@ -463,6 +463,9 @@ def make_backend():
     backend._edit_selection_display = None
     backend._scalar_bar_visible = False
     backend._edit_target_dataset = None
+    backend._surface_selection_helper = None
+    backend._boundary_cache = {}
+    backend._last_selection_backend_timing = []
     backend._cell_type_name_aliases = {
         "Quad": "Quadrilateral",
         "Tetra": "Tetrahedron",
