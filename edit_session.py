@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from math import acos, degrees, sqrt
+from typing import TypedDict
 
 from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIdList
 from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid, vtkVertex
@@ -14,6 +15,13 @@ from vtkmodules.vtkIOLegacy import vtkUnstructuredGridWriter
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
 
 from vtk_metadata import strip_data_array_information_keys
+
+
+class EditSessionSource(TypedDict):
+    node_id: str
+    label: str
+    filename: str
+    dataset: vtkUnstructuredGrid
 
 
 class EditSession:
@@ -60,7 +68,13 @@ class EditSession:
         self._surface_adjacency = None
         self._surface_element_vectors = None
 
-    def begin(self, node_id, source_label, source_filename, dataset):
+    def begin(
+        self,
+        node_id: str,
+        source_label: str,
+        source_filename: str,
+        dataset: vtkUnstructuredGrid,
+    ) -> None:
         """Start a new edit session from a fetched VTK dataset copy."""
         if not self.is_supported_dataset(dataset):
             raise TypeError(
@@ -89,7 +103,6 @@ class EditSession:
         self._surface_adjacency = None
         self._surface_element_vectors = None
         self._ensure_cell_centers_array()
-        return self.working_dataset
 
     def default_output_filename(self):
         """Return a suggested filename for the current edit-session output."""

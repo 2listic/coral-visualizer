@@ -2,9 +2,42 @@
 
 ## Goal
 
-Evolve the current VTK/trame viewer toward a ParaView-backed application while keeping the existing project aesthetic.
+Evolve the current VTK/trame viewer toward a ParaView-backed application while keeping the existing project aesthetic. The VTK→ParaView migration is complete. For current architecture see [CLAUDE.md](CLAUDE.md); for active work see [TODO.md](TODO.md).
 
 ## Done
+
+- Refactored surface selection helper; replaced `ExtractSurface` with `GeometryFilter`; surface keys always use coordinate lookup.
+  - `vtkExtractSurface` does not expose `PassThroughPointIds` / `PassThroughCellIds` in VTK 6.1 at either the ParaView proxy
+    or raw VTK level — the original fast-path in `_surface_keys_from_selected_dataset` was always dead code.
+  - `vtkGeometryFilter` is the correct filter for boundary-surface extraction from unstructured grids (`ExtractSurface`
+    targets point-cloud surface reconstruction) and is available as `simple.GeometryFilter`.
+  - `PassThroughPointIds = 1` was evaluated but does **not** produce reliable source point IDs through ParaView 6.1's
+    proxy/server-fetch round-trip: `servermanager.Fetch()` returns an identity mapping for `vtkOriginalPointIds` even on
+    meshes with interior points (e.g. 5×5×5 cube: 125 pts, 98 boundary, 27 interior). The identity mapping caused
+    surface keys to mismatch the edit session's boundary map on any mesh with interior points, silently producing
+    empty assignments and an e2e test timeout.
+  - `_surface_keys_from_selected_dataset` now always uses coordinate-based lookup: builds a spatial index from source
+    dataset point coordinates and maps each selected cell's XYZ corners back to source point IDs. This is correct
+    regardless of point renumbering between the GeometryFilter output and the source dataset.
+  - Removed `source_boundary` / `boundary_point_to_keys` / `key_matches_source_boundary` logic (existed only to validate
+    unreliable IDs from `ExtractSurface`).
+  - Removed `FakeSelectedSurfaceDataset` test helper; updated its two callers to `FakeSurfaceDataset`.
+  - Pinned `paraview=6.1` in `tools/setup_pv_env.sh` to match `setup/environment-docker.yml` (Docker was already pinned;
+    conda-forge carries only 6.1).
+  - Added `EditSessionSource` TypedDict and type annotations to `edit_session.begin()`.
+  - All 165 unit tests pass; 12 e2e tests pass.
+
+- Removed multi-backend `getattr` guards (follow-up from VTK backend removal):
+  - replaced all `getattr(pv_backend, "method", None)` + callable-check patterns in `paraview_controllers.py` with direct calls
+  - replaced all `getattr(self, "_attr", default)` patterns in `paraview_backend.py` with direct attribute access (all attrs initialized in `__init__`)
+  - replaced `getattr(state, ...)` and `getattr(edit_session, ...)` guards that wrapped attrs guaranteed by `state_setup.py` and `EditSession.__init__`
+  - updated test mocks in `test_paraview_backend.py` and `test_paraview_controllers.py` to reflect the now-required (non-optional) backend interface
+
+- Introduced app factory and integration tests; slimmed `app.py` to a 16-line entry point:
+  - extracted `create_app()` into `factory.py`; wires server, state, runtime, and handlers without calling `server.start()`, eliminating module-level side effects
+  - added `AppComponents` dataclass exposing all wired objects for tests
+  - moved `make_download_handler` to `factory.py`
+  - added `tests/test_factory.py` (15 tests) covering structure, wiring consistency, state defaults from the real backend, and direct `ParaViewRuntime`/backend integration via `load_file` — fills the gap between unit mocks and e2e
 
 - Reduced indirection in the ParaView runtime layer:
   - refactored `register_state_handlers` to accept `paraview_runtime: ParaViewRuntime` directly instead of 7 individual callables
@@ -364,98 +397,3 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - Updated controller messaging and selection labels to use `surface element(s)` in Surface mode.
   - Added regression coverage for default-on-unselected behavior and controller surface apply flow.
 - Removed the non-informative `Last selection event` textarea from the ParaView Edit inspector.
-
-## Current Behavior
-
-- ParaView backend starts and renders.
-- Multiple sources can be loaded and selected from the pipeline browser.
-- Filters can be added on top of the active pipeline node and appear as selectable pipeline items.
-- The right inspector updates from the selected source.
-- Source/display generated properties are visible.
-- A subset of generated properties is editable and applied back to ParaView.
-- The ParaView backend can now initialize an edit session from compatible outputs (`vtkUnstructuredGrid`) and save that working copy as a new file.
-- A saved edit-session result can now be materialized back into the ParaView pipeline as a new source node.
-- Calculator guidance is now exposed in the inspector instead of relying on the user to inspect array names manually in `Information`.
-- Volume edit operations can now create a new scalar cell field on the edit-session dataset before saving or re-adding it to the pipeline.
-- ParaView edit sessions now keep a live cell-selection set for `Volume` mode and can apply scalar authoring only to those selected cells.
-- The Docker image now starts with the ParaView backend by default and listens on port `8080` inside the container.
-- Dockerized ParaView runs with offscreen rendering and can save screenshots, although some hosts still emit non-fatal EGL/X warnings during startup.
-- `app.py` is now mostly reduced to startup, state/runtime construction, view helpers, and top-level handler wiring.
-- Refactored helper modules now have direct unit coverage without needing a live Trame browser session.
-- `paraview_backend.py` now has targeted coverage for its internal logic, while the remaining gaps are
-  mostly in live runtime integration and server-side ParaView interaction.
-
-## Known Limitations
-
-- The generated properties panel is only partially editable.
-  - More ParaView property classes still need support.
-- Coverage is still strongest on pure Python helpers and wiring.
-  - Browser-driven flows, full Trame callbacks, and live ParaView interaction still need higher-level tests.
-- Filter support is currently limited to the first supported set:
-  - `Calculator`
-  - `Clip`
-  - `Contour`
-  - `Glyph`
-  - `Reflect`
-  - `Slice`
-  - `Streamline`
-  - `Threshold`
-  - `Transform`
-  - `Tube`
-  - `Warp by Scalar`
-  - `Warp by Vector`
-- Filter hierarchy is represented as a lightweight indented flat list.
-  - There is no true collapsible pipeline tree yet.
-- No pipeline grouping/tree hierarchy yet.
-  - Current browser is a flat list of sources.
-- ParaView edit mode is still partial.
-  - Session creation, saving, re-import, scalar `Volume` field writing, and basic click/box selection plumbing exist.
-  - Visual highlighting of the current edit-session selection in the render view is not integrated yet.
-  - `Surface` / `Edge` / `Point` authoring and mixed-dimensional append are not integrated yet.
-- ParaView runtime alerts currently surface the latest captured warning/error block.
-  - There is not yet a persistent log/history panel.
-- File upload flow has not yet been end-to-end validated by Codex in a live browser session.
-  - The implementation is in place, but it still needs user verification.
-- Source visibility is reflected through the left-panel button and icon only.
-  - There is no dedicated eye-toggle control inside each row yet.
-- Trame hot reload only reloads Python callback functions.
-  - Structural UI changes and some ParaView-side state/setup changes may still require a manual restart.
-- Dockerized ParaView still emits graphics-stack warnings on some hosts:
-  - `bad X server connection`
-  - `Could not initialize a device`
-  - `Failed to initialize OpenGL functions`
-  - In the current setup those warnings do not prevent startup or offscreen screenshots, but the graphics path is not fully clean yet.
-- `app.py` is now reduced to startup, state/runtime construction, view helpers, top-level handler wiring, and the download endpoint.
-
-## Backlog
-
-### Next Functional Work
-
-- Add filter creation to the pipeline.
-- Expand generated property editing support.
-- Support more ParaView filter/property classes, including proxy/input sub-properties like `ClipType`, `GlyphType`, and `SeedType`.
-- Add better visibility toggles directly in pipeline rows.
-- Add duplicate / rename / remove-all pipeline actions.
-- Add persistence for session state.
-- Add richer helper panels for other filters with non-obvious symbols or inputs (`Streamline`, `Glyph`, `Threshold`).
-- Optionally add click-to-insert variable names for Calculator expressions.
-- Implement `Surface` mode by appending selected 2D cells to the unstructured grid.
-- Implement `Edge` mode by appending selected 1D cells to the unstructured grid.
-- Implement `Point` mode and decide whether its output should be 0D cells, point data, or both.
-- Materialize ParaView-side selection feedback visually in the render view for edit sessions.
-
-### UX / UI Follow-up
-
-- Refine spacing and density in the pipeline browser.
-- Improve discoverability of source actions.
-- Reduce repeated controls between generated display properties and custom display controls where appropriate.
-- Add loading/progress feedback during uploads and heavy source loads.
-
-## Open Issues To Verify
-
-- Verify browser file picker upload works end-to-end for `.vtk`, `.vtu`, and `.pvtu`.
-- Verify `Open Remote` behaves correctly with grouped files and nested folders under `--data-directory`.
-- Verify switching between multiple uploaded sources keeps `Color by` and `Representation` in sync.
-- Verify `Apply` / `Reset` for generated source properties on a few representative datasets.
-- Verify each supported filter can be created from the UI and that the key generated properties are editable in practice.
-- Verify browser-side interaction quality and remote rendering responsiveness with the new Docker ParaView image on a couple of hosts.

@@ -21,7 +21,7 @@ fi
 
 "${CONDA_BIN}" create -y -n "${ENV_NAME}" -c conda-forge \
     "python=${PYTHON_VERSION}" \
-    paraview \
+    "paraview=6.1" \
     trame \
     trame-vtk \
     trame-vuetify
