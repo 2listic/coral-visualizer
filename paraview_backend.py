@@ -167,7 +167,7 @@ class ParaViewBackend:
 
     def consume_selection_backend_timing(self):
         """Return and clear detailed timing from the last backend selection."""
-        timing = list(getattr(self, "_last_selection_backend_timing", []) or [])
+        timing = list(self._last_selection_backend_timing or [])
         self._last_selection_backend_timing = []
         return timing
 
@@ -763,7 +763,7 @@ class ParaViewBackend:
             )
 
         for target_display in displays:
-            if getattr(self, "_scalar_bar_visible", False):
+            if self._scalar_bar_visible:
                 self._hide_current_scalar_bar(target_display)
             self.simple.ColorBy(target_display, (association, name))
             # Always rebind LookupTable after ColorBy
@@ -805,9 +805,7 @@ class ParaViewBackend:
             "color_controls_enabled": enabled,
             "color_range_min": range_min,
             "color_range_max": range_max,
-            "color_bar_visible": bool(
-                enabled and getattr(self, "_scalar_bar_visible", enabled)
-            ),
+            "color_bar_visible": bool(enabled and self._scalar_bar_visible),
             "orientation_axes_visible": self._orientation_axes_visible(),
             "categorical_coloring": categorical,
         }
@@ -986,7 +984,7 @@ class ParaViewBackend:
             return
         if self._get_selected_array() == ARRAY_SOLID:
             self._scalar_bar_visible = False
-        visible = bool(getattr(self, "_scalar_bar_visible", False))
+        visible = bool(self._scalar_bar_visible)
         if visible and not self._display_has_lookup_table(display):
             visible = False
             self._scalar_bar_visible = False
@@ -2167,7 +2165,7 @@ class ParaViewBackend:
             except Exception:
                 pass
             try:
-                helper = getattr(self, "_surface_selection_helper", None)
+                helper = self._surface_selection_helper
                 helper_display = (
                     helper.get("display") if isinstance(helper, dict) else None
                 )
@@ -2201,26 +2199,16 @@ class ParaViewBackend:
         if dataset is None:
             return {}
         cache_key = id(dataset)
-        cached = getattr(self, "_boundary_cache", {}).get(cache_key)
+        cached = self._boundary_cache.get(cache_key)
         if cached is not None:
             return cached
-        # Compute and store
         boundary = self._boundary_codim_elements(dataset)
-        # Ensure the cache dict exists (it does from __init__)
-        cache = getattr(self, "_boundary_cache", None)
-        if cache is None:
-            cache = {}
-            self._boundary_cache = cache
-        cache[cache_key] = boundary
+        self._boundary_cache[cache_key] = boundary
         return boundary
 
     def _clear_boundary_cache(self):
-        """Clear boundary cache for both full and lightweight backend instances."""
-        cache = getattr(self, "_boundary_cache", None)
-        if cache is None:
-            self._boundary_cache = {}
-            return
-        cache.clear()
+        """Clear boundary cache."""
+        self._boundary_cache.clear()
 
     def _surface_selection_helper_for(self, source):
         """Return a cached ExtractSurface proxy used for robust surface selection."""
@@ -2256,7 +2244,7 @@ class ParaViewBackend:
 
     def _clear_surface_selection_helper(self):
         """Delete the cached selection-only ExtractSurface proxy, if any."""
-        helper = getattr(self, "_surface_selection_helper", None)
+        helper = self._surface_selection_helper
         if not isinstance(helper, dict):
             self._surface_selection_helper = None
             return
@@ -2819,7 +2807,7 @@ class ParaViewBackend:
     def _remap_cell_ids_to_edit_target_dataset(self, cell_ids, source):
         """Normalize picked source cell IDs onto the active edit-session dataset."""
         picked_ids = [int(cell_id) for cell_id in (cell_ids or [])]
-        target_dataset = getattr(self, "_edit_target_dataset", None)
+        target_dataset = self._edit_target_dataset
         if target_dataset is None or not picked_ids:
             return picked_ids
 
@@ -2840,7 +2828,7 @@ class ParaViewBackend:
     def _remap_surface_keys_to_edit_target_dataset(self, keys, source_dataset=None):
         """Normalize picked source boundary keys onto edit-session point IDs."""
         picked_keys = [tuple(key) for key in (keys or []) if key]
-        target_dataset = getattr(self, "_edit_target_dataset", None)
+        target_dataset = self._edit_target_dataset
         if target_dataset is None or source_dataset is None or not picked_keys:
             return picked_keys
         if source_dataset is target_dataset:
