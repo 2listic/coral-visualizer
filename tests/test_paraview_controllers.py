@@ -627,9 +627,16 @@ def test_pv_reload_active_file_skips_invalid_restored_preset():
         apply_color_map_preset=lambda preset: (_ for _ in ()).throw(
             RuntimeError("missing preset")
         ),
+        apply_color_range=lambda *args: None,
         set_categorical_coloring=lambda enabled: calls.append(("categorical", enabled)),
         set_scalar_bar_visible=lambda visible: calls.append(("bar", visible)),
+        set_cell_face_visibility=lambda *args: None,
+        apply_property_changes=lambda *args: None,
     )
+    state.show_cells = True
+    state.show_faces = True
+    state.source_properties = []
+    state.display_properties = []
 
     register_paraview_controllers(
         ctrl,
@@ -1146,9 +1153,17 @@ def test_surface_mode_selection_keeps_surface_mode_after_sync():
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
-    edit_session = SimpleNamespace(active=True, geometry_mode="volume")
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="volume",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = lambda ids, grow=False, angle_threshold=None: 2
     edit_session.add_selection = lambda ids, grow=False, angle_threshold=None: 2
     edit_session.subtract_selection = lambda ids, grow=False, angle_threshold=None: 0
@@ -1162,7 +1177,10 @@ def test_surface_mode_selection_keeps_surface_mode_after_sync():
         ctrl,
         state,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12]
+            pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [],
+            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1200,9 +1218,17 @@ def test_degenerate_box_selection_uses_click_picker():
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="volume",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
-    edit_session = SimpleNamespace(active=True, geometry_mode="volume")
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="volume",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: calls.append(
             ("replace", ids, grow, angle_threshold)
@@ -1221,6 +1247,8 @@ def test_degenerate_box_selection_uses_click_picker():
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: (_ for _ in ()).throw(
                 AssertionError("degenerate box should not use rectangle picker")
             ),
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1264,9 +1292,17 @@ def test_box_selection_scales_event_coordinates_to_paraview_view():
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="volume",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
-    edit_session = SimpleNamespace(active=True, geometry_mode="volume")
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="volume",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: calls.append(
             ("replace", ids, grow, angle_threshold)
@@ -1287,6 +1323,7 @@ def test_box_selection_scales_event_coordinates_to_paraview_view():
         pv_backend=SimpleNamespace(
             view=SimpleNamespace(ViewSize=(200, 400)),
             pick_visible_cell_ids_in_rect=pick_rect,
+            consume_selection_backend_timing=lambda: [],
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1366,10 +1403,18 @@ def test_surface_mode_click_selection_uses_surface_picker_keys():
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True, geometry_mode="surface")
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="surface",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow)
@@ -1386,6 +1431,8 @@ def test_surface_mode_click_selection_uses_surface_picker_keys():
         pv_backend=SimpleNamespace(
             pick_visible_surface_keys=lambda x, y: [(1, 2, 3)],
             pick_visible_cell_ids=lambda x, y: [99],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1422,10 +1469,18 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
         selection_behavior="inside",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True, geometry_mode="surface")
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="surface",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow)
@@ -1445,6 +1500,8 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
                 (7, 8, 9),
             ],
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1485,10 +1542,18 @@ def test_surface_mode_box_selection_falls_back_from_inside_to_touch():
         selection_behavior="inside",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True, geometry_mode="surface")
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="surface",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow)
@@ -1513,6 +1578,8 @@ def test_surface_mode_box_selection_falls_back_from_inside_to_touch():
         pv_backend=SimpleNamespace(
             pick_visible_surface_keys_in_rect=pick_surface_keys_in_rect,
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1549,10 +1616,19 @@ def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
         edit_selection_status_type="info",
         selection_behavior="touch",
         edit_selection_mode="add",
+        edit_geometry_mode="volume",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True)
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="volume",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow)
@@ -1576,7 +1652,9 @@ def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
         ctrl,
         state,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12]
+            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1618,10 +1696,19 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
         edit_selection_status_type="info",
         selection_behavior="touch",
         edit_selection_mode="replace",
+        edit_geometry_mode="volume",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True)
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="volume",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow)
@@ -1651,7 +1738,9 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
         ctrl,
         state,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids=lambda x, y: [41] if (x, y) == (12, 34) else []
+            pick_visible_cell_ids=lambda x, y: [41] if (x, y) == (12, 34) else [],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1695,10 +1784,19 @@ def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payloa
         edit_selection_status_type="info",
         selection_behavior="touch",
         edit_selection_mode="replace",
+        edit_geometry_mode="volume",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True)
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="volume",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow)
@@ -1728,7 +1826,9 @@ def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payloa
         ctrl,
         state,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids=lambda x, y: [1, 2, 3] if (x, y) == (12, 34) else []
+            pick_visible_cell_ids=lambda x, y: [1, 2, 3] if (x, y) == (12, 34) else [],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1773,10 +1873,19 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
         edit_selection_status_type="info",
         selection_behavior="touch",
         edit_selection_mode="replace",
+        edit_geometry_mode="volume",
+        angle_threshold=None,
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True)
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="volume",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow)
@@ -1806,7 +1915,9 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
         ctrl,
         state,
         pv_backend=SimpleNamespace(
-            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12]
+            pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [11, 12],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
@@ -1866,7 +1977,14 @@ def test_surface_selection_passes_angle_threshold_to_edit_session():
         edit_view_style="width: 100%; height: 100%; cursor: crosshair; outline: none;",
     )
     actions = []
-    edit_session = SimpleNamespace(active=True, geometry_mode="surface")
+    edit_session = SimpleNamespace(
+        active=True,
+        geometry_mode="surface",
+        working_dataset=None,
+        selected_cell_ids=set(),
+        selected_surface_keys=set(),
+        selected_point_ids=set(),
+    )
     edit_session.replace_selection = (
         lambda ids, grow=False, angle_threshold=None: actions.append(
             ("replace", list(ids), grow, angle_threshold)
@@ -1883,6 +2001,8 @@ def test_surface_selection_passes_angle_threshold_to_edit_session():
         pv_backend=SimpleNamespace(
             pick_visible_surface_keys_in_rect=lambda *args, **kwargs: [(1, 2, 3)],
             pick_visible_cell_ids_in_rect=lambda *args, **kwargs: [10],
+            consume_selection_backend_timing=lambda: [],
+            view=None,
         ),
         edit_session=edit_session,
         refresh_runtime_message=lambda **kwargs: None,
