@@ -107,8 +107,9 @@ def test_save_paraview_output_saves_edit_session_and_updates_state(
 ):
     state = SimpleNamespace(
         save_filename="results/edited_mesh",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         available_files=[],
     )
     edit_session = FakeEditSession(active=True)
@@ -131,8 +132,10 @@ def test_save_paraview_output_saves_edit_session_and_updates_state(
     assert edit_session.saved_paths == [output_path]
     assert pv_backend.saved_paths == []
     assert state.save_filename == "results/edited_mesh.vtu"
-    assert state.save_status == "Saved edited dataset to results/edited_mesh.vtu"
-    assert state.save_status_type == "success"
+    assert (
+        state.notification_message == "Saved edited dataset to results/edited_mesh.vtu"
+    )
+    assert state.notification_type == "success"
     assert state.available_files == [
         {"text": "edited", "value": "results/edited_mesh.vtu"}
     ]
@@ -143,8 +146,9 @@ def test_save_paraview_output_edit_session_preserves_vtk_extension(
 ):
     state = SimpleNamespace(
         save_filename="results/edited_mesh.vtk",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         available_files=[],
     )
     edit_session = FakeEditSession(active=True)
@@ -166,14 +170,17 @@ def test_save_paraview_output_edit_session_preserves_vtk_extension(
     assert output_path == str(tmp_path / "results" / "edited_mesh.vtk")
     assert edit_session.saved_paths == [output_path]
     assert state.save_filename == "results/edited_mesh.vtk"
-    assert state.save_status == "Saved edited dataset to results/edited_mesh.vtk"
+    assert (
+        state.notification_message == "Saved edited dataset to results/edited_mesh.vtk"
+    )
 
 
 def test_save_paraview_output_edit_session_rejects_unsupported_extension(tmp_path):
     state = SimpleNamespace(
         save_filename="results/edited_mesh.foo",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         available_files=[],
     )
     edit_session = FakeEditSession(active=True)
@@ -193,8 +200,9 @@ def test_save_paraview_output_saves_pipeline_result_with_backend_extension(
 ):
     state = SimpleNamespace(
         save_filename="exports/final",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         available_files=[],
     )
     edit_session = FakeEditSession(active=False)
@@ -215,7 +223,7 @@ def test_save_paraview_output_saves_pipeline_result_with_backend_extension(
 
     assert output_path == str(tmp_path / "exports" / "final.vtu")
     assert pv_backend.saved_paths == [output_path]
-    assert state.save_status == "Saved pipeline result to exports/final.vtu"
+    assert state.notification_message == "Saved pipeline result to exports/final.vtu"
 
 
 def test_save_paraview_output_flushes_feedback_state_when_supported(
@@ -226,8 +234,9 @@ def test_save_paraview_output_flushes_feedback_state_when_supported(
 
     state = SimpleNamespace(
         save_filename="exports/final",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         available_files=[],
         dirty=lambda key: dirty_calls.append(key),
         flush=lambda: flush_calls.append(True),
@@ -250,8 +259,9 @@ def test_save_paraview_output_flushes_feedback_state_when_supported(
 
     assert dirty_calls == [
         "save_filename",
-        "save_status",
-        "save_status_type",
+        "notification_message",
+        "notification_type",
+        "notification_show",
         "available_files",
     ]
     assert flush_calls == [True]
@@ -263,8 +273,9 @@ def test_save_paraview_output_refuses_to_overwrite_existing_target_without_confi
 ):
     state = SimpleNamespace(
         save_filename="results/edited_mesh",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         available_files=[],
     )
     edit_session = FakeEditSession(active=True)
@@ -296,8 +307,9 @@ def test_save_paraview_output_overwrites_existing_target_after_confirmation(
 ):
     state = SimpleNamespace(
         save_filename="exports/final",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         available_files=[],
     )
     edit_session = FakeEditSession(active=False)
@@ -326,7 +338,12 @@ def test_save_paraview_output_overwrites_existing_target_after_confirmation(
 
 
 def test_save_paraview_output_requires_active_source_or_edit_session(tmp_path):
-    state = SimpleNamespace(save_filename="", save_status="", save_status_type="info")
+    state = SimpleNamespace(
+        save_filename="",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+    )
     edit_session = FakeEditSession(active=False)
     pv_backend = FakeParaViewBackend(source=None)
 
@@ -342,8 +359,9 @@ def test_save_paraview_output_requires_active_source_or_edit_session(tmp_path):
 def test_save_paraview_state_writes_snapshot_and_updates_state_list(tmp_path):
     state = SimpleNamespace(
         state_filename="states/demo",
-        state_status="",
-        state_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         state_files=[],
         selected_file="test_data/square.vtk",
     )
@@ -361,10 +379,10 @@ def test_save_paraview_state_writes_snapshot_and_updates_state_list(tmp_path):
     assert output_path == str(saved_path)
     assert '"selected_file": "test_data/square.vtk"' in payload
     assert state.state_filename == f"states/demo{file_operations.STATE_FILE_EXTENSION}"
-    assert state.state_status == (
+    assert state.notification_message == (
         f"Saved application state to states/demo{file_operations.STATE_FILE_EXTENSION}"
     )
-    assert state.state_status_type == "success"
+    assert state.notification_type == "success"
     assert state.state_files == [
         {
             "text": f"states/demo{file_operations.STATE_FILE_EXTENSION}",

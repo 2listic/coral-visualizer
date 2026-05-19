@@ -348,7 +348,5 @@ class ParaViewRuntime:
         self.refresh_runtime_message()
         self.update_ui_state()
         self.state.has_boundary = False
-        self.state.error_message = ""
         self.state.selection_count = 0
-        self.state.save_status = ""
         self.render_and_push()

@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Callable, Protocol
 
+from notifications import notify
 from selection_debug import SelectionDebugLogger
 from selection_timing import SelectionTiming
 
@@ -80,7 +81,6 @@ def register_paraview_controllers(
             getattr(exc, "filename", "") or state.save_filename
         )
         state.save_overwrite_dialog = True
-        state.save_status = ""
 
     def _apply_pending_save_filename(filename):
         if filename is None:
@@ -110,9 +110,9 @@ def register_paraview_controllers(
         update_paraview_ui_state()
         state.selected_file = snapshot.get("selected_file", state.selected_file)
         state.inspector_tab = snapshot.get("inspector_tab", state.inspector_tab)
-        state.state_status = f"Loaded application state from {state.state_filename}"
-        state.state_status_type = "success"
-        state.error_message = ""
+        notify(
+            state, f"Loaded application state from {state.state_filename}", "success"
+        )
         render_and_push()
 
     def _commit_edit_session(overwrite=False):
@@ -124,8 +124,7 @@ def register_paraview_controllers(
         sync_paraview_edit_selection_overlay()
         state.inspector_tab = 0
         call_view_set_remote_rendering(True)
-        state.edit_status = "Edit session saved and added to the pipeline"
-        state.edit_status_type = "success"
+        notify(state, "Edit session saved and added to the pipeline", "success")
 
         arrays, default_array = pv_backend.load_file(output_path)
         pv_backend.apply_representation(state.representation)
@@ -170,8 +169,11 @@ def register_paraview_controllers(
             scope = "point(s)"
         else:
             scope = "cell(s)"
-        state.edit_apply_status = f"Assigned '{field_name}' on {edit_session.selected_count()} selected {scope}."
-        state.edit_apply_status_type = "success"
+        notify(
+            state,
+            f"Assigned '{field_name}' on {edit_session.selected_count()} selected {scope}.",
+            "success",
+        )
 
     def _set_selection_mode(mode):
         if mode not in {"replace", "add", "subtract", "flip"}:
@@ -255,8 +257,7 @@ def register_paraview_controllers(
             _set_color_status(f"Color scale restore skipped: {exc}", "warning")
 
     def _set_color_status(message, status_type="success"):
-        state.color_controls_status = message
-        state.color_controls_status_type = status_type
+        notify(state, message, status_type)
 
     def _flush_time_state():
         """Push time-related state updates to the client when available."""
@@ -338,8 +339,11 @@ def register_paraview_controllers(
             entity_label = "point(s)"
         else:
             entity_label = "cell(s)"
-        state.edit_selection_status = f"{action} {len(picked_ids)} {entity_label} with {source_label}. {count} selected total."
-        state.edit_selection_status_type = "success"
+        notify(
+            state,
+            f"{action} {len(picked_ids)} {entity_label} with {source_label}. {count} selected total.",
+            "success",
+        )
         if mode == "surface":
             selected_now = sorted(edit_session.selected_surface_keys)
         elif mode == "point":
@@ -410,10 +414,11 @@ def register_paraview_controllers(
 
     def _set_empty_selection_status(mode, interaction):
         entity_label = "points" if mode == "point" else "cells"
-        state.edit_selection_status = (
-            f"{interaction} selection did not resolve any editable {entity_label}."
+        notify(
+            state,
+            f"{interaction} selection did not resolve any editable {entity_label}.",
+            "info",
         )
-        state.edit_selection_status_type = "info"
 
     def _extract_size_pair(value):
         if isinstance(value, dict):
@@ -567,7 +572,7 @@ def register_paraview_controllers(
             update_paraview_ui_state()
             render_and_push()
         except Exception as exc:
-            state.error_message = f"Error updating cell visibility: {exc}"
+            notify(state, f"Error updating cell visibility: {exc}", "error")
 
     @ctrl.add("pv_reload_active_file")
     def pv_reload_active_file():
@@ -606,12 +611,12 @@ def register_paraview_controllers(
             refresh_runtime_message()
             update_paraview_ui_state()
             state.has_boundary = False
-            state.error_message = property_restore_error
             state.selection_count = 0
-            state.save_status = ""
+            if property_restore_error:
+                notify(state, property_restore_error, "warning")
             render_and_push()
         except Exception as exc:
-            state.error_message = f"Error reloading pipeline file: {exc}"
+            notify(state, f"Error reloading pipeline file: {exc}", "error")
 
     @ctrl.add("pv_delete_active")
     def pv_delete_active():
@@ -623,7 +628,6 @@ def register_paraview_controllers(
         update_paraview_ui_state()
         if not state.active_pipeline_item:
             state.selected_file = ""
-        state.save_status = ""
         render_and_push()
 
     @ctrl.add("pv_add_filter")
@@ -642,7 +646,7 @@ def register_paraview_controllers(
             update_paraview_ui_state()
             render_and_push()
         except Exception as exc:
-            state.error_message = f"Error adding filter: {exc}"
+            notify(state, f"Error adding filter: {exc}", "error")
 
     @ctrl.add("pv_save_active_data")
     def pv_save_active_data(filename=None):
@@ -654,8 +658,7 @@ def register_paraview_controllers(
         except FileExistsError as exc:
             _open_save_overwrite_dialog("save", exc)
         except Exception as exc:
-            state.save_status = f"Error: {exc}"
-            state.save_status_type = "error"
+            notify(state, f"Error: {exc}", "error")
 
     @ctrl.add("pv_save_state")
     def pv_save_state(filename=None):
@@ -670,8 +673,7 @@ def register_paraview_controllers(
         except FileExistsError as exc:
             _open_save_overwrite_dialog("state_save", exc)
         except Exception as exc:
-            state.state_status = f"Error: {exc}"
-            state.state_status_type = "error"
+            notify(state, f"Error: {exc}", "error")
 
     @ctrl.add("pv_load_state")
     def pv_load_state(filename=None):
@@ -685,8 +687,7 @@ def register_paraview_controllers(
             state.state_browser_dialog = False
             _load_application_state()
         except Exception as exc:
-            state.state_status = f"Error: {exc}"
-            state.state_status_type = "error"
+            notify(state, f"Error: {exc}", "error")
 
     @ctrl.add("pv_confirm_save_overwrite")
     def pv_confirm_save_overwrite():
@@ -702,15 +703,7 @@ def register_paraview_controllers(
             else:
                 _save_active_data(overwrite=True)
         except Exception as exc:
-            if action == "commit":
-                state.edit_status = f"Could not add edited result to pipeline: {exc}"
-                state.edit_status_type = "error"
-            elif action == "state_save":
-                state.state_status = f"Error: {exc}"
-                state.state_status_type = "error"
-            else:
-                state.save_status = f"Error: {exc}"
-                state.save_status_type = "error"
+            notify(state, f"Error: {exc}", "error")
 
     @ctrl.add("pv_cancel_save_overwrite")
     def pv_cancel_save_overwrite():
@@ -742,9 +735,6 @@ def register_paraview_controllers(
             state.edit_session_active = True
             state.save_filename = edit_session.default_output_filename()
             state.save_target_label = f"Edited dataset: {exported['label']}"
-            state.save_status = ""
-            state.edit_apply_status = ""
-            state.edit_selection_status = ""
             state.edit_selection_event = ""
             state.selection_count = 0
             state.inspector_tab = 3
@@ -753,13 +743,11 @@ def register_paraview_controllers(
             sync_paraview_edit_selection_overlay()
             render_and_push()
             debug_view("pv_begin_edit_session.end", mode=state.mainViewMode)
-            state.edit_status = f"Edit session initialized for {exported['label']}. " ""
-            state.edit_status_type = "info"
+            notify(state, f"Edit session initialized for {exported['label']}.", "info")
         except Exception as exc:
             state.edit_session_active = False
             state.edit_session_label = ""
-            state.edit_status = f"Edit mode unavailable: {exc}"
-            state.edit_status_type = "error"
+            notify(state, f"Edit mode unavailable: {exc}", "error")
 
     @ctrl.add("pv_discard_edit_session")
     def pv_discard_edit_session():
@@ -775,8 +763,6 @@ def register_paraview_controllers(
             if state.active_source_label
             else "Active pipeline result"
         )
-        state.edit_apply_status = ""
-        state.edit_selection_status = ""
         state.edit_selection_event = ""
         state.selection_count = 0
         state.inspector_tab = 0
@@ -784,8 +770,7 @@ def register_paraview_controllers(
         call_view_set_remote_rendering(True)
         call_view_update(reset_camera=True)
         debug_view("pv_discard_edit_session.end", mode=state.mainViewMode)
-        state.edit_status = "Edit session discarded"
-        state.edit_status_type = "info"
+        notify(state, "Edit session discarded", "info")
 
     @ctrl.add("pv_commit_edit_session")
     def pv_commit_edit_session(filename=None):
@@ -799,8 +784,7 @@ def register_paraview_controllers(
         except FileExistsError as exc:
             _open_save_overwrite_dialog("commit", exc)
         except Exception as exc:
-            state.edit_status = f"Could not add edited result to pipeline: {exc}"
-            state.edit_status_type = "error"
+            notify(state, f"Could not add edited result to pipeline: {exc}", "error")
 
     @ctrl.add("pv_apply_color_map_preset")
     def pv_apply_color_map_preset(preset=None):
@@ -864,7 +848,7 @@ def register_paraview_controllers(
             render_and_push()
             _flush_time_state()
         except Exception as exc:
-            state.error_message = f"Error setting time: {exc}"
+            notify(state, f"Error setting time: {exc}", "error")
 
     @ctrl.add("pv_next_time_step")
     def pv_next_time_step():
@@ -875,7 +859,7 @@ def register_paraview_controllers(
             render_and_push()
             _flush_time_state()
         except Exception as exc:
-            state.error_message = f"Error moving to next timestep: {exc}"
+            notify(state, f"Error moving to next timestep: {exc}", "error")
 
     @ctrl.add("pv_prev_time_step")
     def pv_prev_time_step():
@@ -886,7 +870,7 @@ def register_paraview_controllers(
             render_and_push()
             _flush_time_state()
         except Exception as exc:
-            state.error_message = f"Error moving to previous timestep: {exc}"
+            notify(state, f"Error moving to previous timestep: {exc}", "error")
 
     @ctrl.add("pv_first_time_step")
     def pv_first_time_step():
@@ -898,7 +882,7 @@ def register_paraview_controllers(
                 render_and_push()
                 _flush_time_state()
         except Exception as exc:
-            state.error_message = f"Error moving to first timestep: {exc}"
+            notify(state, f"Error moving to first timestep: {exc}", "error")
 
     @ctrl.add("pv_last_time_step")
     def pv_last_time_step():
@@ -910,7 +894,7 @@ def register_paraview_controllers(
                 render_and_push()
                 _flush_time_state()
         except Exception as exc:
-            state.error_message = f"Error moving to last timestep: {exc}"
+            notify(state, f"Error moving to last timestep: {exc}", "error")
 
     @ctrl.add("pv_play_pause_time")
     def pv_play_pause_time():
@@ -962,7 +946,7 @@ def register_paraview_controllers(
         except Exception as exc:
             state.time_playing = False
             _flush_time_state()
-            state.error_message = f"Animation error: {exc}"
+            notify(state, f"Animation error: {exc}", "error")
 
     @ctrl.add("pv_set_scalar_bar_visible")
     def pv_set_scalar_bar_visible(visible=None):
@@ -974,9 +958,6 @@ def register_paraview_controllers(
             state.color_bar_visible = visible
             pv_backend.set_scalar_bar_visible(visible)
             render_and_push()
-            _set_color_status(
-                "Color scale shown." if visible else "Color scale hidden."
-            )
         except Exception as exc:
             _set_color_status(f"Color scale update failed: {exc}", "error")
 
@@ -988,9 +969,6 @@ def register_paraview_controllers(
             state.orientation_axes_visible = visible
             pv_backend.set_orientation_axes_visible(visible)
             render_and_push()
-            _set_color_status(
-                "Orientation axes shown." if visible else "Orientation axes hidden."
-            )
         except Exception as exc:
             _set_color_status(f"Orientation axes update failed: {exc}", "error")
 
@@ -1004,11 +982,6 @@ def register_paraview_controllers(
             state.categorical_coloring = enabled
             pv_backend.set_categorical_coloring(enabled)
             _refresh_color_state()
-            _set_color_status(
-                "Categorical colors enabled."
-                if enabled
-                else "Categorical colors disabled."
-            )
         except Exception as exc:
             _set_color_status(f"Categorical color update failed: {exc}", "error")
 
@@ -1071,8 +1044,11 @@ def register_paraview_controllers(
             if edit_session.has_field(field_name, association):
                 state.edit_overwrite_field_name = field_name
                 state.edit_overwrite_dialog = True
-                state.edit_apply_status = f"Field '{field_name}' already exists. Confirm overwrite to replace it."
-                state.edit_apply_status_type = "warning"
+                notify(
+                    state,
+                    f"Field '{field_name}' already exists. Confirm overwrite to replace it.",
+                    "warning",
+                )
                 sync_edit_session_state()
                 return
             edit_session.create_field(
@@ -1084,12 +1060,10 @@ def register_paraview_controllers(
             state.edit_field_association = association
             _apply_geometry_options_for_association(association)
             sync_edit_session_state()
-            state.edit_apply_status = f"Created {association} field '{field_name}'."
-            state.edit_apply_status_type = "success"
+            notify(state, f"Created {association} field '{field_name}'.", "success")
         except Exception as exc:
             sync_edit_session_state()
-            state.edit_apply_status = f"Create field failed: {exc}"
-            state.edit_apply_status_type = "error"
+            notify(state, f"Create field failed: {exc}", "error")
 
     @ctrl.add("pv_apply_edit_field")
     def pv_apply_edit_field():
@@ -1101,8 +1075,7 @@ def register_paraview_controllers(
             _apply_edit_field()
         except Exception as exc:
             sync_edit_session_state()
-            state.edit_apply_status = f"Edit apply failed: {exc}"
-            state.edit_apply_status_type = "error"
+            notify(state, f"Edit apply failed: {exc}", "error")
 
     @ctrl.add("pv_confirm_overwrite_edit_field")
     def pv_confirm_overwrite_edit_field():
@@ -1125,12 +1098,10 @@ def register_paraview_controllers(
             state.edit_field_association = association
             _apply_geometry_options_for_association(association)
             sync_edit_session_state()
-            state.edit_apply_status = f"Created {association} field '{field_name}'."
-            state.edit_apply_status_type = "success"
+            notify(state, f"Created {association} field '{field_name}'.", "success")
         except Exception as exc:
             sync_edit_session_state()
-            state.edit_apply_status = f"Create field failed: {exc}"
-            state.edit_apply_status_type = "error"
+            notify(state, f"Create field failed: {exc}", "error")
 
     @ctrl.add("pv_cancel_overwrite_edit_field")
     def pv_cancel_overwrite_edit_field():
@@ -1222,10 +1193,11 @@ def register_paraview_controllers(
             selection = event.get("selection") if isinstance(event, dict) else None
             if not isinstance(selection, (list, tuple)) or len(selection) != 4:
                 with timing.phase("invalid_status"):
-                    state.edit_selection_status = (
-                        "Box selection did not include a usable rectangle."
+                    notify(
+                        state,
+                        "Box selection did not include a usable rectangle.",
+                        "warning",
                     )
-                    state.edit_selection_status_type = "warning"
                 status = "invalid"
                 return
 
@@ -1287,8 +1259,7 @@ def register_paraview_controllers(
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         state.edit_selection_event = ""
-        state.edit_selection_status = "Selection cleared."
-        state.edit_selection_status_type = "info"
+        notify(state, "Selection cleared.", "info")
         render_and_push()
 
     @ctrl.add("pv_select_all_edit_cells")
@@ -1308,8 +1279,9 @@ def register_paraview_controllers(
             entity_label = "point(s)"
         else:
             entity_label = "cell(s)"
-        state.edit_selection_status = (
-            f"Selected all {count} {entity_label} in the edit-session dataset."
+        notify(
+            state,
+            f"Selected all {count} {entity_label} in the edit-session dataset.",
+            "success",
         )
-        state.edit_selection_status_type = "success"
         render_and_push()

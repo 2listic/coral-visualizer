@@ -355,7 +355,7 @@ def test_paraview_edit_pick_mode_click_and_box_selection_headless(shared_browser
         )
         assert click_count is not None and 0 < click_count < all_count
 
-        page.click("button:has-text('Clear Selection')")
+        page.click("button:has-text('Clear All')")
         assert _wait_for_selection_count(page, lambda count: count == 0) == 0
 
         x0 = box["x"] + box["width"] * 0.35
@@ -730,7 +730,7 @@ def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(
         first_rect = (0.553663, 0.434707, 0.757133, 0.54557)
         second_rect = (0.2356, 0.414752, 0.813425, 0.561162)
 
-        page.click("button:has-text('Clear Selection')")
+        page.click("button:has-text('Clear All')")
         assert _wait_for_selection_count(page, lambda count: count == 0) == 0
         _drag_normalized_box(page, box, second_rect)
         expected_second_count = _wait_for_selection_count(
@@ -738,7 +738,7 @@ def test_paraview_point_field_replace_box_selection_does_not_toggle_overlap(
         )
         assert expected_second_count is not None and expected_second_count > 0
 
-        page.click("button:has-text('Clear Selection')")
+        page.click("button:has-text('Clear All')")
         assert _wait_for_selection_count(page, lambda count: count == 0) == 0
         _drag_normalized_box(page, box, first_rect)
         first_count = _wait_for_selection_count(
@@ -849,7 +849,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
             (0.15, 0.28, 0.50, 0.70),
         ]
         for fx0, fy0, fx1, fy1 in left_boxes:
-            page.click("button:has-text('Clear Selection')")
+            page.click("button:has-text('Clear All')")
             time.sleep(0.5)
             x0 = box["x"] + box["width"] * fx0
             y0 = box["y"] + box["height"] * fy0
@@ -867,7 +867,7 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
         if selected_count == 0:
             left_clicks = [(0.20, 0.50), (0.28, 0.46), (0.24, 0.58), (0.34, 0.52)]
             for fx, fy in left_clicks:
-                page.click("button:has-text('Clear Selection')")
+                page.click("button:has-text('Clear All')")
                 time.sleep(0.4)
                 page.mouse.click(
                     box["x"] + box["width"] * fx,
@@ -987,7 +987,7 @@ def test_paraview_cube_surface_selection_assigns_created_cell_field(shared_brows
 
         selected_count = 0
         for fx, fy in ((0.50, 0.50), (0.40, 0.42), (0.60, 0.42), (0.42, 0.58)):
-            page.click("button:has-text('Clear Selection')")
+            page.click("button:has-text('Clear All')")
             time.sleep(0.3)
             page.mouse.click(
                 box["x"] + box["width"] * fx,
@@ -1098,7 +1098,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
         }
 
         def _try_click(fx, fy, label):
-            page.click("button:has-text('Clear Selection')")
+            page.click("button:has-text('Clear All')")
             time.sleep(0.35)
             x = box["x"] + box["width"] * fx
             y = box["y"] + box["height"] * fy
@@ -1123,7 +1123,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
             return count or 0
 
         def _try_box(fx0, fy0, fx1, fy1, label):
-            page.click("button:has-text('Clear Selection')")
+            page.click("button:has-text('Clear All')")
             time.sleep(0.35)
             x0 = box["x"] + box["width"] * fx0
             y0 = box["y"] + box["height"] * fy0
@@ -1158,7 +1158,7 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
 
         selected = 0
         if manual_mode:
-            page.click("button:has-text('Clear Selection')")
+            page.click("button:has-text('Clear All')")
             time.sleep(0.35)
             page.evaluate(
                 """

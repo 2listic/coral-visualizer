@@ -177,7 +177,7 @@ def test_paraview_cube_center_box_selection_in_available_edit_modes(
         else:
             _select_vselect_option(page, "Geometry mode", mode_label)
 
-        page.click("button:has-text('Clear Selection')")
+        page.click("button:has-text('Clear All')")
         assert _wait_for_selection_count(page, lambda count: count == 0) == 0
 
         view = page.locator('[style*="cursor: crosshair"]').first

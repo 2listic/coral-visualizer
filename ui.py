@@ -48,33 +48,21 @@ def _build_view_widget(render_target, ctrl):
 
 
 def _build_alerts():
-    vuetify.VAlert(
-        v_show=("error_message",),
-        type="error",
-        dense=True,
-        dismissible=True,
-        v_model=("error_message",),
-        children=("{{ error_message }}",),
-        style="position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;",
-    )
-    vuetify.VAlert(
-        v_show=("upload_status",),
-        type=("upload_status_type",),
-        dense=True,
-        dismissible=True,
-        v_model=("upload_status",),
-        children=("{{ upload_status }}",),
-        style="position: absolute; top: 68px; left: 10px; right: 10px; z-index: 999;",
-    )
-    vuetify.VAlert(
-        v_show=("pv_runtime_message",),
-        type=("pv_runtime_type",),
-        dense=True,
-        dismissible=True,
-        v_model=("pv_runtime_message",),
-        children=("{{ pv_runtime_message }}",),
-        style="position: absolute; top: 126px; left: 10px; right: 10px; z-index: 998; white-space: pre-line;",
-    )
+    with vuetify.VSnackbar(
+        v_model=("notification_show",),
+        color=("notification_type",),
+        timeout=5000,
+        multi_line=True,
+        style="z-index: 1000;",
+    ):
+        html.Span("{{ notification_message }}")
+        with vuetify.Template(v_slot_action="{ attrs }"):
+            vuetify.VBtn(
+                "Close",
+                text=True,
+                v_bind="attrs",
+                click="notification_show = false",
+            )
 
 
 def _build_toolbar(ctrl):
@@ -567,14 +555,6 @@ def _build_selection_tools_panel(ctrl):
                     dense=True,
                     disabled=("!group_select",),
                 )
-        with vuetify.VListItem(v_show=("edit_selection_status",)):
-            with vuetify.VListItemContent():
-                vuetify.VAlert(
-                    dense=True,
-                    type=("edit_selection_status_type",),
-                    children=["{{ edit_selection_status }}"],
-                    classes="ma-0",
-                )
         with vuetify.VListItem(v_show=("selection_timing_last",)):
             with vuetify.VListItemContent():
                 vuetify.VListItemSubtitle("Last selection timing")
@@ -729,13 +709,6 @@ def _build_edit_assign_panel(ctrl):
                     text=True,
                     click=ctrl.pv_confirm_overwrite_edit_field,
                 )
-    vuetify.VAlert(
-        v_show=("edit_apply_status",),
-        type=("edit_apply_status_type",),
-        dense=True,
-        children=["{{ edit_apply_status }}"],
-        classes="mb-4",
-    )
 
 
 def _build_paraview_pipeline_panel(ctrl):
@@ -954,22 +927,6 @@ def _build_paraview_pipeline_panel(ctrl):
                     with vuetify.VListItemContent():
                         vuetify.VListItemSubtitle("Edit session")
                         vuetify.VListItemTitle("{{ edit_session_label }}")
-                with vuetify.VListItem(v_show=("edit_status",)):
-                    with vuetify.VListItemContent():
-                        vuetify.VAlert(
-                            type=("edit_status_type",),
-                            dense=True,
-                            children=["{{ edit_status }}"],
-                            classes="ma-0",
-                        )
-                with vuetify.VListItem(v_show=("save_status",)):
-                    with vuetify.VListItemContent():
-                        vuetify.VAlert(
-                            type=("save_status_type",),
-                            dense=True,
-                            children=["{{ save_status }}"],
-                            classes="ma-0",
-                        )
 
             vuetify.VDivider(classes="my-4")
             vuetify.VSubheader(classes="px-0", children=["State"])
@@ -1033,14 +990,6 @@ def _build_paraview_pipeline_panel(ctrl):
                             disabled=("!state_filename",),
                             click="window.open('/api/download?file=' + encodeURIComponent(state_filename), '_blank')",
                         )
-                vuetify.VAlert(
-                    v_if="state_status",
-                    type=("state_status_type",),
-                    dense=True,
-                    text=True,
-                    classes="mt-3 mb-0",
-                    children=["{{ state_status }}"],
-                )
 
             vuetify.VDivider(classes="my-4")
             vuetify.VSubheader(classes="px-0", children=["Workflow"])
@@ -1249,15 +1198,6 @@ def _build_paraview_inspector_panel(ctrl):
                                         ctrl.pv_set_categorical_coloring,
                                         "[$event]",
                                     ),
-                                )
-                        with vuetify.VListItem(v_show=("color_controls_status",)):
-                            with vuetify.VListItemContent():
-                                vuetify.VAlert(
-                                    type=("color_controls_status_type",),
-                                    dense=True,
-                                    text=True,
-                                    classes="ma-0",
-                                    children=["{{ color_controls_status }}"],
                                 )
                     vuetify.VAlert(
                         v_if="display_default_property_count + display_advanced_property_count === 0",

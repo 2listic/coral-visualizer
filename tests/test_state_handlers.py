@@ -51,7 +51,9 @@ def _register(
 
 def test_selected_file_change_loads_file(tmp_path):
     loaded = []
-    state = FakeState(error_message="")
+    state = FakeState(
+        notification_message="", notification_type="info", notification_show=False
+    )
     dataset = tmp_path / "mesh.vtu"
     dataset.write_text("dummy")
 
@@ -63,7 +65,9 @@ def test_selected_file_change_loads_file(tmp_path):
 
 
 def test_selected_file_change_captures_loading_errors(tmp_path):
-    state = FakeState(error_message="")
+    state = FakeState(
+        notification_message="", notification_type="info", notification_show=False
+    )
     dataset = tmp_path / "mesh.vtu"
     dataset.write_text("dummy")
 
@@ -74,7 +78,8 @@ def test_selected_file_change_captures_loading_errors(tmp_path):
 
     state._handlers["selected_file"](str(dataset))
 
-    assert state.error_message == "Error loading file: boom"
+    assert state.notification_message == "Error loading file: boom"
+    assert state.notification_type == "error"
 
 
 def test_array_change_uses_targeted_color_flush():
@@ -87,7 +92,9 @@ def test_array_change_uses_targeted_color_flush():
         set_active_node=lambda node_id: True,
         set_interactor_rotation=lambda enabled: None,
     )
-    state = FakeState(error_message="")
+    state = FakeState(
+        notification_message="", notification_type="info", notification_show=False
+    )
 
     _register(
         state,
@@ -116,7 +123,9 @@ def test_representation_change_uses_full_ui_flush():
         set_active_node=lambda node_id: True,
         set_interactor_rotation=lambda enabled: None,
     )
-    state = FakeState(error_message="")
+    state = FakeState(
+        notification_message="", notification_type="info", notification_show=False
+    )
 
     _register(
         state,
@@ -146,7 +155,9 @@ def test_pipeline_and_interaction_callbacks_dispatch():
         set_interactor_rotation=lambda enabled: calls.append(("rotate", enabled)),
     )
     state = FakeState(
-        error_message="",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         edit_session_active=False,
         interactive_quality=0,
         interactive_ratio=0,
@@ -183,7 +194,9 @@ def test_pick_mode_in_edit_session_disables_rotation():
         set_active_node=lambda node_id: True,
         set_interactor_rotation=lambda enabled: calls.append(("rotate", enabled)),
     )
-    state = FakeState(error_message="")
+    state = FakeState(
+        notification_message="", notification_type="info", notification_show=False
+    )
 
     _register(
         state,

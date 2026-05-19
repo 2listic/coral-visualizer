@@ -250,7 +250,7 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - `Grow selection`
   - `Grow angle`
   - `Select All`
-  - `Clear Selection`
+  - `Clear All`
   - live selection status/event preview
 - Implemented the first working slice of the new edit architecture:
   - `Volume` mode on the local `EditSession` dataset
@@ -377,7 +377,7 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
     to keep interaction mode, box selection gating, and camera rotation synchronized.
   - Added controller regression coverage and validated browser-driven rotation lock/unlock E2E paths.
 - Improved Edit Tools responsiveness.
-  - `Select All` / `Clear Selection` buttons now wrap correctly on narrow panels and no longer overflow.
+  - `Select All` / `Clear All` buttons now wrap correctly on narrow panels and no longer overflow.
   - `Grow angle` now shows the live numeric value next to the slider.
 - Hardened dataset inspection tooling.
   - `tools/inspect_vtu.py` now supports both XML (`.vtu`) and legacy (`.vtk`) inputs with automatic reader selection.

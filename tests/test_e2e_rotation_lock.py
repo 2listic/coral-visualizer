@@ -74,7 +74,7 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
         page.wait_for_selector("text=Edit Tools", timeout=40000)
 
         # Clear any initial selection to have a clean state
-        page.click("button:has-text('Clear Selection')")
+        page.click("button:has-text('Clear All')")
         time.sleep(1.0)
 
         # Click in a safe place to remove hover state from buttons
@@ -100,8 +100,8 @@ def test_paraview_pick_mode_does_not_rotate_on_drag(shared_browser):
 
         time.sleep(1.0)  # Wait for any potential (but unwanted) rotation
 
-        # Clear selection AGAIN to remove highlight from the drag we just did
-        page.click("button:has-text('Clear Selection')")
+        # Clear All AGAIN to remove highlight from the drag we just did
+        page.click("button:has-text('Clear All')")
         time.sleep(1.0)
 
         # Click in a safe place to remove hover state from buttons

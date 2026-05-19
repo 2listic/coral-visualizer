@@ -7,6 +7,7 @@ import traceback
 from typing import TYPE_CHECKING
 
 from diagnostics import debug_log, devtools_enabled
+from notifications import notify
 
 if TYPE_CHECKING:
     from paraview_runtime import ParaViewRuntime
@@ -30,7 +31,7 @@ def register_state_handlers(
             debug_log(f"\nLoading file: {selected_file}")
             paraview_runtime.load_file(selected_file)
         except Exception as exc:
-            state.error_message = f"Error loading file: {exc}"
+            notify(state, f"Error loading file: {exc}", "error")
             debug_log(f"Error: {exc}")
             if devtools_enabled():
                 traceback.print_exc()

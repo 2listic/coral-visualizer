@@ -131,9 +131,7 @@ def make_runtime(*, active_edit=False, output=""):
         display_properties=[],
         available_arrays=[],
         representation="Surface with Edges",
-        error_message="stale",
         selection_count=99,
-        save_status="stale",
         has_boundary=True,
     )
     backend = FakeParaViewBackend()
@@ -349,8 +347,6 @@ def test_load_file_resets_state_and_pushes_view():
     assert state.selected_array == ARRAY_SOLID
     assert state.representation == "Surface with Edges"
     assert state.has_boundary is False
-    assert state.error_message == ""
     assert state.selection_count == 0
-    assert state.save_status == ""
     assert backend.calls.count("render") >= 1
     assert view_calls[-1] == {}

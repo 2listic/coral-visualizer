@@ -26,15 +26,37 @@ build_ui()
         ├── _build_remote_browser_dialog(ctrl)          [ui.py:268]
         ├── _build_state_browser_dialog(ctrl)           [ui.py:223]
         │
-        ├── _build_paraview_pipeline_panel(ctrl)        [ui.py:611]
+        ├── _build_paraview_pipeline_panel(ctrl)        [ui.py:741]
         │   VNavigationDrawer — LEFT drawer
-        │   ├── pipeline tree (VList of pipeline_items)
-        │   │   └── per-node: visibility toggle, label, filter menu
-        │   ├── file selector
-        │   ├── upload / refresh buttons
-        │   ├── "Edit session" label        (v_if=edit_session_active)
-        │   ├── edit_status alert
-        │   └── save_status alert
+        │   │
+        │   ├── logo + title (sticky header)
+        │   │
+        │   ├── "Pipeline Browser" subheader + reload button
+        │   │   └── VList of pipeline_items
+        │   │       └── per-node: icon, label, visibility toggle
+        │   │
+        │   ├── "Selected Pipeline Item" subheader
+        │   │   └── VList
+        │   │       ├── selected label + source kind/type
+        │   │       ├── Show/Hide button
+        │   │       ├── Filter menu (Supported + Experimental with search)
+        │   │       ├── Delete Selected button
+        │   │       ├── save target label
+        │   │       ├── "Edit session" label    (v_if=edit_session_active)
+        │   │       ├── edit_status alert       (v_show=edit_status)
+        │   │       └── save_status alert       (v_show=save_status)
+        │   │
+        │   ├── "State" subheader
+        │   │   └── VSheet
+        │   │       ├── state file combobox
+        │   │       ├── Save State button
+        │   │       ├── Load State button
+        │   │       ├── Upload State File button
+        │   │       ├── Download State button
+        │   │       └── state_status alert
+        │   │
+        │   └── "Workflow" subheader
+        │       └── info alert
         │
         ├── _build_paraview_inspector_panel(ctrl)       [ui.py:927]
         │   VNavigationDrawer — RIGHT drawer
@@ -61,7 +83,7 @@ build_ui()
         │   └── tab 3 — Edit             (v_show=edit_session_active)
         │       ├── _build_selection_tools_panel(ctrl)  [ui.py:444]  "Edit Tools"
         │       │   ├── Pick / Rotate mode buttons
-        │       │   ├── Select All / Clear Selection buttons
+        │       │   ├── Select All / Clear All buttons
         │       │   ├── selection count display
         │       │   ├── geometry mode selector
         │       │   ├── selection mode selector
@@ -88,8 +110,8 @@ build_ui()
 
 ## Key layout rules
 
-- The left drawer (`_build_paraview_pipeline_panel`) owns pipeline navigation and
-  session status only. No edit workflow controls live there.
+- The left drawer (`_build_paraview_pipeline_panel`) owns pipeline navigation,
+  session status, and state file management. No edit workflow controls live there.
 - The right drawer (`_build_paraview_inspector_panel`) owns all inspector tabs.
   Tab 3 (Edit) is hidden outside an active edit session.
 - The viewport (`_build_view_widget`) sits behind both drawers and fills the

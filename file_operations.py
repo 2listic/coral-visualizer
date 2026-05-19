@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from file_utils import get_vtk_files_from_data_folder
+from notifications import notify
 
 if TYPE_CHECKING:
     from trame_server.state import State
@@ -155,8 +156,9 @@ def _flush_save_feedback(state):
     if callable(dirty):
         for key in (
             "save_filename",
-            "save_status",
-            "save_status_type",
+            "notification_message",
+            "notification_type",
+            "notification_show",
             "available_files",
         ):
             try:
@@ -229,8 +231,7 @@ def save_paraview_output(
 
     refresh_available_files(state, data_directory)
     state.save_filename = relative_output
-    state.save_status = f"Saved {saved_kind} to {relative_output}"
-    state.save_status_type = "success"
+    notify(state, f"Saved {saved_kind} to {relative_output}", "success")
     _flush_save_feedback(state)
     return output_path
 
@@ -272,8 +273,7 @@ def save_paraview_state(*, state, data_directory, pv_backend, overwrite=False):
 
     refresh_available_state_files(state, data_directory)
     state.state_filename = relative_output
-    state.state_status = f"Saved application state to {relative_output}"
-    state.state_status_type = "success"
+    notify(state, f"Saved application state to {relative_output}", "success")
     _flush_save_feedback(state)
     return output_path
 
