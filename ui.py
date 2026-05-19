@@ -441,6 +441,303 @@ def _build_inspector_tab_selector():
                     )
 
 
+def _build_selection_tools_panel(ctrl):
+    """Pick/rotate mode, selection options, grow controls, and status for edit sessions."""
+    vuetify.VSubheader(classes="px-0", children=["Edit Tools"])
+    with vuetify.VList(
+        dense=True,
+        two_line=True,
+        style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+        classes="mb-4",
+    ):
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                with vuetify.VRow(dense=True, classes="px-2"):
+                    with vuetify.VCol(cols=6):
+                        vuetify.VBtn(
+                            "Pick",
+                            small=True,
+                            block=True,
+                            color=("pick_mode ? 'primary' : ''",),
+                            outlined=("!pick_mode",),
+                            click=ctrl.pv_set_pick_mode,
+                        )
+                    with vuetify.VCol(cols=6):
+                        vuetify.VBtn(
+                            "Rotate",
+                            small=True,
+                            block=True,
+                            color=("!pick_mode ? 'primary' : ''",),
+                            outlined=("pick_mode",),
+                            click=ctrl.pv_set_rotate_mode,
+                        )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                with vuetify.VRow(
+                    dense=True,
+                    no_gutters=True,
+                    classes="mx-0",
+                ):
+                    with vuetify.VCol(cols=12, sm=6, classes="pa-1"):
+                        vuetify.VBtn(
+                            "Select All",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click=ctrl.pv_select_all_edit_cells,
+                        )
+                    with vuetify.VCol(cols=12, sm=6, classes="pa-1"):
+                        vuetify.VBtn(
+                            "Clear All",
+                            small=True,
+                            block=True,
+                            outlined=True,
+                            click=ctrl.pv_clear_edit_preview,
+                        )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VListItemTitle("{{ selection_count }} selected")
+                vuetify.VListItemSubtitle("{{ edit_selection_mode }} mode")
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VSelect(
+                    v_model=("edit_geometry_mode",),
+                    items=("edit_geometry_mode_options",),
+                    item_text="text",
+                    item_value="value",
+                    label="Geometry mode",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VSelect(
+                    v_model=("edit_selection_mode",),
+                    items=("edit_selection_mode_options",),
+                    label="Selection mode",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                    disabled=("!pick_mode",),
+                )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VSelect(
+                    v_model=("selection_behavior",),
+                    items=("selection_behavior_options",),
+                    label="Selection behavior",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                    disabled=("!pick_mode",),
+                )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VSwitch(
+                    v_model=("group_select",),
+                    label="Grow selection",
+                    hide_details=True,
+                    dense=True,
+                )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                with vuetify.VRow(
+                    dense=True,
+                    align="center",
+                    no_gutters=True,
+                    classes="mb-1",
+                ):
+                    with vuetify.VCol(cols=8):
+                        vuetify.VListItemTitle("Grow angle")
+                    with vuetify.VCol(cols=4, classes="text-right"):
+                        vuetify.VChip(
+                            "{{ angle_threshold }}°",
+                            small=True,
+                            outlined=True,
+                            label=True,
+                        )
+                vuetify.VSlider(
+                    v_model=("angle_threshold",),
+                    label="",
+                    min=0,
+                    max=90,
+                    step=1,
+                    hide_details=True,
+                    dense=True,
+                    disabled=("!group_select",),
+                )
+        with vuetify.VListItem(v_show=("edit_selection_status",)):
+            with vuetify.VListItemContent():
+                vuetify.VAlert(
+                    dense=True,
+                    type=("edit_selection_status_type",),
+                    children=["{{ edit_selection_status }}"],
+                    classes="ma-0",
+                )
+        with vuetify.VListItem(v_show=("selection_timing_last",)):
+            with vuetify.VListItemContent():
+                vuetify.VListItemSubtitle("Last selection timing")
+                vuetify.VListItemTitle(
+                    "{{ selection_timing_last }}",
+                    style="font-family: monospace; white-space: normal; font-size: 0.78rem;",
+                )
+
+
+def _build_edit_assign_panel(ctrl):
+    """Field selection and value assignment controls for the active edit session."""
+    vuetify.VSubheader(classes="px-0", children=["Field Assignment"])
+    with vuetify.VList(
+        dense=True,
+        two_line=True,
+        style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
+        classes="mb-2",
+    ):
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VSelect(
+                    v_model=("edit_field_choice",),
+                    items=("edit_field_options",),
+                    item_text="text",
+                    item_value="value",
+                    label="Select field",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                    classes="mb-2",
+                    change=(ctrl.pv_on_edit_field_choice, "[$event]"),
+                )
+                vuetify.VTextField(
+                    v_model=("edit_expression",),
+                    label="Value / Calculator",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                    hint="Use a scalar expression like 1, A, or A*2",
+                    persistent_hint=True,
+                    classes="mb-2",
+                )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VListItemSubtitle("Available cell variables")
+                vuetify.VAlert(
+                    v_if="edit_available_variables.length === 0",
+                    type="info",
+                    dense=True,
+                    text=True,
+                    children=[
+                        "No cell-data variables are available on the edit-session dataset."
+                    ],
+                )
+                with vuetify.VChipGroup(
+                    column=True,
+                    v_if="edit_available_variables.length > 0",
+                ):
+                    with vuetify.Template(v_for="item in edit_available_variables"):
+                        vuetify.VChip(
+                            "{{ item }}",
+                            x_small=True,
+                            classes="ma-1",
+                        )
+        with vuetify.VListItem():
+            with vuetify.VListItemContent():
+                vuetify.VListItemSubtitle("Vector component syntax")
+                vuetify.VListItemTitle("{{ edit_vector_syntax }}")
+    vuetify.VBtn(
+        "Assign to Selected",
+        small=True,
+        block=True,
+        color="primary",
+        outlined=True,
+        click=ctrl.pv_apply_edit_field,
+        classes="mb-2",
+    )
+    with vuetify.VDialog(
+        v_model=("edit_create_field_dialog",),
+        max_width="560",
+    ):
+        with vuetify.VCard():
+            vuetify.VCardTitle("Create New Field")
+            with vuetify.VCardText():
+                vuetify.VSelect(
+                    v_model=("edit_new_field_association",),
+                    items=("edit_new_field_association_options",),
+                    item_text="text",
+                    item_value="value",
+                    label="Array type",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                    classes="mb-2",
+                )
+                vuetify.VTextField(
+                    v_model=("edit_new_field_name",),
+                    label="Field name",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                    classes="mb-2",
+                )
+                vuetify.VTextField(
+                    v_model=("edit_new_field_default_value",),
+                    label="Default value",
+                    dense=True,
+                    outlined=True,
+                    hide_details=True,
+                    classes="mb-2",
+                )
+            with vuetify.VCardActions():
+                vuetify.VSpacer()
+                vuetify.VBtn(
+                    "Cancel",
+                    text=True,
+                    click=ctrl.pv_cancel_create_edit_field,
+                )
+                vuetify.VBtn(
+                    "Create",
+                    color="primary",
+                    text=True,
+                    click=ctrl.pv_create_edit_field,
+                )
+    with vuetify.VDialog(
+        v_model=("edit_overwrite_dialog",),
+        max_width="560",
+    ):
+        with vuetify.VCard():
+            vuetify.VCardTitle("Overwrite Existing Field?")
+            with vuetify.VCardText():
+                vuetify.VAlert(
+                    type="warning",
+                    dense=True,
+                    outlined=True,
+                    children=[
+                        "Field '{{ edit_overwrite_field_name }}' already exists. "
+                        "Overwrite will remove the existing field and replace it "
+                        "with the newly generated values."
+                    ],
+                )
+            with vuetify.VCardActions():
+                vuetify.VSpacer()
+                vuetify.VBtn(
+                    "Cancel",
+                    text=True,
+                    click=ctrl.pv_cancel_overwrite_edit_field,
+                )
+                vuetify.VBtn(
+                    "Overwrite",
+                    color="warning",
+                    text=True,
+                    click=ctrl.pv_confirm_overwrite_edit_field,
+                )
+    vuetify.VAlert(
+        v_show=("edit_apply_status",),
+        type=("edit_apply_status_type",),
+        dense=True,
+        children=["{{ edit_apply_status }}"],
+        classes="mb-4",
+    )
+
+
 def _build_paraview_pipeline_panel(ctrl):
     with vuetify.VNavigationDrawer(
         app=True,
@@ -663,172 +960,6 @@ def _build_paraview_pipeline_panel(ctrl):
                             type=("edit_status_type",),
                             dense=True,
                             children=["{{ edit_status }}"],
-                            classes="ma-0",
-                        )
-                with vuetify.VListItem(v_if="edit_session_active"):
-                    with vuetify.VListItemContent():
-                        vuetify.VDivider(classes="my-2")
-                        vuetify.VListItemSubtitle("Edit Mode")
-                        vuetify.VSelect(
-                            v_model=("edit_geometry_mode",),
-                            items=("edit_geometry_mode_options",),
-                            item_text="text",
-                            item_value="value",
-                            label="Geometry mode",
-                            dense=True,
-                            outlined=True,
-                            hide_details=True,
-                            classes="mt-2 mb-2",
-                        )
-                        vuetify.VSelect(
-                            v_model=("edit_field_choice",),
-                            items=("edit_field_options",),
-                            item_text="text",
-                            item_value="value",
-                            label="Select field",
-                            dense=True,
-                            outlined=True,
-                            hide_details=True,
-                            classes="mb-2",
-                            change=(ctrl.pv_on_edit_field_choice, "[$event]"),
-                        )
-                        vuetify.VTextField(
-                            v_model=("edit_expression",),
-                            label="Value / Calculator",
-                            dense=True,
-                            outlined=True,
-                            hide_details=True,
-                            hint="Use a scalar expression like 1, A, or A*2",
-                            persistent_hint=True,
-                            classes="mb-2",
-                        )
-                        with vuetify.VList(
-                            dense=True,
-                            two_line=True,
-                            style="background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
-                            classes="mb-2",
-                        ):
-                            with vuetify.VListItem():
-                                with vuetify.VListItemContent():
-                                    vuetify.VListItemSubtitle(
-                                        "Available cell variables"
-                                    )
-                                    vuetify.VAlert(
-                                        v_if="edit_available_variables.length === 0",
-                                        type="info",
-                                        dense=True,
-                                        text=True,
-                                        children=[
-                                            "No cell-data variables are available on the edit-session dataset."
-                                        ],
-                                    )
-                                    with vuetify.VChipGroup(
-                                        column=True,
-                                        v_if="edit_available_variables.length > 0",
-                                    ):
-                                        with vuetify.Template(
-                                            v_for="item in edit_available_variables"
-                                        ):
-                                            vuetify.VChip(
-                                                "{{ item }}",
-                                                x_small=True,
-                                                classes="ma-1",
-                                            )
-                            with vuetify.VListItem():
-                                with vuetify.VListItemContent():
-                                    vuetify.VListItemSubtitle("Vector component syntax")
-                                    vuetify.VListItemTitle("{{ edit_vector_syntax }}")
-                        vuetify.VBtn(
-                            "Assign to Selected",
-                            small=True,
-                            block=True,
-                            color="primary",
-                            outlined=True,
-                            click=ctrl.pv_apply_edit_field,
-                            classes="mb-2",
-                        )
-                        with vuetify.VDialog(
-                            v_model=("edit_create_field_dialog",),
-                            max_width="560",
-                        ):
-                            with vuetify.VCard():
-                                vuetify.VCardTitle("Create New Field")
-                                with vuetify.VCardText():
-                                    vuetify.VSelect(
-                                        v_model=("edit_new_field_association",),
-                                        items=("edit_new_field_association_options",),
-                                        item_text="text",
-                                        item_value="value",
-                                        label="Array type",
-                                        dense=True,
-                                        outlined=True,
-                                        hide_details=True,
-                                        classes="mb-2",
-                                    )
-                                    vuetify.VTextField(
-                                        v_model=("edit_new_field_name",),
-                                        label="Field name",
-                                        dense=True,
-                                        outlined=True,
-                                        hide_details=True,
-                                        classes="mb-2",
-                                    )
-                                    vuetify.VTextField(
-                                        v_model=("edit_new_field_default_value",),
-                                        label="Default value",
-                                        dense=True,
-                                        outlined=True,
-                                        hide_details=True,
-                                        classes="mb-2",
-                                    )
-                                with vuetify.VCardActions():
-                                    vuetify.VSpacer()
-                                    vuetify.VBtn(
-                                        "Cancel",
-                                        text=True,
-                                        click=ctrl.pv_cancel_create_edit_field,
-                                    )
-                                    vuetify.VBtn(
-                                        "Create",
-                                        color="primary",
-                                        text=True,
-                                        click=ctrl.pv_create_edit_field,
-                                    )
-                        with vuetify.VDialog(
-                            v_model=("edit_overwrite_dialog",),
-                            max_width="560",
-                        ):
-                            with vuetify.VCard():
-                                vuetify.VCardTitle("Overwrite Existing Field?")
-                                with vuetify.VCardText():
-                                    vuetify.VAlert(
-                                        type="warning",
-                                        dense=True,
-                                        outlined=True,
-                                        children=[
-                                            "Field '{{ edit_overwrite_field_name }}' already exists. "
-                                            "Overwrite will remove the existing field and replace it "
-                                            "with the newly generated values."
-                                        ],
-                                    )
-                                with vuetify.VCardActions():
-                                    vuetify.VSpacer()
-                                    vuetify.VBtn(
-                                        "Cancel",
-                                        text=True,
-                                        click=ctrl.pv_cancel_overwrite_edit_field,
-                                    )
-                                    vuetify.VBtn(
-                                        "Overwrite",
-                                        color="warning",
-                                        text=True,
-                                        click=ctrl.pv_confirm_overwrite_edit_field,
-                                    )
-                        vuetify.VAlert(
-                            v_show=("edit_apply_status",),
-                            type=("edit_apply_status_type",),
-                            dense=True,
-                            children=["{{ edit_apply_status }}"],
                             classes="ma-0",
                         )
                 with vuetify.VListItem(v_show=("save_status",)):
@@ -1280,135 +1411,9 @@ def _build_paraview_inspector_panel(ctrl):
                     classes="pa-4",
                     v_show="edit_session_active && inspector_tab === 3",
                 ):
-                    vuetify.VSubheader(classes="px-0", children=["Edit Tools"])
-                    with vuetify.VList(
-                        dense=True,
-                        two_line=True,
-                        style="background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.08); border-radius: 8px;",
-                        classes="mb-4",
-                    ):
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
-                                with vuetify.VRow(dense=True, classes="px-2"):
-                                    with vuetify.VCol(cols=6):
-                                        vuetify.VBtn(
-                                            "Pick",
-                                            small=True,
-                                            block=True,
-                                            color=("pick_mode ? 'primary' : ''",),
-                                            outlined=("!pick_mode",),
-                                            click=ctrl.pv_set_pick_mode,
-                                        )
-                                    with vuetify.VCol(cols=6):
-                                        vuetify.VBtn(
-                                            "Rotate",
-                                            small=True,
-                                            block=True,
-                                            color=("!pick_mode ? 'primary' : ''",),
-                                            outlined=("pick_mode",),
-                                            click=ctrl.pv_set_rotate_mode,
-                                        )
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
-                                vuetify.VSelect(
-                                    v_model=("edit_selection_mode",),
-                                    items=("edit_selection_mode_options",),
-                                    label="Selection mode",
-                                    dense=True,
-                                    outlined=True,
-                                    hide_details=True,
-                                    disabled=("!pick_mode",),
-                                )
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
-                                vuetify.VSelect(
-                                    v_model=("selection_behavior",),
-                                    items=("selection_behavior_options",),
-                                    label="Selection behavior",
-                                    dense=True,
-                                    outlined=True,
-                                    hide_details=True,
-                                    disabled=("!pick_mode",),
-                                )
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
-                                vuetify.VSwitch(
-                                    v_model=("group_select",),
-                                    label="Grow selection",
-                                    hide_details=True,
-                                    dense=True,
-                                )
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
-                                with vuetify.VRow(
-                                    dense=True,
-                                    align="center",
-                                    no_gutters=True,
-                                    classes="mb-1",
-                                ):
-                                    with vuetify.VCol(cols=8):
-                                        vuetify.VListItemTitle("Grow angle")
-                                    with vuetify.VCol(cols=4, classes="text-right"):
-                                        vuetify.VChip(
-                                            "{{ angle_threshold }}°",
-                                            small=True,
-                                            outlined=True,
-                                            label=True,
-                                        )
-                                vuetify.VSlider(
-                                    v_model=("angle_threshold",),
-                                    label="",
-                                    min=0,
-                                    max=90,
-                                    step=1,
-                                    hide_details=True,
-                                    dense=True,
-                                    disabled=("!group_select",),
-                                )
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
-                                vuetify.VListItemTitle("{{ selection_count }} selected")
-                                vuetify.VListItemSubtitle(
-                                    "{{ edit_selection_mode }} mode"
-                                )
-                        with vuetify.VListItem():
-                            with vuetify.VListItemContent():
-                                with vuetify.VRow(
-                                    dense=True,
-                                    no_gutters=True,
-                                    classes="mx-0",
-                                ):
-                                    with vuetify.VCol(cols=12, sm=6, classes="pa-1"):
-                                        vuetify.VBtn(
-                                            "Select All",
-                                            small=True,
-                                            block=True,
-                                            outlined=True,
-                                            click=ctrl.pv_select_all_edit_cells,
-                                        )
-                                    with vuetify.VCol(cols=12, sm=6, classes="pa-1"):
-                                        vuetify.VBtn(
-                                            "Clear Selection",
-                                            small=True,
-                                            block=True,
-                                            outlined=True,
-                                            click=ctrl.pv_clear_edit_preview,
-                                        )
-                        with vuetify.VListItem(v_show=("edit_selection_status",)):
-                            with vuetify.VListItemContent():
-                                vuetify.VAlert(
-                                    dense=True,
-                                    type=("edit_selection_status_type",),
-                                    children=["{{ edit_selection_status }}"],
-                                    classes="ma-0",
-                                )
-                        with vuetify.VListItem(v_show=("selection_timing_last",)):
-                            with vuetify.VListItemContent():
-                                vuetify.VListItemSubtitle("Last selection timing")
-                                vuetify.VListItemTitle(
-                                    "{{ selection_timing_last }}",
-                                    style="font-family: monospace; white-space: normal; font-size: 0.78rem;",
-                                )
+                    _build_selection_tools_panel(ctrl)
+                    vuetify.VDivider(classes="my-4")
+                    _build_edit_assign_panel(ctrl)
 
 
 def _build_property_list(ctrl, state_key):
