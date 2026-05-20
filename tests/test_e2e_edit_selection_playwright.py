@@ -214,17 +214,26 @@ def _foreground_bbox(
     }
 
 
-def _wait_for_foreground(viewport, *, ignore_right_fraction=0.0, timeout_s=8):
+def _wait_for_foreground(
+    viewport, *, ignore_right_fraction=0.0, timeout_s=8, narrower_than=None
+):
     """Poll viewport screenshots until non-background content appears.
 
-    Returns (png_bytes, bbox) where bbox is the result of _foreground_bbox.
-    If timeout expires before content appears, returns the last screenshot with bbox=None.
+    When narrower_than is set, also requires bbox["width"] < narrower_than before
+    returning — useful when the viewport already has content and we need to wait
+    for it to shrink (e.g. hiding cells to show only faces).
+
+    Returns (png_bytes, bbox). If the timeout expires, returns the last screenshot
+    with whatever bbox was found (may be None or too wide).
     """
     deadline = time.time() + timeout_s
     while True:
         png = viewport.screenshot()
         bbox = _foreground_bbox(png, ignore_right_fraction=ignore_right_fraction)
-        if bbox is not None or time.time() >= deadline:
+        size_ok = narrower_than is None or (
+            bbox is not None and bbox["width"] < narrower_than
+        )
+        if (bbox is not None and size_ok) or time.time() >= deadline:
             return png, bbox
         time.sleep(0.25)
 
@@ -503,9 +512,12 @@ def test_paraview_display_color_scale_visibility_survives_categorical_toggle(
         _select_vselect_option(page, "Color by", "MaterialID")
         page.wait_for_selector("text=Color Bar", timeout=40000)
 
-        # Color scale starts visible; categorical coloring starts off
-        assert _switch_checked(page, "Show color scale") is True
-        assert _switch_checked(page, "Interpret values as categories") is False
+        # Color scale starts visible; categorical coloring starts off.
+        # Use polling waits — state updates arrive asynchronously after the selector.
+        _wait_for_switch_checked(page, "Show color scale", True, timeout_s=8)
+        _wait_for_switch_checked(
+            page, "Interpret values as categories", False, timeout_s=8
+        )
 
         # Hide the color scale, then toggle categorical on — must stay hidden
         _set_switch(page, "Show color scale", False)
@@ -684,7 +696,11 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
 
         _set_switch(page, "Show cells", False)
         _set_switch(page, "Show faces", True)
-        _, faces_bbox = _wait_for_foreground(viewport, ignore_right_fraction=0.15)
+        _, faces_bbox = _wait_for_foreground(
+            viewport,
+            ignore_right_fraction=0.15,
+            narrower_than=full_bbox["width"] * 0.5,
+        )
         assert faces_bbox is not None
         assert faces_bbox["height"] >= full_bbox["height"] * 0.30
         assert faces_bbox["width"] <= full_bbox["width"] * 0.18
