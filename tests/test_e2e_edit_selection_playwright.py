@@ -214,6 +214,21 @@ def _foreground_bbox(
     }
 
 
+def _wait_for_foreground(viewport, *, ignore_right_fraction=0.0, timeout_s=8):
+    """Poll viewport screenshots until non-background content appears.
+
+    Returns (png_bytes, bbox) where bbox is the result of _foreground_bbox.
+    If timeout expires before content appears, returns the last screenshot with bbox=None.
+    """
+    deadline = time.time() + timeout_s
+    while True:
+        png = viewport.screenshot()
+        bbox = _foreground_bbox(png, ignore_right_fraction=ignore_right_fraction)
+        if bbox is not None or time.time() >= deadline:
+            return png, bbox
+        time.sleep(0.25)
+
+
 def _changed_bbox(
     before_png_bytes,
     after_png_bytes,
@@ -662,21 +677,14 @@ def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_brow
 
         _set_switch(page, "Show cells", True)
         _set_switch(page, "Show faces", True)
-        time.sleep(1.0)
-        full_png = viewport.screenshot()
-        full_bbox = _foreground_bbox(full_png, ignore_right_fraction=0.15)
+        _, full_bbox = _wait_for_foreground(viewport, ignore_right_fraction=0.15)
         assert full_bbox is not None
         assert full_bbox["width"] > 100
         assert full_bbox["height"] > 100
 
         _set_switch(page, "Show cells", False)
         _set_switch(page, "Show faces", True)
-        time.sleep(1.0)
-
-        faces_bbox = _foreground_bbox(
-            viewport.screenshot(),
-            ignore_right_fraction=0.15,
-        )
+        _, faces_bbox = _wait_for_foreground(viewport, ignore_right_fraction=0.15)
         assert faces_bbox is not None
         assert faces_bbox["height"] >= full_bbox["height"] * 0.30
         assert faces_bbox["width"] <= full_bbox["width"] * 0.18
