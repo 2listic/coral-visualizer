@@ -43,12 +43,13 @@ class FileOperationService:
     def persist_uploaded_state_file(self, client_file):
         return persist_uploaded_state_file(self.data_directory, client_file)
 
-    def save_paraview_output(self, overwrite=False):
+    def save_paraview_output(self, filename=None, overwrite=False):
         return save_paraview_output(
             state=self.state,
             data_directory=self.data_directory,
             pv_backend=self.pv_backend,
             edit_session=self.edit_session,
+            filename=filename,
             overwrite=overwrite,
         )
 
@@ -174,16 +175,14 @@ def _flush_save_feedback(state):
             pass
 
 
-def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_session):
+def resolve_paraview_output_path(*, filename, data_directory, pv_backend, edit_session):
     """Resolve the active ParaView save target and classify the output kind."""
     if pv_backend.source is None and not edit_session.active:
         raise RuntimeError("No active pipeline item to save")
 
     if edit_session.active:
         fallback_name = edit_session.default_output_filename()
-        output_path = resolve_output_path(
-            data_directory, state.save_filename, fallback_name
-        )
+        output_path = resolve_output_path(data_directory, filename, fallback_name)
         suffix = os.path.splitext(output_path)[1].lower()
         if not suffix:
             output_path += ".vtu"
@@ -194,9 +193,7 @@ def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_sess
         saved_kind = "edited dataset"
     else:
         fallback_name = pv_backend.default_output_filename()
-        output_path = resolve_output_path(
-            data_directory, state.save_filename, fallback_name
-        )
+        output_path = resolve_output_path(data_directory, filename, fallback_name)
         if not os.path.splitext(output_path)[1]:
             output_path += pv_backend.default_output_extension()
         saved_kind = "pipeline result"
@@ -205,11 +202,12 @@ def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_sess
 
 
 def save_paraview_output(
-    *, state, data_directory, pv_backend, edit_session, overwrite=False
+    *, state, data_directory, pv_backend, edit_session, filename=None, overwrite=False
 ):
     """Save the active ParaView output or edit-session dataset and return its path."""
+    save_name = (str(filename).strip() if filename else None) or state.save_filename
     output_path, saved_kind = resolve_paraview_output_path(
-        state=state,
+        filename=save_name,
         data_directory=data_directory,
         pv_backend=pv_backend,
         edit_session=edit_session,

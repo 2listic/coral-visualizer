@@ -775,6 +775,13 @@ class ParaViewBackend:
                     pass
             target_display.RescaleTransferFunctionToDataRange(True, False)
 
+        # If the LUT was already marked categorical (cached from a prior selection),
+        # re-populate annotations so the color bar reflects current data values without
+        # requiring the user to toggle the switch.
+        active_lut = self._active_lookup_table()
+        if active_lut is not None and self._lookup_table_categorical(active_lut):
+            self._configure_categorical_lookup_table(active_lut)
+
         can_show_scalar_bar = self._display_has_lookup_table(display, array_value)
         if can_show_scalar_bar and display is not None:
             try:
@@ -914,8 +921,8 @@ class ParaViewBackend:
         self.render()
 
     def _disable_scalar_coloring(self, display, *, hide_unused_scalar_bars=True):
-        """Best-effort disable scalar coloring across ParaView version differences."""
-        had_lookup_table = getattr(display, "LookupTable", None) is not None
+        """Best-effort disable scalar coloring on the given display."""
+        had_lookup_table = display.LookupTable is not None
         debug_log(
             f"[view-debug] _disable_scalar_coloring: had_lookup_table={had_lookup_table}"
         )
@@ -930,7 +937,7 @@ class ParaViewBackend:
             debug_log(
                 "[view-debug] _disable_scalar_coloring: hiding scalar bar before ColorBy(None)"
             )
-            if hasattr(display, "SetScalarBarVisibility") and self.view is not None:
+            if self.view is not None:
                 try:
                     display.SetScalarBarVisibility(self.view, False)
                 except Exception:
@@ -947,18 +954,14 @@ class ParaViewBackend:
         debug_log("[view-debug] _disable_scalar_coloring: ColorBy(None) done")
         # Clear ColorArrayName and LookupTable explicitly so there is no
         # residual auto-assigned state that could confuse later renders.
-        if hasattr(display, "ColorArrayName"):
-            for value in (("", ""), None, [None, ""], (None, ""), ["", ""]):
-                try:
-                    display.ColorArrayName = value
-                    break
-                except Exception:
-                    continue
-        if hasattr(display, "LookupTable"):
-            try:
-                display.LookupTable = None
-            except Exception:
-                pass
+        try:
+            display.ColorArrayName = ("", "")
+        except Exception:
+            pass
+        try:
+            display.LookupTable = None
+        except Exception:
+            pass
         self._scalar_bar_visible = False
 
     def _hide_current_scalar_bar(self, display):

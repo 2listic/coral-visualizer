@@ -103,6 +103,8 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
         notification_message="",
         notification_type="info",
         notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
     )
     pv_backend = SimpleNamespace(
         get_visibility=lambda node_id: True if node_id == "node-1" else None,
@@ -133,6 +135,9 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
 
     ctrl.handlers["pv_toggle_visibility_for"]("node-1")
     ctrl.handlers["pv_save_active_data"]()
+    assert state.save_dialog is True
+
+    ctrl.handlers["pv_confirm_save_dialog"]("output.vtu")
 
     assert calls[:3] == [("node-1", False), "update_ui", "render"]
     assert state.notification_message == "Error: cannot save"
@@ -148,12 +153,14 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
         notification_message="",
         notification_type="info",
         notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
     )
 
-    def save_with_confirmation(*, overwrite=False):
+    def save_with_confirmation(*, filename=None, overwrite=False):
         calls.append(overwrite)
         if not overwrite:
             raise FileExistsError(17, "exists", "exports/final.vtu")
@@ -179,6 +186,9 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
     )
 
     ctrl.handlers["pv_save_active_data"]()
+    assert state.save_dialog is True
+
+    ctrl.handlers["pv_confirm_save_dialog"]("exports/final.vtu")
 
     assert calls == [False]
     assert state.save_overwrite_dialog is True
@@ -193,23 +203,24 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
     assert state.save_overwrite_action == ""
 
 
-def test_pv_save_active_data_prefers_explicit_filename_from_client():
+def test_pv_save_dialog_passes_filename_to_save():
     ctrl = FakeCtrl()
     calls = []
     state = SimpleNamespace(
         active_pipeline_item="node-1",
         active_visibility=True,
-        save_filename="square_vtk_edited.vtu",
         notification_message="",
         notification_type="info",
         notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
     )
 
-    def save_with_confirmation(*, overwrite=False):
-        calls.append((state.save_filename, overwrite))
+    def save_with_confirmation(*, filename=None, overwrite=False):
+        calls.append((filename, overwrite))
 
     register_paraview_controllers(
         ctrl,
@@ -231,10 +242,14 @@ def test_pv_save_active_data_prefers_explicit_filename_from_client():
         normalize_edit_selection_ids=lambda ids: ids,
     )
 
-    ctrl.handlers["pv_save_active_data"]("e2e_surface_boundaryid_left.vtu")
+    ctrl.handlers["pv_save_active_data"]()
+    assert state.save_dialog is True
+    assert state.save_dialog_action == "save"
+
+    ctrl.handlers["pv_confirm_save_dialog"]("e2e_surface_boundaryid_left.vtu")
 
     assert calls == [("e2e_surface_boundaryid_left.vtu", False)]
-    assert state.save_filename == "e2e_surface_boundaryid_left.vtu"
+    assert state.save_dialog is False
 
 
 def test_pv_save_state_existing_target_opens_overwrite_dialog_and_confirm_retries():
@@ -300,6 +315,8 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
         notification_message="",
         notification_type="info",
         notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
@@ -321,7 +338,7 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
         apply_coloring=lambda array_name: calls.append(("coloring", array_name)),
     )
 
-    def save_with_confirmation(*, overwrite=False):
+    def save_with_confirmation(*, filename=None, overwrite=False):
         calls.append(("save", overwrite))
         if not overwrite:
             raise FileExistsError(17, "exists", "results/edited_mesh.vtu")
@@ -350,6 +367,10 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     )
 
     ctrl.handlers["pv_commit_edit_session"]()
+    assert state.save_dialog is True
+    assert state.save_dialog_action == "commit"
+
+    ctrl.handlers["pv_confirm_save_dialog"]("results/edited_mesh.vtu")
 
     assert state.save_overwrite_dialog is True
     assert state.save_overwrite_target == "results/edited_mesh.vtu"
@@ -368,15 +389,16 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     assert state.notification_type == "success"
 
 
-def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
+def test_pv_commit_dialog_passes_filename_to_save():
     ctrl = FakeCtrl()
     calls = []
     state = SimpleNamespace(
         mainViewMode="remote",
-        save_filename="square_vtk_edited.vtu",
         notification_message="",
         notification_type="info",
         notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
@@ -398,9 +420,9 @@ def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
         apply_coloring=lambda array_name: calls.append(("coloring", array_name)),
     )
 
-    def save_result(*, overwrite=False):
-        calls.append(("save", state.save_filename, overwrite))
-        return "/tmp/data/" + state.save_filename
+    def save_result(*, filename=None, overwrite=False):
+        calls.append(("save", filename, overwrite))
+        return "/tmp/data/" + (filename or "output.vtu")
 
     register_paraview_controllers(
         ctrl,
@@ -424,10 +446,14 @@ def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
         normalize_edit_selection_ids=lambda ids: ids,
     )
 
-    ctrl.handlers["pv_commit_edit_session"]("e2e_surface_boundaryid_left.vtu")
+    ctrl.handlers["pv_commit_edit_session"]()
+    assert state.save_dialog is True
+    assert state.save_dialog_action == "commit"
+
+    ctrl.handlers["pv_confirm_save_dialog"]("e2e_surface_boundaryid_left.vtu")
 
     assert ("save", "e2e_surface_boundaryid_left.vtu", False) in calls
-    assert state.save_filename == "e2e_surface_boundaryid_left.vtu"
+    assert state.save_dialog is False
 
 
 def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():

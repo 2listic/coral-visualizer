@@ -120,6 +120,40 @@ build_ui()
   state browser, remote browser) are declared inline for co-location with their
   trigger controls but render in the Vuetify overlay layer.
 
+## Toolbar button flows
+
+```
+Toolbar buttons
+│
+├── Always visible
+│   ├── Upload ──────────────────────────────────────── file picker → upload_dataset()
+│   ├── Open Remote ─────────────────────────────────── remote browser dialog
+│   └── Download  [disabled if no file selected] ─────── GET /api/download → new tab
+│
+├── Normal Mode  (edit_session_active = false)
+│   ├── Enter Edit Mode  [disabled if !can_edit_active]
+│   │   └── → begins edit session ──────────────────────────────────── → Edit Mode
+│   └── Save Result  ── click → Save Dialog ─────────────────────────────────────┐
+│                                                                                 │
+├── Edit Mode  (edit_session_active = true)                                       │
+│   ├── Save Edit Result  ─── click → Save Dialog ────────────────────────────┐  │
+│   ├── Save And Add To Pipeline  ── click → Save Dialog ─────────────────┐   │  │
+│   └── Discard                                                            │   │  │
+│       └── → clear edit session ─────────────────────────────── → Normal Mode │  │
+│                                                                          │   │  │
+└── Save Dialog  (save_dialog = true)  ◄───────────────────────────────────┘───┘──┘
+    ├── Output filename field  (pre-filled with last used name)
+    ├── Cancel  → close dialog  [no save]
+    └── Save  → pv_confirm_save_dialog(filename)
+               ├── action = "save"    → save_paraview_output()   [stays in current mode]
+               ├── action = "commit"  → edit_session.save()
+               │                        reload into pipeline
+               │                        clear edit session ──────────────── → Normal Mode
+               └── file exists?  → Overwrite Dialog
+                                     ├── Cancel
+                                     └── Overwrite → retry with overwrite=True
+```
+
 ## Planned split (from TODO.md)
 
 When `ui.py` is split into modules, the mapping will be:

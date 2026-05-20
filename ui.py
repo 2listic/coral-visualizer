@@ -74,58 +74,53 @@ def _build_toolbar(ctrl):
         change=(ctrl.upload_dataset, "[$event.target.files]"),
         __events=["change"],
     )
-    vuetify.VBtn(
-        "Upload",
+    with vuetify.VBtn(
         small=True,
         outlined=True,
         click="$refs.filePicker.value = null; $refs.filePicker.click()",
-        classes="mr-2",
-    )
-    vuetify.VBtn(
-        "Open Remote",
+        classes="mr-1",
+    ):
+        vuetify.VIcon("mdi-upload", left=True, small=True)
+        html.Span("Upload", style="font-size: 0.7rem;")
+    with vuetify.VBtn(
         small=True,
         outlined=True,
         click=ctrl.open_remote_browser,
-        classes="mr-2",
-    )
-    vuetify.VBtn(
-        "Download",
+        classes="mr-1",
+    ):
+        vuetify.VIcon("mdi-folder-network", left=True, small=True)
+        html.Span("Open Remote", style="font-size: 0.7rem;")
+    with vuetify.VBtn(
         small=True,
         outlined=True,
         disabled=("!selected_file",),
         click="window.open('/api/download?file=' + encodeURIComponent(selected_file), '_blank')",
-        classes="mr-2",
-    )
-    vuetify.VBtn(
-        "Enter Edit Mode",
+        classes="mr-1",
+    ):
+        vuetify.VIcon("mdi-download", left=True, small=True)
+        html.Span("Download", style="font-size: 0.7rem;")
+    with vuetify.VBtn(
         small=True,
         outlined=True,
         click=ctrl.pv_begin_edit_session,
         disabled=("!can_edit_active",),
         v_if="!edit_session_active",
-        classes="mr-2",
-    )
-    vuetify.VBtn(
-        "{{ edit_session_active ? 'Save Edit Result' : 'Save Result' }}",
+        classes="mr-1",
+    ):
+        vuetify.VIcon("mdi-pencil-outline", left=True, small=True)
+        html.Span("Enter Edit Mode", style="font-size: 0.7rem;")
+    with vuetify.VBtn(
         small=True,
         color="primary",
-        click=(
-            ctrl.pv_save_active_data,
-            "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
-        ),
+        click=ctrl.pv_save_active_data,
         disabled=("!active_pipeline_item && !edit_session_active",),
-        classes="mr-2",
-    )
-    vuetify.VTextField(
-        v_model=("save_filename",),
-        ref="saveFilenameField",
-        label="Output filename",
-        dense=True,
-        outlined=True,
-        hide_details=True,
-        classes="mr-2",
-        style="max-width: 260px;",
-    )
+        classes="mr-1",
+    ):
+        vuetify.VIcon("mdi-content-save", left=True, small=True)
+        html.Span(
+            "{{ edit_session_active ? 'Save Edit Result' : 'Save Result' }}",
+            style="font-size: 0.7rem;",
+        )
     with vuetify.VRow(
         v_if="is_time_dependent",
         dense=True,
@@ -185,26 +180,25 @@ def _build_toolbar(ctrl):
             classes="ml-2 flex-grow-1",
             change="pv_set_time(time_values[$event])",
         )
-    vuetify.VBtn(
-        "Save And Add To Pipeline",
+    with vuetify.VBtn(
         small=True,
         outlined=True,
         color="primary",
-        click=(
-            ctrl.pv_commit_edit_session,
-            "[((($refs.saveFilenameField && ($refs.saveFilenameField.lazyValue || $refs.saveFilenameField.internalValue || $refs.saveFilenameField.value)) || save_filename || '').toString())]",
-        ),
+        click=ctrl.pv_commit_edit_session,
         v_if="edit_session_active",
-        classes="mr-2",
-    )
-    vuetify.VBtn(
-        "Discard",
+        classes="mr-1",
+    ):
+        vuetify.VIcon("mdi-content-save-plus", left=True, small=True)
+        html.Span("Save And Add To Pipeline", style="font-size: 0.7rem;")
+    with vuetify.VBtn(
         small=True,
         outlined=True,
         click=ctrl.pv_discard_edit_session,
         v_if="edit_session_active",
-        classes="mr-2",
-    )
+        classes="mr-1",
+    ):
+        vuetify.VIcon("mdi-close-circle-outline", left=True, small=True)
+        html.Span("Discard", style="font-size: 0.7rem;")
     vuetify.VSpacer()
 
 
@@ -1689,6 +1683,30 @@ def build_ui(server, render_target):
                         "Rescale",
                         click=ctrl.pv_rescale_color_range_over_time,
                         color="warning",
+                        text=True,
+                    )
+
+        with vuetify.VDialog(v_model=("save_dialog",), max_width=480, persistent=True):
+            with vuetify.VCard():
+                vuetify.VCardTitle(
+                    "{{ save_dialog_action === 'commit' ? 'Save and Add to Pipeline' : (edit_session_active ? 'Save Edit Result' : 'Save Result') }}"
+                )
+                with vuetify.VCardText():
+                    vuetify.VTextField(
+                        v_model=("save_filename",),
+                        label="Output filename",
+                        dense=True,
+                        outlined=True,
+                        hide_details=True,
+                        autofocus=True,
+                    )
+                with vuetify.VCardActions():
+                    vuetify.VSpacer()
+                    vuetify.VBtn("Cancel", click=ctrl.pv_cancel_save_dialog, text=True)
+                    vuetify.VBtn(
+                        "Save",
+                        click=(ctrl.pv_confirm_save_dialog, "[save_filename]"),
+                        color="primary",
                         text=True,
                     )
 

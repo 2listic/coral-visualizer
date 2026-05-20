@@ -82,16 +82,6 @@ def register_paraview_controllers(
         )
         state.save_overwrite_dialog = True
 
-    def _apply_pending_save_filename(filename):
-        if filename is None:
-            return
-        candidate = str(filename).strip()
-        if candidate:
-            state.save_filename = candidate
-
-    def _save_active_data(overwrite=False):
-        save_paraview_output(overwrite=overwrite)
-
     def _save_application_state(overwrite=False):
         if not callable(save_paraview_state):
             raise RuntimeError("Application state save is not available")
@@ -115,9 +105,9 @@ def register_paraview_controllers(
         )
         render_and_push()
 
-    def _commit_edit_session(overwrite=False):
+    def _commit_edit_session(filename=None, overwrite=False):
         debug_view("pv_commit_edit_session.start", mode=state.mainViewMode)
-        output_path = save_paraview_output(overwrite=overwrite)
+        output_path = save_paraview_output(filename=filename, overwrite=overwrite)
         edit_session.clear()
         pv_backend.clear_edit_target_dataset()
         sync_edit_session_state()
@@ -649,16 +639,32 @@ def register_paraview_controllers(
             notify(state, f"Error adding filter: {exc}", "error")
 
     @ctrl.add("pv_save_active_data")
-    def pv_save_active_data(filename=None):
-        """Save the active ParaView output or edit-session result to a new file."""
+    def pv_save_active_data():
+        """Open the save dialog for saving the active output or edit-session result."""
+        state.save_dialog_action = "save"
+        state.save_dialog = True
 
+    @ctrl.add("pv_confirm_save_dialog")
+    def pv_confirm_save_dialog(filename=None):
+        """Perform the save confirmed from the save dialog."""
+        action = state.save_dialog_action
+        state.save_dialog = False
+        state.save_dialog_action = ""
         try:
-            _apply_pending_save_filename(filename)
-            _save_active_data()
+            if action == "commit":
+                _commit_edit_session(filename=filename)
+            else:
+                save_paraview_output(filename=filename)
         except FileExistsError as exc:
-            _open_save_overwrite_dialog("save", exc)
+            _open_save_overwrite_dialog(action, exc)
         except Exception as exc:
             notify(state, f"Error: {exc}", "error")
+
+    @ctrl.add("pv_cancel_save_dialog")
+    def pv_cancel_save_dialog():
+        """Dismiss the save dialog without saving."""
+        state.save_dialog = False
+        state.save_dialog_action = ""
 
     @ctrl.add("pv_save_state")
     def pv_save_state(filename=None):
@@ -694,14 +700,15 @@ def register_paraview_controllers(
         """Confirm overwrite for ParaView save operations."""
 
         action = state.save_overwrite_action
+        filename = state.save_overwrite_target
         try:
             _close_save_overwrite_dialog()
             if action == "commit":
-                _commit_edit_session(overwrite=True)
+                _commit_edit_session(filename=filename, overwrite=True)
             elif action == "state_save":
                 _save_application_state(overwrite=True)
             else:
-                _save_active_data(overwrite=True)
+                save_paraview_output(filename=filename, overwrite=True)
         except Exception as exc:
             notify(state, f"Error: {exc}", "error")
 
@@ -773,18 +780,12 @@ def register_paraview_controllers(
         notify(state, "Edit session discarded", "info")
 
     @ctrl.add("pv_commit_edit_session")
-    def pv_commit_edit_session(filename=None):
-        """Save the current edit session and append it as a new pipeline source."""
+    def pv_commit_edit_session():
+        """Open the save dialog for committing the edit session to the pipeline."""
         if not edit_session.active:
             return
-
-        try:
-            _apply_pending_save_filename(filename)
-            _commit_edit_session()
-        except FileExistsError as exc:
-            _open_save_overwrite_dialog("commit", exc)
-        except Exception as exc:
-            notify(state, f"Could not add edited result to pipeline: {exc}", "error")
+        state.save_dialog_action = "commit"
+        state.save_dialog = True
 
     @ctrl.add("pv_apply_color_map_preset")
     def pv_apply_color_map_preset(preset=None):

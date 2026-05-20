@@ -514,6 +514,100 @@ def test_paraview_display_color_scale_visibility_survives_categorical_toggle(
                 proc.kill()
 
 
+def test_paraview_categorical_annotations_updated_on_file_switch(shared_browser):
+    """Categorical color annotations must be rebuilt for the new file's values.
+
+    Regression: ParaView caches the MaterialID LUT globally. After enabling categorical
+    on file A (IDs 1,2) and then loading file B (IDs 3,4,5), apply_coloring reused the
+    cached LUT without calling _configure_categorical_lookup_table, leaving stale
+    annotations from file A. The render was only corrected after a manual toggle.
+    """
+    if not is_paraview_available():
+        pytest.skip("Warning test skipped: ParaView is not installed")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    file_a = TEST_DATA_DIR / "square_mat_12.vtk"
+    file_b = TEST_DATA_DIR / "square_mat_345.vtk"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--server",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(file_a),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("text=Display", timeout=40000)
+
+        # File A: select MaterialID, enable categorical — LUT gets annotations [1, 2]
+        _select_vselect_option(page, "Color by", "MaterialID")
+        page.wait_for_selector("text=Color Bar", timeout=40000)
+        _set_switch(page, "Interpret values as categories", True)
+        time.sleep(0.8)
+
+        # Open file B (IDs 3, 4, 5) via the remote browser — no file copy, no uploads dir
+        page.click("button:has-text('Open Remote')")
+        page.wait_for_selector("div.v-dialog--active", timeout=10000)
+        page.click(
+            f"div.v-dialog--active div.v-list-item__title:has-text('{file_b.name}')"
+        )
+        time.sleep(2.0)
+
+        # Re-select MaterialID on file B — LUT is cached with InterpretValuesAsCategories=1
+        _select_vselect_option(page, "Color by", "MaterialID")
+        page.wait_for_selector("text=Color Bar", timeout=40000)
+        time.sleep(1.0)
+        assert _switch_checked(page, "Interpret values as categories") is True
+
+        # Screenshot immediately after selection — annotations must already reflect file B
+        viewport = page.locator(".coral-main-viewport")
+        file_b_immediate_png = viewport.screenshot()
+
+        # Toggle categorical off then on to force _configure_categorical_lookup_table
+        _set_switch(page, "Interpret values as categories", False)
+        time.sleep(0.5)
+        _set_switch(page, "Interpret values as categories", True)
+        time.sleep(0.8)
+
+        file_b_after_toggle_png = viewport.screenshot()
+
+        # Regression check: if annotations were stale the toggle would change the render.
+        # With the fix the render is identical before and after the toggle.
+        assert _changed_bbox(file_b_immediate_png, file_b_after_toggle_png) is None, (
+            "Categorical annotations were stale after file switch — "
+            "the color bar only became correct after a manual toggle"
+        )
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def test_paraview_show_faces_only_keeps_explicit_left_boundary_cells(shared_browser):
     if not is_paraview_available():
         pytest.skip("Warning test skipped: ParaView is not installed")
@@ -886,18 +980,15 @@ def test_paraview_surface_mode_select_left_boundary_apply_boundaryid_and_save(
         )
         page.click("button:has-text('Assign to Selected')")
 
-        page.fill(
-            "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input",
-            output_name,
-        )
-        resolved_name = (
-            page.input_value(
-                "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input"
-            ).strip()
-            or output_name
-        )
-        resolved_path = TEST_DATA_DIR / resolved_name
         page.click("button:has-text('Save Edit Result')")
+        filename_input = page.locator(
+            "xpath=//label[contains(.,'Output filename')]/ancestor::div[contains(@class,'v-input')]//input"
+        )
+        filename_input.wait_for(state="visible", timeout=10000)
+        filename_input.fill(output_name)
+        resolved_name = filename_input.input_value().strip() or output_name
+        resolved_path = TEST_DATA_DIR / resolved_name
+        page.locator(".v-dialog--active button:has-text('Save')").click()
         save_status = page.locator("text=Saved edited dataset to")
         save_status.wait_for(state="visible", timeout=40000)
         status_text = save_status.last.inner_text().strip()
