@@ -414,19 +414,6 @@ class FakeSurfaceDataset:
         return SimpleNamespace(GetArray=lambda name: None)
 
 
-class FakeSelectedSurfaceDataset(FakeSurfaceDataset):
-    def __init__(self, points, cells, original_point_ids):
-        super().__init__(points, cells)
-        self._original_point_ids = FakeScalarArray(original_point_ids)
-
-    def GetPointData(self):
-        return SimpleNamespace(
-            GetArray=lambda name: (
-                self._original_point_ids if name == "vtkOriginalPointIds" else None
-            )
-        )
-
-
 class FakeMultiBlockDataset:
     def __init__(self, blocks):
         self._blocks = list(blocks)
@@ -1603,7 +1590,7 @@ def test_surface_keys_from_selected_dataset_maps_triangle_to_quad_boundary_key()
 
 
 def test_surface_keys_from_selected_dataset_uses_coordinates_when_original_ids_are_invalid():
-    selected = FakeSelectedSurfaceDataset(
+    selected = FakeSurfaceDataset(
         points=[
             (0.0, 0.0, 0.0),
             (1.0, 0.0, 0.0),
@@ -1611,7 +1598,6 @@ def test_surface_keys_from_selected_dataset_uses_coordinates_when_original_ids_a
             (0.0, 1.0, 0.0),
         ],
         cells=[(0, 1, 2, 3)],
-        original_point_ids=[10, 11, 12, 13],
     )
 
     class FakeFace:
@@ -1854,14 +1840,13 @@ def test_selected_original_source_ids_remap_to_edit_target_surface_keys():
         ],
         cells=[(3, 2, 1, 0)],
     )
-    selected = FakeSelectedSurfaceDataset(
+    selected = FakeSurfaceDataset(
         points=[
             (10.0, 0.0, 0.0),
             (11.0, 0.0, 0.0),
             (11.0, 1.0, 0.0),
         ],
         cells=[(0, 1, 2)],
-        original_point_ids=[0, 1, 2],
     )
     backend._edit_target_dataset = target
 

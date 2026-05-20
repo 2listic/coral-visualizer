@@ -11,7 +11,7 @@ from typing import Any, TypedDict
 
 from constants import ARRAY_SOLID, CELL_PREFIX, MATERIAL_ID_ARRAY, POINT_PREFIX
 from diagnostics import debug_log
-from edit_session import EditSession
+from edit_session import EditSession, EditSessionSource
 from paraview_filter_catalog import ParaViewFilterCatalog, SUPPORTED_FILTERS
 from paraview_property_inspector import ParaViewPropertyInspector
 from vtk_metadata import sanitized_vtk_xml_path, strip_data_array_information_keys
@@ -397,7 +397,7 @@ class ParaViewBackend:
             self.simple.SaveData(output_path, proxy=source)
         return output_path
 
-    def export_active_dataset_for_editing(self):
+    def export_active_dataset_for_editing(self) -> EditSessionSource:
         """Fetch the active pipeline result as a local VTK dataset for editing."""
         source = self.source
         node = self._get_active_node()
@@ -2211,22 +2211,17 @@ class ParaViewBackend:
         self._boundary_cache.clear()
 
     def _surface_selection_helper_for(self, source):
-        """Return a cached ExtractSurface proxy used for robust surface selection."""
+        """Return a cached GeometryFilter proxy used for robust surface selection.
+
+        GeometryFilter extracts the boundary PolyData from any dataset type, making it
+        a valid target for SelectSurfaceCells (which requires PolyData input). Selected
+        cells are mapped back to source point IDs via coordinate lookup in
+        _surface_keys_from_selected_dataset.
+        """
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
 
-        temp_source = self.simple.ExtractSurface(Input=source)
-        for prop_name, prop_value in (
-            ("PassThroughPointIds", 1),
-            ("PassThroughCellIds", 1),
-            ("PassThroughPointIdsArrayName", "vtkOriginalPointIds"),
-            ("PassThroughCellIdsArrayName", "vtkOriginalCellIds"),
-        ):
-            if hasattr(temp_source, prop_name):
-                try:
-                    setattr(temp_source, prop_name, prop_value)
-                except Exception:
-                    pass
+        temp_source = self.simple.GeometryFilter(Input=source)
         temp_source.UpdatePipeline()
 
         temp_display = self.simple.Show(temp_source, self.view)
@@ -2236,14 +2231,13 @@ class ParaViewBackend:
         except Exception:
             pass
         self._surface_selection_helper = {
-            "input": source,
             "source": temp_source,
             "display": temp_display,
         }
         return self._surface_selection_helper
 
     def _clear_surface_selection_helper(self):
-        """Delete the cached selection-only ExtractSurface proxy, if any."""
+        """Delete the cached selection-only GeometryFilter proxy, if any."""
         helper = self._surface_selection_helper
         if not isinstance(helper, dict):
             self._surface_selection_helper = None
@@ -2264,41 +2258,24 @@ class ParaViewBackend:
 
     @staticmethod
     def _surface_keys_from_selected_dataset(selected_dataset, source_dataset=None):
-        """Map selected ExtractSurface cells back to original source point-id keys."""
+        """Map selected GeometryFilter cells back to original source point-id keys.
+
+        Builds a coordinate index from source_dataset and maps each selected cell's
+        XYZ corners back to source point IDs. vtkOriginalPointIds is not used: in
+        ParaView 6.1, simple.GeometryFilter's PassThroughPointIds does not produce
+        reliable source IDs through the proxy/server-fetch round-trip.
+        """
+        if source_dataset is None:
+            return None
         selected_blocks = ParaViewBackend._iter_leaf_datasets(selected_dataset)
         if not selected_blocks:
             return []
 
         source_point_indexes = None
-        source_boundary = (
-            ParaViewBackend._boundary_codim_elements(source_dataset)
-            if source_dataset is not None
-            and hasattr(source_dataset, "GetNumberOfCells")
-            else {}
-        )
-        boundary_point_to_keys = {}
-        for boundary_key in source_boundary:
-            for point_id in boundary_key:
-                boundary_point_to_keys.setdefault(int(point_id), set()).add(
-                    boundary_key
-                )
-
-        def key_matches_source_boundary(key):
-            if not key or not source_boundary:
-                return True
-            if key in source_boundary:
-                return True
-            key_set = set(key)
-            candidate_sets = [
-                boundary_point_to_keys.get(int(point_id), set()) for point_id in key_set
-            ]
-            return bool(set.intersection(*candidate_sets) if candidate_sets else set())
 
         def coordinate_key(block, cell):
             nonlocal source_point_indexes
-            if source_dataset is None or not hasattr(
-                source_dataset, "GetNumberOfPoints"
-            ):
+            if not hasattr(source_dataset, "GetNumberOfPoints"):
                 return None
             if source_point_indexes is None:
                 source_point_indexes = ParaViewBackend._point_coordinate_indexes(
@@ -2319,53 +2296,12 @@ class ParaViewBackend:
         for block in selected_blocks:
             if block is None or not hasattr(block, "GetNumberOfCells"):
                 continue
-
-            point_data = (
-                block.GetPointData() if hasattr(block, "GetPointData") else None
-            )
-            original_point_array = None
-            for name in (
-                "vtkOriginalPointIds",
-                "OriginalPointIds",
-                "vtkOriginalPointId",
-                "vtkOriginalIds",
-            ):
-                array = point_data.GetArray(name) if point_data is not None else None
-                if array is not None:
-                    original_point_array = array
-                    break
-
-            if original_point_array is None and source_point_indexes is None:
-                if source_dataset is None or not hasattr(
-                    source_dataset, "GetNumberOfPoints"
-                ):
-                    return None
-                source_point_indexes = ParaViewBackend._point_coordinate_indexes(
-                    source_dataset
-                )
-
             for cell_id in range(block.GetNumberOfCells()):
                 cell = block.GetCell(cell_id)
                 if cell is None or cell.GetNumberOfPoints() <= 0:
                     continue
                 try:
-                    if original_point_array is not None:
-                        key = tuple(
-                            sorted(
-                                int(
-                                    original_point_array.GetTuple1(
-                                        cell.GetPointId(point_idx)
-                                    )
-                                )
-                                for point_idx in range(cell.GetNumberOfPoints())
-                            )
-                        )
-                        if not key_matches_source_boundary(key):
-                            mapped_key = coordinate_key(block, cell)
-                            if mapped_key is not None:
-                                key = mapped_key
-                    else:
-                        key = coordinate_key(block, cell) or ()
+                    key = coordinate_key(block, cell) or ()
                 except Exception:
                     continue
                 if key:

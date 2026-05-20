@@ -123,6 +123,10 @@ conda run -n coral-paraview git commit
 
 See PRs #27, #28, #29 for examples.
 
+When opening or merging a PR, add a summary entry to `MIGRATION_LOG.md` under `## Done` (newest first).
+
+Before opening a PR, check [TODO.md](TODO.md) for related open items to update or remove. Also check and update [docs/logic_flows.md](docs/logic_flows.md) if any execution paths changed.
+
 ## Current Architecture
 
 ### Entry And Registration

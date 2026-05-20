@@ -3,18 +3,8 @@
 ## Priorita alta
 
 - Separare `paraview_backend.py` in servizi di dominio più piccoli (3900 righe).
-  Strategia: mantenere `paraview_backend.py` come facade durante la transizione,
-  poi rimuoverlo. Iniziare con `selection.py` (dominio più isolato, target per
-  futuri miglioramenti di performance). Aggiungere type annotations mentre si
-  estrae ogni modulo per verificare le assunzioni.
-
-  | New module              | Responsibility                                      |
-  |-------------------------|-----------------------------------------------------|
-  | `backend/pipeline.py`   | Sources, pipeline nodes, filter application, PVD    |
-  | `backend/display.py`    | Representation, color-by array, lookup table wiring |
-  | `backend/colorbar.py`   | Color bar preset, min/max, rescale, show/hide        |
-  | `backend/selection.py`  | Picking, rubber-band, edit-selection overlays        |
-  | `backend/export.py`     | VTU/state save, vtk_metadata sanitization           |
+  Iniziare con `backend/selection.py` + `backend/selection_geometry.py`.
+  Vedi [docs/backend_refactor.md](docs/backend_refactor.md) per strategia, layout moduli e firme.
 
 ## Priorita media
 
