@@ -39,12 +39,21 @@ def _make_runtime(**kwargs):
     return SimpleNamespace(**defaults)
 
 
+def _make_edit_session(active=False):
+    return SimpleNamespace(active=active)
+
+
 def _register(
-    state, *, interaction_quality_presets=INTERACTION_QUALITY_PRESETS, **runtime_kwargs
+    state,
+    *,
+    interaction_quality_presets=INTERACTION_QUALITY_PRESETS,
+    edit_session=None,
+    **runtime_kwargs,
 ):
     register_state_handlers(
         state,
         paraview_runtime=_make_runtime(**runtime_kwargs),
+        edit_session=edit_session or _make_edit_session(),
         interaction_quality_presets=interaction_quality_presets,
     )
 
@@ -186,6 +195,43 @@ def test_pipeline_and_interaction_callbacks_dispatch():
         state.interactive_ratio
         == INTERACTION_QUALITY_PRESETS["fast"]["interactive_ratio"]
     )
+
+
+def test_pipeline_node_switch_blocked_during_edit_session():
+    switched = []
+    pv_backend = SimpleNamespace(
+        source=object(),
+        display=object(),
+        apply_coloring=lambda v: None,
+        apply_representation=lambda v: None,
+        set_active_node=lambda node_id: switched.append(node_id) or True,
+        set_interactor_rotation=lambda enabled: None,
+        active_node_id="node-1",
+    )
+    state = FakeState(
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        active_pipeline_item="node-1",
+        edit_session_active=True,
+        interactive_quality=0,
+        interactive_ratio=0,
+    )
+
+    _register(
+        state,
+        pv_backend=pv_backend,
+        edit_session=_make_edit_session(active=True),
+        render_and_push=lambda: None,
+    )
+
+    state._handlers["active_pipeline_item"]("node-2")
+
+    assert switched == [], "set_active_node must not be called during an edit session"
+    assert state.notification_show, "a warning notification must be shown"
+    assert (
+        state.active_pipeline_item == "node-1"
+    ), "UI selection must snap back to current node"
 
 
 def test_pick_mode_in_edit_session_disables_rotation():
