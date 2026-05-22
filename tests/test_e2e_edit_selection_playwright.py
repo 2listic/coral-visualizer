@@ -214,6 +214,24 @@ def _foreground_bbox(
     }
 
 
+def _wait_for_stable_viewport(viewport, *, timeout_s=8, poll_s=0.25):
+    """Poll until two successive screenshots show no significant change.
+
+    Returns the last screenshot once the render has settled.  Uses _changed_bbox
+    as the comparator so minor rendering noise below its column-hit threshold is
+    tolerated.
+    """
+    deadline = time.time() + timeout_s
+    prev = viewport.screenshot()
+    while time.time() < deadline:
+        time.sleep(poll_s)
+        curr = viewport.screenshot()
+        if _changed_bbox(prev, curr) is None:
+            return curr
+        prev = curr
+    return viewport.screenshot()
+
+
 def _wait_for_foreground(
     viewport, *, ignore_right_fraction=0.0, timeout_s=8, narrower_than=None
 ):
@@ -624,6 +642,41 @@ def test_paraview_categorical_annotations_updated_on_file_switch(shared_browser)
             "Categorical annotations were stale after file switch — "
             "the color bar only became correct after a manual toggle"
         )
+
+        # Pipeline node switch: verify set_active_node re-populates annotations.
+        # selected_array stays "cell:MaterialID" on both nodes so on_array_change
+        # does not fire — only set_active_node → _refresh_categorical_annotations
+        # handles the LUT update.
+
+        page.click(f"div.v-list-item__title:has-text('{file_a.name}')")
+        _wait_for_switch_checked(
+            page, "Interpret values as categories", True, timeout_s=8
+        )
+        file_a_switch_png = _wait_for_stable_viewport(viewport)
+
+        _set_switch(page, "Interpret values as categories", False)
+        time.sleep(0.5)
+        _set_switch(page, "Interpret values as categories", True)
+        file_a_after_toggle_png = _wait_for_stable_viewport(viewport)
+
+        assert (
+            _changed_bbox(file_a_switch_png, file_a_after_toggle_png) is None
+        ), "Categorical annotations were stale after switching to file A in pipeline"
+
+        page.click(f"div.v-list-item__title:has-text('{file_b.name}')")
+        _wait_for_switch_checked(
+            page, "Interpret values as categories", True, timeout_s=8
+        )
+        file_b_switch_png = _wait_for_stable_viewport(viewport)
+
+        _set_switch(page, "Interpret values as categories", False)
+        time.sleep(0.5)
+        _set_switch(page, "Interpret values as categories", True)
+        file_b_switch_after_toggle_png = _wait_for_stable_viewport(viewport)
+
+        assert (
+            _changed_bbox(file_b_switch_png, file_b_switch_after_toggle_png) is None
+        ), "Categorical annotations were stale after switching back to file B in pipeline"
 
         context.close()
     finally:

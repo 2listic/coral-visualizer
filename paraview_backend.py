@@ -432,6 +432,7 @@ class ParaViewBackend:
         if self.view is not None:
             self.simple.SetActiveView(self.view)
             self._sync_view_center(node["source"])
+        self._refresh_categorical_annotations()
         return True
 
     def reload_node_file(self, node_id):
@@ -775,12 +776,7 @@ class ParaViewBackend:
                     pass
             target_display.RescaleTransferFunctionToDataRange(True, False)
 
-        # If the LUT was already marked categorical (cached from a prior selection),
-        # re-populate annotations so the color bar reflects current data values without
-        # requiring the user to toggle the switch.
-        active_lut = self._active_lookup_table()
-        if active_lut is not None and self._lookup_table_categorical(active_lut):
-            self._configure_categorical_lookup_table(active_lut)
+        self._refresh_categorical_annotations()
 
         can_show_scalar_bar = self._display_has_lookup_table(display, array_value)
         if can_show_scalar_bar and display is not None:
@@ -1021,6 +1017,16 @@ class ParaViewBackend:
                 continue
 
         rescale(False, True)
+
+    def _refresh_categorical_annotations(self):
+        """Re-populate categorical LUT annotations if the active LUT is already categorical.
+
+        Called after the active source or color array changes so the color bar
+        reflects the current data values without requiring a manual UI toggle.
+        """
+        lut = self._active_lookup_table()
+        if lut is not None and self._lookup_table_categorical(lut):
+            self._configure_categorical_lookup_table(lut)
 
     def _active_lookup_table(self):
         """Return the active display lookup table, resolving it by array name if needed."""
