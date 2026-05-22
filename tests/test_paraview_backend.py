@@ -450,6 +450,10 @@ def make_backend():
     backend._edit_selection_display = None
     backend._scalar_bar_visible = False
     backend._edit_target_dataset = None
+    backend._edit_source_dataset = None
+    backend._edit_source_point_indexes = None
+    backend._edit_target_cell_map = None
+    backend._edit_point_id_map = None
     backend._surface_selection_helper = None
     backend._boundary_cache = {}
     backend._last_selection_backend_timing = []
@@ -1757,6 +1761,96 @@ def test_source_cell_ids_from_selected_dataset_maps_selected_face_to_volume_cell
     cell_ids = ParaViewBackend._source_cell_ids_from_selected_dataset(selected, source)
 
     assert cell_ids == [0]
+
+
+def test_set_edit_target_dataset_builds_remap_caches():
+    source_ds = FakeSurfaceDataset(
+        points=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)],
+        cells=[(0, 1, 2)],
+    )
+    target_ds = FakeSurfaceDataset(
+        points=[(1.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 0.0)],
+        cells=[(2, 1, 0)],
+    )
+    backend = make_backend()
+
+    backend.set_edit_target_dataset(target_ds, source_dataset=source_ds)
+
+    assert backend._edit_source_dataset is source_ds
+    assert backend._edit_source_point_indexes is not None
+    assert isinstance(backend._edit_target_cell_map, dict)
+    assert len(backend._edit_target_cell_map) == 1
+    assert isinstance(backend._edit_point_id_map, dict)
+    assert len(backend._edit_point_id_map) == 3
+
+
+def test_set_edit_target_dataset_clears_caches_on_clear():
+    source_ds = FakeSurfaceDataset(
+        points=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)],
+        cells=[(0, 1, 2)],
+    )
+    target_ds = FakeSurfaceDataset(
+        points=[(1.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 0.0)],
+        cells=[(2, 1, 0)],
+    )
+    backend = make_backend()
+    backend.set_edit_target_dataset(target_ds, source_dataset=source_ds)
+
+    backend.clear_edit_target_dataset()
+
+    assert backend._edit_target_dataset is None
+    assert backend._edit_source_dataset is None
+    assert backend._edit_source_point_indexes is None
+    assert backend._edit_target_cell_map is None
+    assert backend._edit_point_id_map is None
+
+
+def test_remap_cell_ids_uses_cached_source_without_fetch():
+    fetched = []
+    source_ds = FakeSurfaceDataset(
+        points=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)],
+        cells=[(0, 1, 2)],
+    )
+    target_ds = FakeSurfaceDataset(
+        points=[(1.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 0.0)],
+        cells=[(2, 1, 0)],
+    )
+    backend = make_backend()
+    backend._edit_target_dataset = target_ds
+    backend._edit_source_dataset = source_ds
+    backend._edit_target_cell_map = ParaViewBackend._build_target_cell_map(target_ds)
+    backend.servermanager = SimpleNamespace(
+        Fetch=lambda _: fetched.append(1) or source_ds
+    )
+
+    backend._remap_cell_ids_to_edit_target_dataset([0], object())
+
+    assert (
+        len(fetched) == 0
+    ), "Fetch must not be called when _edit_source_dataset is cached"
+
+
+def test_remap_surface_keys_uses_cached_point_id_map():
+    # Without a cached map, source_dataset=None triggers an early return (keys unchanged).
+    # With a cached map, remapping proceeds even when source_dataset is not provided.
+    # The map shifts each source point ID by 1, so the remapped key differs from the
+    # input — proving the cache path was taken rather than the early return.
+    target_ds = FakeSurfaceDataset(
+        points=[(1.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 0.0)],
+        cells=[(2, 1, 0)],
+    )
+    # source pt 0 → target pt 1, source pt 1 → target pt 2, source pt 2 → target pt 3
+    pre_built = {0: 1, 1: 2, 2: 3}
+    backend = make_backend()
+    backend._edit_target_dataset = target_ds
+    backend._edit_point_id_map = pre_built
+
+    remapped = backend._remap_surface_keys_to_edit_target_dataset(
+        [(0, 1, 2)], source_dataset=None
+    )
+
+    # (0,1,2) → [1,2,3] → sorted → (1,2,3); early return would give (0,1,2)
+    assert remapped == [(1, 2, 3)]
 
 
 def test_remap_cell_ids_between_datasets_matches_by_geometry_coordinates():

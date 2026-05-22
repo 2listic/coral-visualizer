@@ -143,7 +143,14 @@ class ParaViewBackend:
         self._edit_selection_overlay = None
         self._edit_selection_display = None
         self._scalar_bar_visible = False
-        self._edit_target_dataset = None
+        # Edit-session dataset references and remap caches — see docs/logic_flows.md §5b.
+        self._edit_target_dataset: vtkDataSet | None = None  # ref to working_dataset
+        self._edit_source_dataset: vtkDataSet | None = (
+            None  # fetched source, cached at begin
+        )
+        self._edit_source_point_indexes: list[dict] | None = None  # coord→pt_id index
+        self._edit_target_cell_map: dict | None = None  # cell_key→cell_id
+        self._edit_point_id_map: dict[int, int] | None = None  # src_pt_id→target_pt_id
         self._surface_selection_helper = None
         self._last_selection_backend_timing = []
         self._boundary_cache = {}
@@ -153,15 +160,44 @@ class ParaViewBackend:
             "QuadraticTetra": "QuadraticTetrahedron",
         }
 
-    def set_edit_target_dataset(self, dataset):
-        """Set the edit-session dataset used to normalize picker IDs."""
+    def set_edit_target_dataset(
+        self, dataset: vtkDataSet | None, source_dataset: vtkDataSet | None = None
+    ) -> None:
+        """Set the edit-session dataset and pre-build remap caches.
+
+        source_dataset may be passed to avoid a redundant Fetch when the caller
+        already holds the fetched source (e.g. pv_begin_edit_session).
+        """
         self._edit_target_dataset = dataset
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
+        if source_dataset is None and self.source is not None:
+            try:
+                source_dataset = self.servermanager.Fetch(self.source)
+            except Exception:
+                source_dataset = None
+        self._edit_source_dataset = source_dataset
+        self._edit_source_point_indexes = (
+            self._point_coordinate_indexes(source_dataset)
+            if source_dataset is not None
+            else None
+        )
+        self._edit_target_cell_map = (
+            self._build_target_cell_map(dataset) if dataset is not None else None
+        )
+        self._edit_point_id_map = (
+            self._point_id_map_between_datasets(source_dataset, dataset)
+            if source_dataset is not None and dataset is not None
+            else None
+        )
 
-    def clear_edit_target_dataset(self):
+    def clear_edit_target_dataset(self) -> None:
         """Clear edit-session dataset normalization context."""
         self._edit_target_dataset = None
+        self._edit_source_dataset = None
+        self._edit_source_point_indexes = None
+        self._edit_target_cell_map = None
+        self._edit_point_id_map = None
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
 
@@ -173,13 +209,21 @@ class ParaViewBackend:
 
     @property
     def source(self):
-        """Return the active ParaView source proxy."""
+        """Active pipeline node proxy (vtkSMProxy, server-side).
+
+        Used for hardware picks (SelectSurfaceCells) and Fetch calls. Never mutated.
+        Not a dataset — call servermanager.Fetch(source) to get a local vtkUnstructuredGrid.
+        See docs/logic_flows.md §5b for the full dataset naming conventions.
+        """
         node = self._get_active_node()
         return None if node is None else node["source"]
 
     @property
     def display(self):
-        """Return the active ParaView display proxy."""
+        """Active pipeline node display proxy (vtkSMProxy, server-side).
+
+        Controls representation, coloring, and scalar bar visibility for the active node.
+        """
         node = self._get_active_node()
         return None if node is None else node["display"]
 
@@ -2128,7 +2172,9 @@ class ParaViewBackend:
                 record_phase("fetch_source_dataset", phase_start)
             phase_start = time.perf_counter()
             keys = self._surface_keys_from_selected_dataset(
-                selected_dataset, source_dataset=source_dataset
+                selected_dataset,
+                source_dataset=source_dataset,
+                source_point_indexes=self._edit_source_point_indexes,
             )
             record_phase("map_selection_keys", phase_start)
             if keys is None:
@@ -2266,13 +2312,20 @@ class ParaViewBackend:
         self._surface_selection_helper = None
 
     @staticmethod
-    def _surface_keys_from_selected_dataset(selected_dataset, source_dataset=None):
+    def _surface_keys_from_selected_dataset(
+        selected_dataset: vtkDataSet | None,
+        source_dataset: vtkDataSet | None = None,
+        source_point_indexes: list[dict] | None = None,
+    ) -> list | None:
         """Map selected GeometryFilter cells back to original source point-id keys.
 
         Builds a coordinate index from source_dataset and maps each selected cell's
         XYZ corners back to source point IDs. vtkOriginalPointIds is not used: in
         ParaView 6.1, simple.GeometryFilter's PassThroughPointIds does not produce
         reliable source IDs through the proxy/server-fetch round-trip.
+
+        source_point_indexes may be passed as a pre-built index to avoid rebuilding
+        it on every pick when an edit session is active.
         """
         if source_dataset is None:
             return None
@@ -2280,22 +2333,18 @@ class ParaViewBackend:
         if not selected_blocks:
             return []
 
-        source_point_indexes = None
+        # Use mutable container so the closure can lazily populate it when not pre-built.
+        _indexes = [source_point_indexes]
 
         def coordinate_key(block, cell):
-            nonlocal source_point_indexes
             if not hasattr(source_dataset, "GetNumberOfPoints"):
                 return None
-            if source_point_indexes is None:
-                source_point_indexes = ParaViewBackend._point_coordinate_indexes(
-                    source_dataset
-                )
+            if _indexes[0] is None:
+                _indexes[0] = ParaViewBackend._point_coordinate_indexes(source_dataset)
             mapped = []
             for point_idx in range(cell.GetNumberOfPoints()):
                 point = block.GetPoint(cell.GetPointId(point_idx))
-                point_id = ParaViewBackend._lookup_point_coordinate(
-                    source_point_indexes, point
-                )
+                point_id = ParaViewBackend._lookup_point_coordinate(_indexes[0], point)
                 if point_id is None:
                     return None
                 mapped.append(int(point_id))
@@ -2749,19 +2798,26 @@ class ParaViewBackend:
 
         return selected_ids
 
-    def _remap_cell_ids_to_edit_target_dataset(self, cell_ids, source):
+    def _remap_cell_ids_to_edit_target_dataset(
+        self, cell_ids: list[int], source: Any
+    ) -> list[int]:
         """Normalize picked source cell IDs onto the active edit-session dataset."""
         picked_ids = [int(cell_id) for cell_id in (cell_ids or [])]
         target_dataset = self._edit_target_dataset
         if target_dataset is None or not picked_ids:
             return picked_ids
 
-        try:
-            source_dataset = self.servermanager.Fetch(source)
-        except Exception:
-            source_dataset = None
+        source_dataset = self._edit_source_dataset
+        if source_dataset is None:
+            try:
+                source_dataset = self.servermanager.Fetch(source)
+            except Exception:
+                source_dataset = None
         remapped = self._remap_cell_ids_between_datasets(
-            picked_ids, source_dataset, target_dataset
+            picked_ids,
+            source_dataset,
+            target_dataset,
+            _target_cell_map=self._edit_target_cell_map,
         )
         print(
             "[selection-debug] backend.remap.cells "
@@ -2770,18 +2826,24 @@ class ParaViewBackend:
         )
         return remapped if remapped else picked_ids
 
-    def _remap_surface_keys_to_edit_target_dataset(self, keys, source_dataset=None):
+    def _remap_surface_keys_to_edit_target_dataset(
+        self, keys: list, source_dataset: vtkDataSet | None = None
+    ) -> list:
         """Normalize picked source boundary keys onto edit-session point IDs."""
         picked_keys = [tuple(key) for key in (keys or []) if key]
         target_dataset = self._edit_target_dataset
-        if target_dataset is None or source_dataset is None or not picked_keys:
+        if target_dataset is None or not picked_keys:
             return picked_keys
         if source_dataset is target_dataset:
             return picked_keys
 
-        point_id_map = self._point_id_map_between_datasets(
-            source_dataset, target_dataset
-        )
+        point_id_map = self._edit_point_id_map
+        if point_id_map is None:
+            if source_dataset is None:
+                return picked_keys
+            point_id_map = self._point_id_map_between_datasets(
+                source_dataset, target_dataset
+            )
         if not point_id_map:
             return picked_keys
 
@@ -2804,7 +2866,9 @@ class ParaViewBackend:
         return normalized
 
     @classmethod
-    def _point_id_map_between_datasets(cls, source_dataset, target_dataset):
+    def _point_id_map_between_datasets(
+        cls, source_dataset: vtkDataSet | None, target_dataset: vtkDataSet | None
+    ) -> dict[int, int]:
         """Map source point IDs to target point IDs by tolerant coordinates."""
         if source_dataset is None or target_dataset is None:
             return {}
@@ -2936,7 +3000,27 @@ class ParaViewBackend:
         return tuple(sorted(coords))
 
     @staticmethod
-    def _remap_cell_ids_between_datasets(cell_ids, source_dataset, target_dataset):
+    def _build_target_cell_map(target_dataset: vtkDataSet) -> dict:
+        """Build cell-geometry key → cell ID map once for caching the remap lookup."""
+        if not hasattr(target_dataset, "GetCell"):
+            return {}
+        cell_map = {}
+        for target_cell_id in range(target_dataset.GetNumberOfCells()):
+            target_cell = target_dataset.GetCell(target_cell_id)
+            key = ParaViewBackend._cell_coordinate_key(target_dataset, target_cell)
+            if key is None:
+                continue
+            cell_map.setdefault(key, int(target_cell_id))
+        return cell_map
+
+    @staticmethod
+    def _remap_cell_ids_between_datasets(
+        cell_ids: list[int],
+        source_dataset: vtkDataSet | None,
+        target_dataset: vtkDataSet | None,
+        *,
+        _target_cell_map: dict | None = None,
+    ) -> list[int]:
         """Map source-dataset cell ids to target-dataset ids by cell geometry."""
         if not cell_ids:
             return []
@@ -2947,14 +3031,17 @@ class ParaViewBackend:
         ):
             return [int(cell_id) for cell_id in cell_ids]
 
-        target_cell_map = {}
         target_count = target_dataset.GetNumberOfCells()
-        for target_cell_id in range(target_count):
-            target_cell = target_dataset.GetCell(target_cell_id)
-            key = ParaViewBackend._cell_coordinate_key(target_dataset, target_cell)
-            if key is None:
-                continue
-            target_cell_map.setdefault(key, int(target_cell_id))
+        if _target_cell_map is not None:
+            target_cell_map = _target_cell_map
+        else:
+            target_cell_map = {}
+            for target_cell_id in range(target_count):
+                target_cell = target_dataset.GetCell(target_cell_id)
+                key = ParaViewBackend._cell_coordinate_key(target_dataset, target_cell)
+                if key is None:
+                    continue
+                target_cell_map.setdefault(key, int(target_cell_id))
 
         remapped = []
         for cell_id in cell_ids:

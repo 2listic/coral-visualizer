@@ -157,9 +157,16 @@ still collapse all distributed ranks into this one process at the points marked 
          │                                 on this dataset — picks still go through
          │                                 the ParaView source and are remapped here.
          │
-         ├── pv_backend.set_edit_target_dataset(working_dataset)
+         ├── pv_backend.set_edit_target_dataset(working_dataset, source_dataset=exported["dataset"])
          │   [paraview_backend.py:156]
-         │     registers copy so subsequent picks can be remapped onto it
+         │     registers copy so subsequent picks can be remapped onto it;
+         │     also pre-builds four remap caches from the already-fetched source:
+         │       _edit_source_dataset       — the fetched source (avoids re-Fetch per pick)
+         │       _edit_source_point_indexes — coord → point_id index for the source
+         │       _edit_target_cell_map      — cell geometry → cell_id map for working_dataset
+         │       _edit_point_id_map         — source point_id → working_dataset point_id map
+         │     source_dataset is passed in from export_active_dataset_for_editing so no
+         │     extra Fetch is needed here
          │
          └── _ensure_cell_centers_array()
              [edit_session.py:1167]
@@ -177,11 +184,15 @@ still collapse all distributed ranks into this one process at the points marked 
   cell IDs from rendered source
          │
          ▼
-  _remap_cell_ids_to_edit_target_dataset()          ⚠ O(n) coordinate lookup:
-  [paraview_backend.py:2746]                          matches cells between source
-  _remap_surface_keys_to_edit_target_dataset()        and working_dataset by sorted
-  [paraview_backend.py:2767]                          point coordinates per cell.
-         │                                            Bottleneck on large meshes.
+  _remap_cell_ids_to_edit_target_dataset()          Uses pre-built caches:
+  [paraview_backend.py:2752]                          _edit_source_dataset  → no Fetch per pick
+  _remap_surface_keys_to_edit_target_dataset()        _edit_target_cell_map → no map rebuild
+  [paraview_backend.py:2812]                          _edit_point_id_map    → O(1) point lookup
+         │
+         │                                          Fallback: if caches are absent (e.g. tests
+         │                                          that set _edit_target_dataset directly),
+         │                                          both methods rebuild the structures inline —
+         │                                          same correctness, O(n) per pick as before.
          ▼
   IDs on working_dataset
 
@@ -213,13 +224,58 @@ Key constraints that follow from this model:
 
 - **Edit mode cannot be distributed**: `Fetch()` collapses all data to one process.
   For very large meshes the `Fetch` + `DeepCopy` at session begin is the dominant cost.
-- **Remap on every pick**: coordinate-based cell matching between source and working
-  dataset runs on each pick event. On large meshes this is the per-interaction bottleneck.
+- **Remap on every pick** *(mitigated)*: coordinate-based cell matching between source
+  and working dataset was rebuilt on every pick event. Now the structures are built once
+  at session begin in `set_edit_target_dataset` and reused per pick (O(1) lookups). The
+  fallback rebuild path remains for correctness when caches are absent.
 - **Commit writes the whole mesh**: there is no delta/patch write — the full working
   dataset is serialized even if only a handful of cell values changed.
 - **Normal visualization (no edit) is unaffected**: filters run in ParaView's proxy
   layer with multithread VTK SMP parallelism; only `Fetch()` calls (rare, for metadata)
   touch the single-process ceiling.
+
+---
+
+### 5b. Dataset naming conventions
+
+The edit-session code uses several "dataset" variables and cache fields with similar names.
+This is the reference for what each one is, who owns it, how long it lives, and why it exists.
+
+| Name | Type | Owner | Lifetime | Role |
+|---|---|---|---|---|
+| `source` | ParaView proxy (`vtkSMProxy`) | `ParaViewBackend` (property) | permanent | Active pipeline node on the server side. Used for hardware picks (`SelectSurfaceCells`) and `Fetch` calls. Never mutated. |
+| `source_dataset` | `vtkUnstructuredGrid` | local var (caller) | per call | Result of `servermanager.Fetch(source)`. A read-only local copy used to build indexes or remap IDs. Fetched on demand wherever needed; not stored — except see `_edit_source_dataset`. |
+| `working_dataset` | `vtkUnstructuredGrid` | `EditSession` | session | `DeepCopy` of `source_dataset` made once at session begin. The **mutation target**: field assignments, expression results, and selection tracking all land here. |
+| `_edit_target_dataset` | reference to `working_dataset` | `ParaViewBackend` | session | Registered via `set_edit_target_dataset()` so remap methods know where to translate picks onto. Same Python object as `working_dataset` — not a copy. |
+| `_edit_source_dataset` | `vtkUnstructuredGrid` | `ParaViewBackend` | session | The one `source_dataset` kept alive past its call. Cached at session begin to avoid re-Fetching on every pick. Passed in from `export_active_dataset_for_editing` which already has it. |
+| `_edit_source_point_indexes` | `list[dict]` | `ParaViewBackend` | session | Coordinate → point-ID index derived from `_edit_source_dataset`. Lets `_surface_keys_from_selected_dataset` match surface-pick coordinates back to source point IDs without rebuilding on every pick. |
+| `_edit_target_cell_map` | `dict` | `ParaViewBackend` | session | Cell-geometry → cell-ID map derived from `working_dataset`. Lets `_remap_cell_ids_between_datasets` translate source cell IDs onto working-dataset cell IDs in O(1) per cell rather than O(n_cells) per pick. |
+| `_edit_point_id_map` | `dict[int, int]` | `ParaViewBackend` | session | Source point-ID → working-dataset point-ID map. Lets `_remap_surface_keys_to_edit_target_dataset` translate surface picks from source space to working-dataset space without rebuilding on every pick. |
+| `edit_dataset` | alias (local var) | `_pick_surface_keys_native` | per call | Convenience alias within that one method: equals `_edit_target_dataset` when a session is active, falls back to a fresh `source_dataset` fetch otherwise. Read-only. |
+| `selected_dataset` | `vtkUnstructuredGrid` | pick methods (local var) | per pick | Result of `ExtractSelection` + `Fetch` after a hardware pick. A small subset of source/GeometryFilter cells that ParaView determined were hit. Deleted after each pick. |
+
+The four session-scoped `ParaViewBackend` fields (`_edit_source_dataset`, `_edit_source_point_indexes`,
+`_edit_target_cell_map`, `_edit_point_id_map`) are built together by `set_edit_target_dataset()` at
+session begin and cleared together by `clear_edit_target_dataset()` at session end.
+
+**Identity chain:**
+
+```
+source  (proxy — server side)
+  │  servermanager.Fetch()          ← pulls data across the proxy boundary
+  ▼
+source_dataset  (vtkUG, read-only)  ← also cached as _edit_source_dataset
+  │  DeepCopy() at session begin
+  ▼
+working_dataset  (vtkUG, mutable)   ← also referenced as _edit_target_dataset
+```
+
+The remap exists because picks go through `source` (proxy) and return IDs relative to
+`source_dataset`, but mutations must land on `working_dataset`. Both datasets have the
+same geometry but are independent Python objects with independent ID spaces, so
+coordinate-based maps (`_edit_target_cell_map`, `_edit_point_id_map`) are needed to
+translate IDs from one to the other. These maps are now built once at session begin
+(see §5a) rather than on every pick.
 
 ---
 
@@ -265,9 +321,9 @@ UI click event
                 │    — clears ParaView's purple selection highlight before returning
                 │
                 └── _remap_cell_ids_to_edit_target_dataset(picked, source)
-                     — when an edit session is active the source is the pipeline proxy
-                       but the edit session holds a separate local copy of the mesh;
-                       this maps IDs across by matching cell geometry (sorted point coords)
+                     — maps source cell IDs onto working_dataset cell IDs;
+                       uses _edit_source_dataset (no Fetch) and _edit_target_cell_map
+                       (no rebuild) when caches are populated at session begin
 ```
 
 ### 6b. Box drag pick — cell or point mode
@@ -306,26 +362,34 @@ pv_backend.pick_visible_surface_keys(x, y, radius=2)
       │     ├── hide original display, show surface helper temporarily
       │     ├── simple.SelectSurfaceCells(rect, on temp_source)
       │     ├── simple.ExtractSelection(Input=temp_source) + servermanager.Fetch()
-      │     └── _surface_keys_from_selected_dataset(selected, source_dataset)
-      │          ├── _iter_leaf_datasets()           — flatten composite blocks
-      │          ├── _point_coordinate_indexes()     — multi-precision coord → point_id map
-      │          ├── for each selected cell: map XYZ corners → source point IDs via
-      │          │    coordinate lookup (PassThroughPointIds is not used: in ParaView 6.1
-      │          │    simple.GeometryFilter's PassThroughPointIds produces an identity
-      │          │    mapping through the proxy/Fetch round-trip, not source IDs)
-      │          └── _normalize_surface_keys_to_source_boundary()
-      │               — ParaView may triangulate quads; resolves partial triangle keys
-      │                 back to the canonical quad key in the source boundary map
+      │     ├── _surface_keys_from_selected_dataset(selected, source_dataset,
+      │     │    │                                   source_point_indexes=_edit_source_point_indexes)
+      │     │    ├── _iter_leaf_datasets()           — flatten composite blocks
+      │     │    ├── coordinate index: uses pre-built source_point_indexes when provided
+      │     │    │    (avoids O(n_source_points) rebuild per pick); lazy-builds if absent
+      │     │    ├── for each selected cell: map XYZ corners → source point IDs via
+      │     │    │    coordinate lookup (PassThroughPointIds is not used: in ParaView 6.1
+      │     │    │    simple.GeometryFilter's PassThroughPointIds produces an identity
+      │     │    │    mapping through the proxy/Fetch round-trip, not source IDs)
+      │     │    └── _normalize_surface_keys_to_source_boundary()
+      │     │         — ParaView may triangulate quads; resolves partial triangle keys
+      │     │           back to the canonical quad key in the source boundary map
+      │     └── _remap_surface_keys_to_edit_target_dataset(keys, source_dataset)
+      │          — maps source point IDs onto working_dataset point IDs;
+      │            uses _edit_point_id_map cache when populated at session begin
       │
       └── [fallback path — 2D meshes, or if native path returns None]
            ├── servermanager.Fetch(source)
            ├── _cached_boundary_elements(dataset)
            │    — finds codimension-1 entities (faces for 3D, edges for 2D) that
            │      appear exactly once: these are the visible boundary elements
-           └── for each boundary element:
-                ├── _surface_element_is_visible()   — depth-buffer check at centroid
-                ├── _project_points_to_display()    — world → pixel coords via renderer
-                └── _polyline_intersects_rect() or all-inside check
+           ├── for each boundary element:
+           │    ├── _surface_element_is_visible()   — depth-buffer check at centroid
+           │    ├── _project_points_to_display()    — world → pixel coords via renderer
+           │    └── _polyline_intersects_rect() or all-inside check
+           └── _remap_surface_keys_to_edit_target_dataset(picked, source_dataset=dataset)
+                — maps source point IDs onto working_dataset point IDs;
+                  uses _edit_point_id_map cache when populated at session begin
 ```
 
 ### 6d. Overlay update (after any successful pick)
