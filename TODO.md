@@ -2,9 +2,17 @@
 
 ## Priorita alta
 
+- **Performance selezione su dataset grandi** — bottleneck documentati in
+  `docs/logic_flows.md` §5a e §6. Piano a step progressivi in [issue #34](https://github.com/2listic/coral-visualizer/issues/34); ogni step
+  è indipendente e lascia i test esistenti verdi. Step 1 può essere fatto direttamente
+  su `paraview_backend.py` senza refactor preventivo.
+
 - Separare `paraview_backend.py` in servizi di dominio più piccoli (3900 righe).
-  Iniziare con `backend/selection.py` + `backend/selection_geometry.py`.
-  Vedi [docs/backend_refactor.md](docs/backend_refactor.md) per strategia, layout moduli e firme.
+  Iniziare da moduli con dipendenze unidirezionali (`backend/display.py`,
+  `backend/coloring.py`, `backend/pipeline.py`) — più self-contained e a minor rischio
+  di regressione rispetto alla selezione, che dipende trasversalmente dallo stato del
+  backend. La selezione segue dopo. Vedi [docs/backend_refactor.md](docs/backend_refactor.md)
+  per strategia, layout moduli e firme.
 
 ## Priorita media
 
@@ -20,10 +28,7 @@
 
 ## Miglioramenti futuri
 
-- **Performance selezione su dataset grandi**: identificare il bottleneck (pick
-  query, overlay rebuild, state sync). Da affrontare dopo aver estratto e
-  compreso `backend/selection.py`.
-- **Riorganizzazione UI/UX**: migliorare l'esperienza utente dopo aver spezzato
+- **Riorganizzazione UI/UX**: migliorare l'esperienza utente eventualmente dopo aver spezzato
   `ui.py` in moduli navigabili.
 
 ## Riorganizzazione cartelle

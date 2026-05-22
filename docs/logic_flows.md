@@ -88,37 +88,138 @@ ctrl.pv_add_filter(filter_key)    [paraview_controllers.py:689]
 ctrl.pv_begin_edit_session()
  ├── pv_backend.export_active_dataset_for_editing()  — pulls dataset from ParaView server into a local VTK object (no further server involvement)
  ├── edit_session.begin(node_id, label, filename, dataset)  — DeepCopy into working_dataset, reset all session state, precompute CellCenters array
- ├── pv_backend.set_edit_target_dataset(working_dataset)
- ├── state.pick_mode = True, mainViewMode = "remote"
- └── sync_edit_session_state() + render_and_push()
+ ├── pv_backend.set_edit_target_dataset(working_dataset)  — registers working_dataset so picks can be remapped onto it
+ ├── state.pick_mode = True, mainViewMode = "remote"       — enables hardware picking; forces server-side rendering
+ └── sync_edit_session_state() + render_and_push()         — flush edit state to UI and send first frame
 
 [Selection — click or box drag]
-ctrl.pv_edit_click_selection(event) / ctrl.pv_edit_box_selection(event)
+ctrl.pv_edit_click_selection(event) / ctrl.pv_edit_box_selection(event)  — entry point for click and box drag gestures
  ├── normalize_edit_selection_ids(event)  — extract screen coords or composite IDs
- ├── _pick_edit_ids_at_coords(mode, x, y) / _pick_edit_ids_in_rect(mode, ...)
+ ├── _pick_edit_ids_at_coords(mode, x, y) / _pick_edit_ids_in_rect(mode, ...)  — dispatch to click or rect pick
  │    └── pv_backend.pick_visible_cell_ids(x, y)  — ParaView hardware pick
- └── _apply_selection_ids(picked_ids, ...)
-      ├── edit_session.replace/add/subtract/flip_selection(picked_ids)
-      ├── sync_edit_session_state()
+ └── _apply_selection_ids(picked_ids, ...)  — apply selection mode (replace/add/subtract/flip) and update overlay
+      ├── edit_session.replace/add/subtract/flip_selection(picked_ids)  — mutate selected_cell_ids / surface_keys / point_ids
+      ├── sync_edit_session_state()         — update selection count and field readiness in Trame state
       ├── sync_paraview_edit_selection_overlay()  — highlight selected cells in view
-      └── render_and_push()
+      └── render_and_push()                 — send updated frame to browser
 
 [Assign value]
-ctrl.pv_apply_edit_field()
- └── _apply_edit_field()
+ctrl.pv_apply_edit_field()  — triggered by "Apply" button in Edit Tools panel
+ └── _apply_edit_field()    — resolves field, runs expression, writes values into working_dataset
       ├── _parse_field_choice()        — "cell:FieldName" → (association, name)
-      ├── edit_session.assign_to_selected(field_name, association, expression)
-      └── sync_edit_session_state()
+      ├── edit_session.assign_to_selected(field_name, association, expression)  — evaluate expression via vtkArrayCalculator and write results to selected cells/points
+      └── sync_edit_session_state()    — refresh dirty flag and field state in UI
 
 [Commit]
-ctrl.pv_commit_edit_session()
- └── _commit_edit_session()
+ctrl.pv_commit_edit_session()  — opens save dialog; actual write happens in _commit_edit_session
+ └── _commit_edit_session()    — save, tear down session, reload result as new pipeline node
       ├── save_paraview_output()            — write modified dataset to disk
-      ├── edit_session.clear()
+      ├── edit_session.clear()              — reset all session state and release working_dataset
       ├── pv_backend.load_file(output_path) — add saved file back as new pipeline node
-      ├── update_paraview_ui_state()
-      └── render_and_push()
+      ├── update_paraview_ui_state()        — full state flush: arrays, display, pipeline tree
+      └── render_and_push()                 — send final frame showing new node
 ```
+
+### 5a. Data movement, process model, and bottlenecks
+
+The diagram below tracks what happens to the mesh data across the same four phases
+as section 5. Read section 5 to trace function calls; read this to understand data
+ownership, copies, and where the performance costs land.
+
+The app is **single-process** (one Python process hosts Trame, ParaView pipeline, and
+edit logic). VTK C++ filter work uses multi-thread internally via `vtkMultiThreader`;
+Python orchestration is single-threaded. There is no MPI: all data lives in one process.
+If a pvserver were connected via `simple.Connect()`, `servermanager.Fetch()` would
+still collapse all distributed ranks into this one process at the points marked below.
+
+```
+─── SESSION BEGIN ──────────────────────────────────────────────────────────────────
+  [paraview_controllers.py:721 pv_begin_edit_session]
+  [paraview_backend.py:400    export_active_dataset_for_editing]
+  [edit_session.py:71         EditSession.begin]
+
+  ParaView in-process pipeline (proxy layer, vtkSMProxy stubs)
+    source proxy  →  UpdatePipeline()
+         │
+         ▼
+  servermanager.Fetch(source)              ⚠ BOTTLENECK: entire mesh transferred into
+  [paraview_backend.py:410]                  one Python vtkUnstructuredGrid object.
+         │                                   In MPI mode all ranks would be merged here.
+         ▼
+  vtkUnstructuredGrid (local Python)
+         │
+         ▼
+  vtkUnstructuredGrid.DeepCopy()           ⚠ full mesh copy — all points, all cells of
+  [edit_session.py:85]                       all dimensions, all point/cell data arrays.
+         ▼
+  edit_session.working_dataset             independent copy; field assignments,
+         │                                 selections, and expressions operate only
+         │                                 on this dataset — picks still go through
+         │                                 the ParaView source and are remapped here.
+         │
+         ├── pv_backend.set_edit_target_dataset(working_dataset)
+         │   [paraview_backend.py:156]
+         │     registers copy so subsequent picks can be remapped onto it
+         │
+         └── _ensure_cell_centers_array()
+             [edit_session.py:1167]
+               adds CellCenters cell-data array (XYZ per cell centroid) so
+               vtkArrayCalculator can reference spatial coords in expressions
+
+─── DURING SESSION — two parallel structures ──────────────────────────────────────
+
+  ParaView side (pipeline proxy)          Edit session side (working_dataset)
+  ────────────────────────────────        ──────────────────────────────────────
+  original source rendered in viewport    holds all mutations (assigned field values)
+  picked by SelectSurfaceCells()          tracks selected_cell_ids / surface_keys /
+                                          selected_point_ids
+
+  cell IDs from rendered source
+         │
+         ▼
+  _remap_cell_ids_to_edit_target_dataset()          ⚠ O(n) coordinate lookup:
+  [paraview_backend.py:2746]                          matches cells between source
+  _remap_surface_keys_to_edit_target_dataset()        and working_dataset by sorted
+  [paraview_backend.py:2767]                          point coordinates per cell.
+         │                                            Bottleneck on large meshes.
+         ▼
+  IDs on working_dataset
+
+  CellCenters array (cell data)           GetPoint() calls (raw mesh geometry)
+  └─ vtkArrayCalculator reads it          └─ _ensure_surface_element_vectors()
+     when evaluating user expressions        [edit_session.py:995]
+     (e.g. "CellCenters[0] > 2.5")          computes unit normals/tangents for
+     Stripped from output on save.           dihedral angle filter during grow.
+                                             Never stored as an array.
+
+─── COMMIT ─────────────────────────────────────────────────────────────────────────
+  [paraview_controllers.py:108 _commit_edit_session]
+
+  edit_session.working_dataset
+         │
+         ├── _remove_internal_edit_arrays()   strips CellCenters before write
+         │   [edit_session.py:1200]
+         ▼
+  vtkXMLUnstructuredGridWriter.Write()     ⚠ full mesh write to disk
+         │
+         ▼
+  pv_backend.load_file(output_path)        ⚠ full mesh re-read into ParaView pipeline
+         │                                   ParaView owns it again as a new node.
+         ▼
+  new pipeline node — normal visualization resumes, edit bridge torn down
+```
+
+Key constraints that follow from this model:
+
+- **Edit mode cannot be distributed**: `Fetch()` collapses all data to one process.
+  For very large meshes the `Fetch` + `DeepCopy` at session begin is the dominant cost.
+- **Remap on every pick**: coordinate-based cell matching between source and working
+  dataset runs on each pick event. On large meshes this is the per-interaction bottleneck.
+- **Commit writes the whole mesh**: there is no delta/patch write — the full working
+  dataset is serialized even if only a handful of cell values changed.
+- **Normal visualization (no edit) is unaffected**: filters run in ParaView's proxy
+  layer with multithread VTK SMP parallelism; only `Fetch()` calls (rare, for metadata)
+  touch the single-process ceiling.
 
 ---
 
