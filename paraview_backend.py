@@ -2320,12 +2320,14 @@ class ParaViewBackend:
         """Map selected GeometryFilter cells back to original source point-id keys.
 
         Builds a coordinate index from source_dataset and maps each selected cell's
-        XYZ corners back to source point IDs. vtkOriginalPointIds is not used: in
-        ParaView 6.1, simple.GeometryFilter's PassThroughPointIds does not produce
-        reliable source IDs through the proxy/server-fetch round-trip.
+        XYZ corners back to source point IDs. Neither vtkOriginalPointIds nor
+        vtkOriginalCellIds is used: in ParaView 6.1 both PassThroughPointIds and
+        PassThroughCellIds on GeometryFilter produce output-geometry indices through
+        the proxy/server-fetch round-trip rather than source topology IDs (see PR #31
+        and issue #34).
 
-        source_point_indexes may be passed as a pre-built index to avoid rebuilding
-        it on every pick when an edit session is active.
+        source_point_indexes may be passed as a pre-built index (cached at edit-session
+        begin, B4) to skip the O(n_source_points) build on each pick.
         """
         if source_dataset is None:
             return None

@@ -368,9 +368,9 @@ pv_backend.pick_visible_surface_keys(x, y, radius=2)
       │     │    ├── coordinate index: uses pre-built source_point_indexes when provided
       │     │    │    (avoids O(n_source_points) rebuild per pick); lazy-builds if absent
       │     │    ├── for each selected cell: map XYZ corners → source point IDs via
-      │     │    │    coordinate lookup (PassThroughPointIds is not used: in ParaView 6.1
-      │     │    │    simple.GeometryFilter's PassThroughPointIds produces an identity
-      │     │    │    mapping through the proxy/Fetch round-trip, not source IDs)
+      │     │    │    coordinate lookup (neither PassThroughPointIds nor PassThroughCellIds
+      │     │    │    is used: in ParaView 6.1 both produce output-geometry indices through
+      │     │    │    the proxy/Fetch round-trip, not source topology IDs — see PR #31, issue #34)
       │     │    └── _normalize_surface_keys_to_source_boundary()
       │     │         — ParaView may triangulate quads; resolves partial triangle keys
       │     │           back to the canonical quad key in the source boundary map
