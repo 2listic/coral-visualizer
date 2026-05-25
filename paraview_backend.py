@@ -5,6 +5,7 @@ from __future__ import annotations
 import bisect
 import importlib.util
 import os
+import tempfile
 import time
 from math import isfinite
 from typing import Any, TypedDict
@@ -143,14 +144,14 @@ class ParaViewBackend:
         self._edit_selection_overlay = None
         self._edit_selection_display = None
         self._scalar_bar_visible = False
-        # Edit-session dataset references and remap caches — see docs/logic_flows.md §5b.
+        # Edit-session dataset reference — see docs/logic_flows.md §5b.
         self._edit_target_dataset: vtkDataSet | None = None  # ref to working_dataset
-        self._edit_source_dataset: vtkDataSet | None = (
-            None  # fetched source, cached at begin
-        )
-        self._edit_source_point_indexes: list[dict] | None = None  # coord→pt_id index
-        self._edit_target_cell_map: dict | None = None  # cell_key→cell_id
-        self._edit_point_id_map: dict[int, int] | None = None  # src_pt_id→target_pt_id
+        # Edit pipeline node — real pipeline entry created at session begin.
+        # Picks go through the edit node source → IDs already index working_dataset.
+        # No remap caches needed; see docs/step2_edit_node_plan.md.
+        self._edit_node_id: str | None = None  # ID of the synthetic edit node
+        self._edit_pre_node_id: str | None = None  # ID of the node active before edit
+        self._edit_temp_file: str | None = None  # temp .vtu path (filter-active case)
         self._surface_selection_helper = None
         self._last_selection_backend_timing = []
         self._boundary_cache = {}
@@ -160,44 +161,44 @@ class ParaViewBackend:
             "QuadraticTetra": "QuadraticTetrahedron",
         }
 
-    def set_edit_target_dataset(
-        self, dataset: vtkDataSet | None, source_dataset: vtkDataSet | None = None
-    ) -> None:
-        """Set the edit-session dataset and pre-build remap caches.
+    def set_edit_target_dataset(self, dataset: vtkDataSet | None) -> None:
+        """Register the edit-session working dataset.
 
-        source_dataset may be passed to avoid a redundant Fetch when the caller
-        already holds the fetched source (e.g. pv_begin_edit_session).
+        Picks go through the edit node source (same data as working_dataset), so
+        cell IDs returned by SelectSurfaceCells already index dataset directly —
+        no remap is needed.
         """
         self._edit_target_dataset = dataset
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
-        if source_dataset is None and self.source is not None:
-            try:
-                source_dataset = self.servermanager.Fetch(self.source)
-            except Exception:
-                source_dataset = None
-        self._edit_source_dataset = source_dataset
-        self._edit_source_point_indexes = (
-            self._point_coordinate_indexes(source_dataset)
-            if source_dataset is not None
-            else None
-        )
-        self._edit_target_cell_map = (
-            self._build_target_cell_map(dataset) if dataset is not None else None
-        )
-        self._edit_point_id_map = (
-            self._point_id_map_between_datasets(source_dataset, dataset)
-            if source_dataset is not None and dataset is not None
-            else None
-        )
 
     def clear_edit_target_dataset(self) -> None:
-        """Clear edit-session dataset normalization context."""
+        """Clear edit-session dataset context and delete the edit pipeline node."""
+        if self._edit_node_id is not None:
+            pre_node_id = self._edit_pre_node_id
+            # delete_node() hides/deletes the proxy, removes it from pipeline_nodes,
+            # and auto-selects pipeline_nodes[-1] as the new active node
+            # (which is _edit_pre_node_id — no new nodes can be added during a session).
+            self.delete_node(self._edit_node_id)
+            self._edit_node_id = None
+            self._edit_pre_node_id = None
+
+            # Restore the pre-edit node to visible so the user sees their mesh again.
+            if pre_node_id is not None:
+                pre_node = self._find_node(pre_node_id)
+                if pre_node is not None:
+                    self._set_proxy_visibility(pre_node["display"], True)
+                    self._set_extract_displays_visibility(pre_node, True)
+                    pre_node["visibility"] = True
+
+        if self._edit_temp_file:
+            try:
+                os.remove(self._edit_temp_file)
+            except OSError:
+                pass
+            self._edit_temp_file = None
+
         self._edit_target_dataset = None
-        self._edit_source_dataset = None
-        self._edit_source_point_indexes = None
-        self._edit_target_cell_map = None
-        self._edit_point_id_map = None
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
 
@@ -441,29 +442,152 @@ class ParaViewBackend:
             self.simple.SaveData(output_path, proxy=source)
         return output_path
 
-    def export_active_dataset_for_editing(self) -> EditSessionSource:
-        """Fetch the active pipeline result as a local VTK dataset for editing."""
+    def can_edit_active_node(self) -> bool:
+        """Cheap probe: True when the active node output is editable.
+
+        Uses GetDataInformation (no Fetch) so it never stalls on large meshes.
+        Returns False during an active edit session to prevent nested sessions.
+        """
+        if self._edit_node_id is not None:
+            return False
         source = self.source
-        node = self._get_active_node()
-        if source is None or node is None:
+        if source is None:
+            return False
+        try:
+            data_info = source.GetDataInformation()
+            type_string = (
+                data_info.GetDataSetTypeAsString() if data_info is not None else ""
+            )
+            return EditSession.is_supported_dataset_type(type_string)
+        except Exception:
+            return False
+
+    def export_active_dataset_for_editing(self) -> EditSessionSource:
+        """Create a synthetic edit pipeline node and fetch its dataset for editing.
+
+        Two cases at session begin:
+          - Root reader (no parent_id): OpenDataFile on the same backing file.
+            Two Reader proxies on the same file produce independent in-process datasets.
+          - Filter active (parent_id set): XMLUnstructuredGridWriter writes the filter
+            output server-side to _edit_temp_<id>.vtu; OpenDataFile loads it.
+            Avoids the MPI-rank collapse of Fetch(source) on pvserver deployments.
+
+        All existing nodes are hidden; the edit node becomes the sole visible source.
+        Picks go through the edit source → cell IDs already index working_dataset.
+        """
+        pre_node = self._get_active_node()
+        if pre_node is None:
             raise RuntimeError("No active pipeline item available for editing")
 
         from paraview import servermanager
 
+        source = pre_node["source"]
         source.UpdatePipeline()
-        dataset = servermanager.Fetch(source)
+
+        # Cheap type check before any proxy creation or file I/O
+        data_info = source.GetDataInformation()
+        type_string = (
+            data_info.GetDataSetTypeAsString() if data_info is not None else ""
+        )
+        if not EditSession.is_supported_dataset_type(type_string):
+            raise TypeError(
+                f"Edit mode currently supports only vtkUnstructuredGrid outputs, "
+                f"got {type_string!r}."
+            )
+
+        # Create the edit source proxy (same file for root readers, temp file for filters)
+        edit_source, temp_file = self._create_edit_source(pre_node)
+        edit_source.UpdatePipeline()
+
+        # One Fetch — produces working_dataset; picks on edit_source return IDs in this space
+        dataset = servermanager.Fetch(edit_source)
         if not EditSession.is_supported_dataset(dataset):
+            try:
+                self.simple.Delete(edit_source)
+            except Exception:
+                pass
+            if temp_file:
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass
             data_type = type(dataset).__name__ if dataset is not None else "Unknown"
             raise TypeError(
-                f"Edit mode currently supports only vtkUnstructuredGrid outputs, got {data_type}."
+                f"Edit mode currently supports only vtkUnstructuredGrid outputs, "
+                f"got {data_type}."
             )
+
+        # Capture current coloring before switching active node
+        current_array = self._get_selected_array()
+
+        # Create display for the edit source
+        edit_display = self.simple.Show(edit_source, self.view) if self.view else None
+
+        # Build the pipeline node descriptor
+        original_label = pre_node.get("label") or os.path.basename(
+            pre_node.get("filename") or "source"
+        )
+        edit_node = self._make_node(
+            edit_source,
+            edit_display,
+            pre_node.get("filename") or "",
+            "edit",
+            f"✏ Editing: {original_label}",
+            parent_id=pre_node["id"],
+        )
+
+        # Hide all existing pipeline nodes so only the edit node is visible
+        for node in self.pipeline_nodes:
+            self._set_proxy_visibility(node["display"], False)
+            self._set_extract_displays_visibility(node, False)
+            node["visibility"] = False  # keep node dict in sync with display state
+
+        # Register the edit node and make it active
+        self.pipeline_nodes.append(edit_node)
+        self._edit_node_id = edit_node["id"]
+        self._edit_pre_node_id = pre_node["id"]
+        self._edit_temp_file = temp_file
+        self.active_node_id = edit_node["id"]
+        self.simple.SetActiveSource(edit_source)
+        if self.view is not None:
+            self.simple.SetActiveView(self.view)
+
+        # Re-apply coloring to the edit display
+        self.apply_coloring(current_array)
+
         return {
-            "node_id": node["id"],
-            "label": node.get("label")
-            or os.path.basename(node.get("filename") or "source"),
-            "filename": node.get("filename") or "",
+            "node_id": pre_node["id"],  # original node ID for edit session tracking
+            "label": original_label,
+            "filename": pre_node.get("filename") or "",
             "dataset": dataset,
         }
+
+    def _create_edit_source(self, node: PipelineNode):
+        """Return (edit_source_proxy, temp_file_path_or_None) for session begin.
+
+        Root reader case (no parent_id): opens a second Reader on the same file.
+        Filter-active case (parent_id set): writes the filter output server-side
+        to a temp .vtu, then opens that file — avoids Fetch(source) MPI collapse.
+        """
+        filename = node.get("filename") or ""
+        parent_id = node.get("parent_id")
+
+        if not parent_id and filename:
+            reader = self.simple.OpenDataFile(sanitized_vtk_xml_path(filename))
+            return reader, None
+
+        temp_path = self._resolve_temp_edit_file(node["id"])
+        writer = self.simple.XMLUnstructuredGridWriter(Input=node["source"])
+        writer.FileName = temp_path
+        writer.UpdatePipeline()
+        self.simple.Delete(writer)
+        reader = self.simple.OpenDataFile(temp_path)
+        return reader, temp_path
+
+    def _resolve_temp_edit_file(self, node_id: str) -> str:
+        """Return the path for the server-side temp edit file (filter-active case)."""
+        base = self.data_directory or tempfile.gettempdir()
+        return os.path.join(base, f"_edit_temp_{node_id}.vtu")
 
     def set_active_node(self, node_id):
         """Make the given pipeline node active."""
@@ -1846,15 +1970,17 @@ class ParaViewBackend:
             if picked_result:
                 break
 
-        # Always clear and RENDER to hide the native ParaView purple selection
+        # Always clear and RENDER to hide the native ParaView purple selection highlight.
+        # ParaView renders a blue/purple tint over hardware-selected cells; without an
+        # explicit clear + render the tint persists on screen even after the selection
+        # is logically complete.
         self._clear_selection_state(source)
         self.render()
-        remapped = self._remap_cell_ids_to_edit_target_dataset(picked_result, source)
         print(
             "[selection-debug] backend.pick.click.result "
-            f"final_count={len(remapped)} final={self._preview_values(remapped)}"
+            f"final_count={len(picked_result)} final={self._preview_values(picked_result)}"
         )
-        return remapped
+        return picked_result
 
     def pick_visible_cell_ids_in_rect(self, x0, y0, x1, y1, behavior="touch"):
         """Return selected visible cell ids inside a display-space rectangle."""
@@ -1884,12 +2010,7 @@ class ParaViewBackend:
         print(
             "[selection-debug] backend.pick.box "
             f"behavior={behavior!r} rect={rect} raw_count={len(raw_picked)} raw={self._preview_values(raw_picked)} "
-            f"accepted_count={len(picked)} accepted={self._preview_values(picked)}"
-        )
-        picked = self._remap_cell_ids_to_edit_target_dataset(picked, source)
-        print(
-            "[selection-debug] backend.pick.box.result "
-            f"behavior={behavior!r} final_count={len(picked)} final={self._preview_values(picked)}"
+            f"final_count={len(picked)} final={self._preview_values(picked)}"
         )
         if not picked or behavior != "inside":
             return picked
@@ -2069,15 +2190,11 @@ class ParaViewBackend:
             else:
                 if self._polyline_intersects_rect(projected, rect):
                     picked.append(key)
-        remapped = self._remap_surface_keys_to_edit_target_dataset(
-            picked, source_dataset=dataset
-        )
         print(
             "[selection-debug] backend.pick.surface.fallback "
-            f"behavior={behavior!r} rect={rect} raw_count={len(picked)} raw={self._preview_values(picked)} "
-            f"final_count={len(remapped)} final={self._preview_values(remapped)}"
+            f"behavior={behavior!r} rect={rect} final_count={len(picked)} final={self._preview_values(picked)}"
         )
-        return remapped
+        return picked
 
     def _pick_surface_keys_native(self, rect, behavior="touch"):
         """Native ParaView selection path for visible boundary faces (3D)."""
@@ -2174,7 +2291,6 @@ class ParaViewBackend:
             keys = self._surface_keys_from_selected_dataset(
                 selected_dataset,
                 source_dataset=source_dataset,
-                source_point_indexes=self._edit_source_point_indexes,
             )
             record_phase("map_selection_keys", phase_start)
             if keys is None:
@@ -2199,17 +2315,11 @@ class ParaViewBackend:
                             inside_keys.append(key)
                     keys = inside_keys
                 record_phase("inside_refine", phase_start)
-            phase_start = time.perf_counter()
-            remapped = self._remap_surface_keys_to_edit_target_dataset(
-                keys, source_dataset=source_dataset
-            )
-            record_phase("remap_to_edit_target", phase_start)
             print(
                 "[selection-debug] backend.pick.surface.native.result "
-                f"behavior={behavior!r} rect={rect} raw_count={len(keys or [])} raw={self._preview_values(keys or [])} "
-                f"final_count={len(remapped)} final={self._preview_values(remapped)}"
+                f"behavior={behavior!r} rect={rect} final_count={len(keys or [])} final={self._preview_values(keys or [])}"
             )
-            return remapped
+            return keys
         except Exception:
             return None
         finally:
@@ -2800,99 +2910,6 @@ class ParaViewBackend:
 
         return selected_ids
 
-    def _remap_cell_ids_to_edit_target_dataset(
-        self, cell_ids: list[int], source: Any
-    ) -> list[int]:
-        """Normalize picked source cell IDs onto the active edit-session dataset."""
-        picked_ids = [int(cell_id) for cell_id in (cell_ids or [])]
-        target_dataset = self._edit_target_dataset
-        if target_dataset is None or not picked_ids:
-            return picked_ids
-
-        source_dataset = self._edit_source_dataset
-        if source_dataset is None:
-            try:
-                source_dataset = self.servermanager.Fetch(source)
-            except Exception:
-                source_dataset = None
-        remapped = self._remap_cell_ids_between_datasets(
-            picked_ids,
-            source_dataset,
-            target_dataset,
-            _target_cell_map=self._edit_target_cell_map,
-        )
-        print(
-            "[selection-debug] backend.remap.cells "
-            f"input_count={len(picked_ids)} input={self._preview_values(picked_ids)} "
-            f"remapped_count={len(remapped)} remapped={self._preview_values(remapped)}"
-        )
-        return remapped if remapped else picked_ids
-
-    def _remap_surface_keys_to_edit_target_dataset(
-        self, keys: list, source_dataset: vtkDataSet | None = None
-    ) -> list:
-        """Normalize picked source boundary keys onto edit-session point IDs."""
-        picked_keys = [tuple(key) for key in (keys or []) if key]
-        target_dataset = self._edit_target_dataset
-        if target_dataset is None or not picked_keys:
-            return picked_keys
-        if source_dataset is target_dataset:
-            return picked_keys
-
-        point_id_map = self._edit_point_id_map
-        if point_id_map is None:
-            if source_dataset is None:
-                return picked_keys
-            point_id_map = self._point_id_map_between_datasets(
-                source_dataset, target_dataset
-            )
-        if not point_id_map:
-            return picked_keys
-
-        remapped = []
-        for key in picked_keys:
-            mapped = [point_id_map.get(int(source_point_id)) for source_point_id in key]
-            if any(point_id is None for point_id in mapped):
-                continue
-            remapped.append(tuple(sorted(mapped)))
-
-        if not remapped:
-            return picked_keys
-        normalized = self._dedupe_ordered(remapped)
-        print(
-            "[selection-debug] backend.remap.surface "
-            f"input_count={len(picked_keys)} input={self._preview_values(picked_keys)} "
-            f"remapped_count={len(remapped)} remapped={self._preview_values(remapped)} "
-            f"normalized_count={len(normalized)} normalized={self._preview_values(normalized)}"
-        )
-        return normalized
-
-    @classmethod
-    def _point_id_map_between_datasets(
-        cls, source_dataset: vtkDataSet | None, target_dataset: vtkDataSet | None
-    ) -> dict[int, int]:
-        """Map source point IDs to target point IDs by tolerant coordinates."""
-        if source_dataset is None or target_dataset is None:
-            return {}
-        try:
-            source_count = source_dataset.GetNumberOfPoints()
-            target_indexes = cls._point_coordinate_indexes(target_dataset)
-        except Exception:
-            return {}
-        if not target_indexes:
-            return {}
-
-        point_id_map = {}
-        for source_point_id in range(source_count):
-            try:
-                point = source_dataset.GetPoint(source_point_id)
-            except Exception:
-                continue
-            target_point_id = cls._lookup_point_coordinate(target_indexes, point)
-            if target_point_id is not None:
-                point_id_map[int(source_point_id)] = int(target_point_id)
-        return point_id_map
-
     @staticmethod
     def _dedupe_ordered(values):
         deduped = []
@@ -3000,78 +3017,6 @@ class ParaViewBackend:
         if not coords:
             return None
         return tuple(sorted(coords))
-
-    @staticmethod
-    def _build_target_cell_map(target_dataset: vtkDataSet) -> dict:
-        """Build cell-geometry key → cell ID map once for caching the remap lookup."""
-        if not hasattr(target_dataset, "GetCell"):
-            return {}
-        cell_map = {}
-        for target_cell_id in range(target_dataset.GetNumberOfCells()):
-            target_cell = target_dataset.GetCell(target_cell_id)
-            key = ParaViewBackend._cell_coordinate_key(target_dataset, target_cell)
-            if key is None:
-                continue
-            cell_map.setdefault(key, int(target_cell_id))
-        return cell_map
-
-    @staticmethod
-    def _remap_cell_ids_between_datasets(
-        cell_ids: list[int],
-        source_dataset: vtkDataSet | None,
-        target_dataset: vtkDataSet | None,
-        *,
-        _target_cell_map: dict | None = None,
-    ) -> list[int]:
-        """Map source-dataset cell ids to target-dataset ids by cell geometry."""
-        if not cell_ids:
-            return []
-        if source_dataset is None or target_dataset is None:
-            return [int(cell_id) for cell_id in cell_ids]
-        if not hasattr(source_dataset, "GetCell") or not hasattr(
-            target_dataset, "GetCell"
-        ):
-            return [int(cell_id) for cell_id in cell_ids]
-
-        target_count = target_dataset.GetNumberOfCells()
-        if _target_cell_map is not None:
-            target_cell_map = _target_cell_map
-        else:
-            target_cell_map = {}
-            for target_cell_id in range(target_count):
-                target_cell = target_dataset.GetCell(target_cell_id)
-                key = ParaViewBackend._cell_coordinate_key(target_dataset, target_cell)
-                if key is None:
-                    continue
-                target_cell_map.setdefault(key, int(target_cell_id))
-
-        remapped = []
-        for cell_id in cell_ids:
-            mapped_id = None
-            try:
-                source_cell_id = int(cell_id)
-            except (TypeError, ValueError):
-                continue
-            if 0 <= source_cell_id < source_dataset.GetNumberOfCells():
-                source_cell = source_dataset.GetCell(source_cell_id)
-                source_key = ParaViewBackend._cell_coordinate_key(
-                    source_dataset, source_cell
-                )
-                if source_key is not None:
-                    mapped_id = target_cell_map.get(source_key)
-            if mapped_id is None and 0 <= source_cell_id < target_count:
-                mapped_id = int(source_cell_id)
-            if mapped_id is not None:
-                remapped.append(int(mapped_id))
-
-        deduped = []
-        seen = set()
-        for cell_id in remapped:
-            if cell_id in seen:
-                continue
-            seen.add(cell_id)
-            deduped.append(cell_id)
-        return deduped
 
     @staticmethod
     def _source_cell_ids_from_selected_dataset(selected_dataset, source_dataset):
@@ -3478,7 +3423,12 @@ class ParaViewBackend:
         node = self._get_active_node()
         if node is None:
             return "Reader Type"
-        return "Filter Type" if node.get("kind") == "filter" else "Reader Type"
+        kind = node.get("kind")
+        if kind == "filter":
+            return "Filter Type"
+        if kind == "edit":
+            return "Edit Session"
+        return "Reader Type"
 
     def _active_parent_label(self):
         """Return the parent pipeline label for the active node when available."""

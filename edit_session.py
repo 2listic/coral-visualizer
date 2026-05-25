@@ -1245,3 +1245,11 @@ class EditSession:
     def is_supported_dataset(dataset) -> bool:
         """Return True when the dataset type is currently editable."""
         return isinstance(dataset, vtkUnstructuredGrid)
+
+    @staticmethod
+    def is_supported_dataset_type(type_string: str) -> bool:
+        """Return True when a DataInformation type string is currently editable.
+
+        Used for the cheap probe in can_edit_active_node() — avoids a Fetch.
+        """
+        return type_string == "vtkUnstructuredGrid"

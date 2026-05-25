@@ -60,6 +60,10 @@ def register_state_handlers(
         if not active_pipeline_item:
             return
         if edit_session.active:
+            if active_pipeline_item == paraview_runtime.pv_backend.active_node_id:
+                # Programmatic sync (e.g. update_ui_state updating to the edit node) —
+                # no user action, no warning needed.
+                return
             notify(
                 state, "Cannot switch pipeline node during an edit session.", "warning"
             )

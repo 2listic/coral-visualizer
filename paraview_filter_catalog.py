@@ -199,11 +199,14 @@ class ParaViewFilterCatalog:
 
     def pipeline_icon(self, node):
         """Return a kind-aware icon for a pipeline entry."""
-        if node.get("kind") == "filter":
+        kind = node.get("kind")
+        if kind == "filter":
             filter_key = node.get("filter_key")
             if filter_key in self.supported_filters:
                 return self.supported_filters[filter_key]["icon"]
             return "mdi-filter-outline"
+        if kind == "edit":
+            return "mdi-pencil-outline"
         return "mdi-database-outline"
 
     def _discover_experimental_filters(self):

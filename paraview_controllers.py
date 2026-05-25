@@ -730,10 +730,7 @@ def register_paraview_controllers(
                 exported["filename"],
                 exported["dataset"],
             )
-            pv_backend.set_edit_target_dataset(
-                edit_session.working_dataset,
-                source_dataset=exported["dataset"],
-            )
+            pv_backend.set_edit_target_dataset(edit_session.working_dataset)
 
             pv_backend.apply_representation("Surface with Edges")
             state.pick_mode = True
@@ -749,6 +746,7 @@ def register_paraview_controllers(
             state.selection_count = 0
             state.inspector_tab = 3
             _set_selection_mode("replace")
+            update_paraview_ui_state()
             sync_edit_session_state()
             sync_paraview_edit_selection_overlay()
             render_and_push()
@@ -765,6 +763,7 @@ def register_paraview_controllers(
         debug_view("pv_discard_edit_session.start", mode=state.mainViewMode)
         edit_session.clear()
         pv_backend.clear_edit_target_dataset()
+        update_paraview_ui_state()
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         state.save_filename = pv_backend.default_output_filename()
