@@ -1431,3 +1431,125 @@ def test_paraview_surface_mode_grow_left_edge_with_zero_angle(shared_browser):
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
+
+
+def test_paraview_edit_session_shows_edit_node_in_pipeline_panel(shared_browser):
+    """After entering edit mode a pipeline node labelled '✏ Editing: …' must appear."""
+    if not is_paraview_available():
+        pytest.skip("ParaView is not installed")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--server",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_GRID),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
+
+        page.click("button:has-text('Enter Edit Mode')")
+        page.wait_for_selector("text=Edit Tools", timeout=40000)
+        time.sleep(1.0)
+
+        # The edit pipeline node must appear in the left pipeline panel.
+        edit_items = page.locator("div.v-list-item__title:has-text('✏ Editing')")
+        edit_items.first.wait_for(state="visible", timeout=10000)
+        assert (
+            edit_items.count() > 0
+        ), "Edit node must appear in the pipeline panel with a '✏ Editing: …' label"
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def test_paraview_edit_session_discard_restores_visible_mesh(shared_browser):
+    """After discarding an edit session the original node is restored and the mesh is visible."""
+    if not is_paraview_available():
+        pytest.skip("ParaView is not installed")
+
+    port = _free_tcp_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "app.py",
+            "--backend",
+            "paraview",
+            "--server",
+            "--data-directory",
+            str(TEST_DATA_DIR),
+            "--file",
+            str(TEST_GRID),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=ROOT_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _drain_proc_stdout(proc)
+
+    try:
+        _wait_for_http_ready(url)
+        context = shared_browser.new_context(viewport={"width": 1920, "height": 1080})
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=40000)
+
+        viewport = page.locator(".coral-main-viewport")
+        _, before_bbox = _wait_for_foreground(viewport, timeout_s=12)
+        assert before_bbox is not None, "Mesh must be visible before entering edit mode"
+
+        page.click("button:has-text('Enter Edit Mode')")
+        page.wait_for_selector("text=Edit Tools", timeout=40000)
+        time.sleep(1.0)
+
+        page.click("button:has-text('Discard')")
+        # After discard, the original node is restored — the mesh must be visible again.
+        page.wait_for_selector("button:has-text('Enter Edit Mode')", timeout=20000)
+        _, after_bbox = _wait_for_foreground(viewport, timeout_s=12)
+        assert after_bbox is not None, (
+            "Mesh must be visible after discarding an edit session — "
+            "original node visibility must be restored"
+        )
+
+        context.close()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()

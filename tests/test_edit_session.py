@@ -233,3 +233,11 @@ def test_surface_mode_save_legacy_vtk_omits_internal_cell_centers(tmp_path):
         42.0
     )
     assert loaded.GetCellData().GetArray("CellCenters") is None
+
+
+def test_is_supported_dataset_type_accepts_only_unstructured_grid():
+    assert EditSession.is_supported_dataset_type("vtkUnstructuredGrid") is True
+    assert EditSession.is_supported_dataset_type("vtkPolyData") is False
+    assert EditSession.is_supported_dataset_type("vtkStructuredGrid") is False
+    assert EditSession.is_supported_dataset_type("") is False
+    assert EditSession.is_supported_dataset_type("vtkUnstructuredGridBase") is False

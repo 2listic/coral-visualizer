@@ -234,6 +234,47 @@ def test_pipeline_node_switch_blocked_during_edit_session():
     ), "UI selection must snap back to current node"
 
 
+def test_pipeline_node_switch_allows_programmatic_sync_to_same_node():
+    """Programmatic sync (same node ID) during edit session must not warn or snap back."""
+    switched = []
+    pv_backend = SimpleNamespace(
+        source=object(),
+        display=object(),
+        apply_coloring=lambda v: None,
+        apply_representation=lambda v: None,
+        set_active_node=lambda node_id: switched.append(node_id) or True,
+        set_interactor_rotation=lambda enabled: None,
+        active_node_id="edit-node-1",  # backend already tracks the edit node
+    )
+    state = FakeState(
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        active_pipeline_item="edit-node-1",  # UI already shows the edit node
+        edit_session_active=True,  # session is active
+        interactive_quality=0,
+        interactive_ratio=0,
+    )
+
+    _register(
+        state,
+        pv_backend=pv_backend,
+        edit_session=_make_edit_session(active=True),
+        render_and_push=lambda: None,
+    )
+
+    # Simulate update_ui_state() writing the same node ID back (programmatic sync)
+    state._handlers["active_pipeline_item"]("edit-node-1")
+
+    assert (
+        not state.notification_show
+    ), "Programmatic sync to the same node must not show a warning"
+    assert (
+        state.active_pipeline_item == "edit-node-1"
+    ), "Programmatic sync must not snap the UI selection back"
+    assert switched == [], "set_active_node must not be called for a same-node sync"
+
+
 def test_pick_mode_in_edit_session_disables_rotation():
     calls = []
     pv_backend = SimpleNamespace(
