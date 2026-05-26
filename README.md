@@ -251,6 +251,8 @@ Two workflows run on push and pull requests to `main`:
 startup, file load, UI state sync, the controller → backend pattern, edit session
 lifecycle, filter system, and a breakpoint guide for debugging with VS Code.
 
+[docs/ui_structure.md](docs/ui_structure.md) has the full UI component tree.
+
 ## Troubleshooting
 
 - `ModuleNotFoundError: No module named 'trame'` or `'paraview'`: use the conda

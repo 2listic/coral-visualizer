@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from trame.app.file_upload import ClientFile
 
+from notifications import notify
+
 if TYPE_CHECKING:
     from paraview_backend import ParaViewBackend
 
@@ -43,19 +45,16 @@ def register_common_controllers(
 
         client_file = ClientFile(uploaded_files[0])
         if client_file.is_empty:
-            state.upload_status = "Uploaded file was empty"
-            state.upload_status_type = "error"
+            notify(state, "Uploaded file was empty", "error")
             return
 
         try:
             saved_path = persist_uploaded_file(client_file)
             refresh_available_files()
             state.selected_file = saved_path
-            state.upload_status = f"Loaded {os.path.basename(saved_path)}"
-            state.upload_status_type = "success"
+            notify(state, f"Loaded {os.path.basename(saved_path)}", "success")
         except Exception as exc:
-            state.upload_status = f"Upload failed: {exc}"
-            state.upload_status_type = "error"
+            notify(state, f"Upload failed: {exc}", "error")
 
     @ctrl.add("upload_state_file")
     def upload_state_file(files):
@@ -66,21 +65,20 @@ def register_common_controllers(
 
         client_file = ClientFile(uploaded_files[0])
         if client_file.is_empty:
-            state.state_status = "Uploaded state file was empty"
-            state.state_status_type = "error"
+            notify(state, "Uploaded state file was empty", "error")
             return
 
         try:
             relative_path = persist_uploaded_state_file(client_file)
             refresh_available_state_files()
             state.state_filename = relative_path
-            state.state_status = (
-                f"Uploaded state file: {os.path.basename(relative_path)}"
+            notify(
+                state,
+                f"Uploaded state file: {os.path.basename(relative_path)}",
+                "success",
             )
-            state.state_status_type = "success"
         except Exception as exc:
-            state.state_status = f"Upload failed: {exc}"
-            state.state_status_type = "error"
+            notify(state, f"Upload failed: {exc}", "error")
 
     @ctrl.add("open_remote_file")
     def open_remote_file(path):

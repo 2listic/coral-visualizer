@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from file_utils import get_vtk_files_from_data_folder
+from notifications import notify
 
 if TYPE_CHECKING:
     from trame_server.state import State
@@ -42,12 +43,13 @@ class FileOperationService:
     def persist_uploaded_state_file(self, client_file):
         return persist_uploaded_state_file(self.data_directory, client_file)
 
-    def save_paraview_output(self, overwrite=False):
+    def save_paraview_output(self, filename=None, overwrite=False):
         return save_paraview_output(
             state=self.state,
             data_directory=self.data_directory,
             pv_backend=self.pv_backend,
             edit_session=self.edit_session,
+            filename=filename,
             overwrite=overwrite,
         )
 
@@ -155,8 +157,9 @@ def _flush_save_feedback(state):
     if callable(dirty):
         for key in (
             "save_filename",
-            "save_status",
-            "save_status_type",
+            "notification_message",
+            "notification_type",
+            "notification_show",
             "available_files",
         ):
             try:
@@ -172,16 +175,14 @@ def _flush_save_feedback(state):
             pass
 
 
-def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_session):
+def resolve_paraview_output_path(*, filename, data_directory, pv_backend, edit_session):
     """Resolve the active ParaView save target and classify the output kind."""
     if pv_backend.source is None and not edit_session.active:
         raise RuntimeError("No active pipeline item to save")
 
     if edit_session.active:
         fallback_name = edit_session.default_output_filename()
-        output_path = resolve_output_path(
-            data_directory, state.save_filename, fallback_name
-        )
+        output_path = resolve_output_path(data_directory, filename, fallback_name)
         suffix = os.path.splitext(output_path)[1].lower()
         if not suffix:
             output_path += ".vtu"
@@ -192,9 +193,7 @@ def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_sess
         saved_kind = "edited dataset"
     else:
         fallback_name = pv_backend.default_output_filename()
-        output_path = resolve_output_path(
-            data_directory, state.save_filename, fallback_name
-        )
+        output_path = resolve_output_path(data_directory, filename, fallback_name)
         if not os.path.splitext(output_path)[1]:
             output_path += pv_backend.default_output_extension()
         saved_kind = "pipeline result"
@@ -203,11 +202,12 @@ def resolve_paraview_output_path(*, state, data_directory, pv_backend, edit_sess
 
 
 def save_paraview_output(
-    *, state, data_directory, pv_backend, edit_session, overwrite=False
+    *, state, data_directory, pv_backend, edit_session, filename=None, overwrite=False
 ):
     """Save the active ParaView output or edit-session dataset and return its path."""
+    save_name = (str(filename).strip() if filename else None) or state.save_filename
     output_path, saved_kind = resolve_paraview_output_path(
-        state=state,
+        filename=save_name,
         data_directory=data_directory,
         pv_backend=pv_backend,
         edit_session=edit_session,
@@ -229,8 +229,7 @@ def save_paraview_output(
 
     refresh_available_files(state, data_directory)
     state.save_filename = relative_output
-    state.save_status = f"Saved {saved_kind} to {relative_output}"
-    state.save_status_type = "success"
+    notify(state, f"Saved {saved_kind} to {relative_output}", "success")
     _flush_save_feedback(state)
     return output_path
 
@@ -272,8 +271,7 @@ def save_paraview_state(*, state, data_directory, pv_backend, overwrite=False):
 
     refresh_available_state_files(state, data_directory)
     state.state_filename = relative_output
-    state.state_status = f"Saved application state to {relative_output}"
-    state.state_status_type = "success"
+    notify(state, f"Saved application state to {relative_output}", "success")
     _flush_save_feedback(state)
     return output_path
 

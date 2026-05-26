@@ -100,8 +100,11 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
     state = SimpleNamespace(
         active_pipeline_item="node-1",
         active_visibility=True,
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
     )
     pv_backend = SimpleNamespace(
         get_visibility=lambda node_id: True if node_id == "node-1" else None,
@@ -132,10 +135,13 @@ def test_pv_toggle_visibility_for_and_save_errors_update_state():
 
     ctrl.handlers["pv_toggle_visibility_for"]("node-1")
     ctrl.handlers["pv_save_active_data"]()
+    assert state.save_dialog is True
+
+    ctrl.handlers["pv_confirm_save_dialog"]("output.vtu")
 
     assert calls[:3] == [("node-1", False), "update_ui", "render"]
-    assert state.save_status == "Error: cannot save"
-    assert state.save_status_type == "error"
+    assert state.notification_message == "Error: cannot save"
+    assert state.notification_type == "error"
 
 
 def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
@@ -144,14 +150,17 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
     state = SimpleNamespace(
         active_pipeline_item="node-1",
         active_visibility=True,
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
     )
 
-    def save_with_confirmation(*, overwrite=False):
+    def save_with_confirmation(*, filename=None, overwrite=False):
         calls.append(overwrite)
         if not overwrite:
             raise FileExistsError(17, "exists", "exports/final.vtu")
@@ -177,6 +186,9 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
     )
 
     ctrl.handlers["pv_save_active_data"]()
+    assert state.save_dialog is True
+
+    ctrl.handlers["pv_confirm_save_dialog"]("exports/final.vtu")
 
     assert calls == [False]
     assert state.save_overwrite_dialog is True
@@ -191,22 +203,24 @@ def test_pv_save_existing_target_opens_overwrite_dialog_and_confirm_retries():
     assert state.save_overwrite_action == ""
 
 
-def test_pv_save_active_data_prefers_explicit_filename_from_client():
+def test_pv_save_dialog_passes_filename_to_save():
     ctrl = FakeCtrl()
     calls = []
     state = SimpleNamespace(
         active_pipeline_item="node-1",
         active_visibility=True,
-        save_filename="square_vtk_edited.vtu",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
     )
 
-    def save_with_confirmation(*, overwrite=False):
-        calls.append((state.save_filename, overwrite))
+    def save_with_confirmation(*, filename=None, overwrite=False):
+        calls.append((filename, overwrite))
 
     register_paraview_controllers(
         ctrl,
@@ -228,10 +242,14 @@ def test_pv_save_active_data_prefers_explicit_filename_from_client():
         normalize_edit_selection_ids=lambda ids: ids,
     )
 
-    ctrl.handlers["pv_save_active_data"]("e2e_surface_boundaryid_left.vtu")
+    ctrl.handlers["pv_save_active_data"]()
+    assert state.save_dialog is True
+    assert state.save_dialog_action == "save"
+
+    ctrl.handlers["pv_confirm_save_dialog"]("e2e_surface_boundaryid_left.vtu")
 
     assert calls == [("e2e_surface_boundaryid_left.vtu", False)]
-    assert state.save_filename == "e2e_surface_boundaryid_left.vtu"
+    assert state.save_dialog is False
 
 
 def test_pv_save_state_existing_target_opens_overwrite_dialog_and_confirm_retries():
@@ -240,8 +258,9 @@ def test_pv_save_state_existing_target_opens_overwrite_dialog_and_confirm_retrie
     state = SimpleNamespace(
         active_pipeline_item="node-1",
         state_filename="states/demo",
-        state_status="",
-        state_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
@@ -293,14 +312,15 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     calls = []
     state = SimpleNamespace(
         mainViewMode="remote",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
         inspector_tab=3,
-        edit_status="",
-        edit_status_type="info",
         representation="Surface",
         available_arrays=[],
         selected_array="__solid__",
@@ -318,7 +338,7 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
         apply_coloring=lambda array_name: calls.append(("coloring", array_name)),
     )
 
-    def save_with_confirmation(*, overwrite=False):
+    def save_with_confirmation(*, filename=None, overwrite=False):
         calls.append(("save", overwrite))
         if not overwrite:
             raise FileExistsError(17, "exists", "results/edited_mesh.vtu")
@@ -347,6 +367,10 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     )
 
     ctrl.handlers["pv_commit_edit_session"]()
+    assert state.save_dialog is True
+    assert state.save_dialog_action == "commit"
+
+    ctrl.handlers["pv_confirm_save_dialog"]("results/edited_mesh.vtu")
 
     assert state.save_overwrite_dialog is True
     assert state.save_overwrite_target == "results/edited_mesh.vtu"
@@ -361,24 +385,24 @@ def test_pv_commit_existing_target_opens_overwrite_dialog_and_confirm_commits():
     assert ("remote", True) in calls
     assert "update_ui" in calls
     assert "render" in calls
-    assert state.edit_status == "Edit session saved and added to the pipeline"
-    assert state.edit_status_type == "success"
+    assert state.notification_message == "Edit session saved and added to the pipeline"
+    assert state.notification_type == "success"
 
 
-def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
+def test_pv_commit_dialog_passes_filename_to_save():
     ctrl = FakeCtrl()
     calls = []
     state = SimpleNamespace(
         mainViewMode="remote",
-        save_filename="square_vtk_edited.vtu",
-        save_status="",
-        save_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        save_dialog=False,
+        save_dialog_action="",
         save_overwrite_dialog=False,
         save_overwrite_target="",
         save_overwrite_action="",
         inspector_tab=3,
-        edit_status="",
-        edit_status_type="info",
         representation="Surface",
         available_arrays=[],
         selected_array="__solid__",
@@ -396,9 +420,9 @@ def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
         apply_coloring=lambda array_name: calls.append(("coloring", array_name)),
     )
 
-    def save_result(*, overwrite=False):
-        calls.append(("save", state.save_filename, overwrite))
-        return "/tmp/data/" + state.save_filename
+    def save_result(*, filename=None, overwrite=False):
+        calls.append(("save", filename, overwrite))
+        return "/tmp/data/" + (filename or "output.vtu")
 
     register_paraview_controllers(
         ctrl,
@@ -422,10 +446,14 @@ def test_pv_commit_edit_session_prefers_explicit_filename_from_client():
         normalize_edit_selection_ids=lambda ids: ids,
     )
 
-    ctrl.handlers["pv_commit_edit_session"]("e2e_surface_boundaryid_left.vtu")
+    ctrl.handlers["pv_commit_edit_session"]()
+    assert state.save_dialog is True
+    assert state.save_dialog_action == "commit"
+
+    ctrl.handlers["pv_confirm_save_dialog"]("e2e_surface_boundaryid_left.vtu")
 
     assert ("save", "e2e_surface_boundaryid_left.vtu", False) in calls
-    assert state.save_filename == "e2e_surface_boundaryid_left.vtu"
+    assert state.save_dialog is False
 
 
 def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():
@@ -435,7 +463,9 @@ def test_pv_set_cell_face_visibility_updates_backend_and_refreshes_view():
         active_pipeline_item="node-1",
         show_cells=False,
         show_faces=True,
-        error_message="",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
     )
     pv_backend = SimpleNamespace(
         set_cell_face_visibility=lambda cells, faces: calls.append(
@@ -475,7 +505,9 @@ def test_pv_set_cell_face_visibility_accepts_checkbox_pair_payload():
         active_pipeline_item="node-1",
         show_cells=True,
         show_faces=True,
-        error_message="",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
     )
     pv_backend = SimpleNamespace(
         set_cell_face_visibility=lambda cells, faces: calls.append(
@@ -516,9 +548,10 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
         selected_array="point:U",
         representation="Wireframe",
         has_boundary=True,
-        error_message="old",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_count=4,
-        save_status="old",
         color_bar_visible=False,
         color_range_min="2",
         color_range_max="8",
@@ -593,9 +626,7 @@ def test_pv_reload_active_file_refreshes_pipeline_state():
     ]
     assert calls[-1] == "render"
     assert state.has_boundary is False
-    assert state.error_message == ""
     assert state.selection_count == 0
-    assert state.save_status == ""
 
 
 def test_pv_reload_active_file_skips_invalid_restored_preset():
@@ -606,16 +637,15 @@ def test_pv_reload_active_file_skips_invalid_restored_preset():
         selected_array="point:U",
         representation="Surface",
         has_boundary=True,
-        error_message="old",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_count=4,
-        save_status="old",
         color_bar_visible=True,
         color_range_min="",
         color_range_max="",
         color_map_preset="Viridis (matplotlib)",
         categorical_coloring=False,
-        color_controls_status="",
-        color_controls_status_type="info",
     )
     pv_backend = SimpleNamespace(
         reload_node_file=lambda node_id: calls.append(("reload", node_id))
@@ -662,8 +692,7 @@ def test_pv_reload_active_file_skips_invalid_restored_preset():
 
     assert "update_ui" in calls
     assert calls[-1] == "render"
-    assert state.error_message == ""
-    assert state.color_controls_status_type == "warning"
+    assert state.notification_type == "warning"
 
 
 def test_pv_delete_active_clears_selected_file_when_pipeline_becomes_empty():
@@ -672,7 +701,9 @@ def test_pv_delete_active_clears_selected_file_when_pipeline_becomes_empty():
     state = SimpleNamespace(
         active_pipeline_item="node-1",
         selected_file="/tmp/data/mesh.vtk",
-        save_status="old",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
     )
     pv_backend = SimpleNamespace(
         delete_node=lambda node_id: calls.append(("delete", node_id))
@@ -706,7 +737,6 @@ def test_pv_delete_active_clears_selected_file_when_pipeline_becomes_empty():
 
     assert calls == [("delete", "node-1"), "update_ui", "render"]
     assert state.selected_file == ""
-    assert state.save_status == ""
 
 
 def test_pv_add_filter_success_and_failure_paths():
@@ -715,7 +745,9 @@ def test_pv_add_filter_success_and_failure_paths():
     state = SimpleNamespace(
         active_pipeline_item="node-1",
         filter_menu=True,
-        error_message="",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
     )
 
     backend_success = SimpleNamespace(
@@ -780,7 +812,7 @@ def test_pv_add_filter_success_and_failure_paths():
 
     ctrl.handlers["pv_add_filter"]("clip")
 
-    assert state.error_message == "Error adding filter: bad filter"
+    assert state.notification_message == "Error adding filter: bad filter"
 
 
 def test_pv_apply_edit_field_requires_field_choice():
@@ -789,8 +821,9 @@ def test_pv_apply_edit_field_requires_field_choice():
         edit_geometry_mode="volume",
         edit_field_choice="",
         edit_expression="",
-        edit_apply_status="",
-        edit_apply_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         edit_overwrite_dialog=False,
         edit_overwrite_field_name="",
     )
@@ -829,8 +862,8 @@ def test_pv_apply_edit_field_requires_field_choice():
 
     ctrl.handlers["pv_apply_edit_field"]()
 
-    assert state.edit_apply_status_type == "error"
-    assert "Select a field" in state.edit_apply_status
+    assert state.notification_type == "error"
+    assert "Select a field" in state.notification_message
     assert sync_calls == ["sync"]
 
 
@@ -844,8 +877,9 @@ def test_pv_color_control_handlers_apply_backend_updates():
         color_bar_visible=True,
         orientation_axes_visible=True,
         categorical_coloring=True,
-        color_controls_status="",
-        color_controls_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
     )
     pv_backend = SimpleNamespace(
         display=object(),
@@ -892,7 +926,7 @@ def test_pv_color_control_handlers_apply_backend_updates():
     assert ("axes", False) in calls
     assert ("categorical", False) in calls
     assert state.color_bar_visible is False
-    assert state.color_controls_status_type == "success"
+    assert state.notification_type == "success"
 
 
 def test_color_action_handlers_route_through_update_color_state_not_full_ui_flush():
@@ -906,8 +940,9 @@ def test_color_action_handlers_route_through_update_color_state_not_full_ui_flus
         color_bar_visible=True,
         orientation_axes_visible=True,
         categorical_coloring=False,
-        color_controls_status="",
-        color_controls_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
     )
     pv_backend = SimpleNamespace(
         display=object(),
@@ -990,8 +1025,9 @@ def test_pv_create_edit_field_existing_name_opens_overwrite_dialog():
         edit_new_field_association="cell",
         edit_new_field_name="A field",
         edit_new_field_default_value="2.5",
-        edit_apply_status="",
-        edit_apply_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         edit_overwrite_dialog=False,
         edit_overwrite_field_name="",
     )
@@ -1030,8 +1066,8 @@ def test_pv_create_edit_field_existing_name_opens_overwrite_dialog():
 
     assert state.edit_overwrite_dialog is True
     assert state.edit_overwrite_field_name == "A field"
-    assert state.edit_apply_status_type == "warning"
-    assert "already exists" in state.edit_apply_status
+    assert state.notification_type == "warning"
+    assert "already exists" in state.notification_message
 
 
 def test_pv_confirm_overwrite_edit_field_creates_with_overwrite_true():
@@ -1045,8 +1081,9 @@ def test_pv_confirm_overwrite_edit_field_creates_with_overwrite_true():
         edit_new_field_association="cell",
         edit_new_field_name="A field",
         edit_new_field_default_value="2.5",
-        edit_apply_status="",
-        edit_apply_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         edit_overwrite_dialog=True,
         edit_overwrite_field_name="A field",
         edit_cell_geometry_mode_options=[{"text": "Volume", "value": "volume"}],
@@ -1085,8 +1122,8 @@ def test_pv_confirm_overwrite_edit_field_creates_with_overwrite_true():
     ctrl.handlers["pv_confirm_overwrite_edit_field"]()
 
     assert calls == [("A field", "cell", "2.5", True)]
-    assert state.edit_apply_status_type == "success"
-    assert "Created cell field 'A field'" in state.edit_apply_status
+    assert state.notification_type == "success"
+    assert "Created cell field 'A field'" in state.notification_message
 
 
 def test_pv_apply_edit_field_surface_mode_assigns_to_selected():
@@ -1097,8 +1134,9 @@ def test_pv_apply_edit_field_surface_mode_assigns_to_selected():
         edit_field_choice="cell:BoundaryID",
         edit_field_association="cell",
         edit_expression="1",
-        edit_apply_status="",
-        edit_apply_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         edit_overwrite_dialog=False,
         edit_overwrite_field_name="",
         edit_cell_geometry_mode_options=[{"text": "Surface", "value": "surface"}],
@@ -1135,8 +1173,8 @@ def test_pv_apply_edit_field_surface_mode_assigns_to_selected():
     ctrl.handlers["pv_apply_edit_field"]()
 
     assert edit_session.geometry_mode == "surface"
-    assert state.edit_apply_status_type == "success"
-    assert "Assigned 'BoundaryID'" in state.edit_apply_status
+    assert state.notification_type == "success"
+    assert "Assigned 'BoundaryID'" in state.notification_message
     assert sync_calls == ["sync"]
 
 
@@ -1148,8 +1186,9 @@ def test_surface_mode_selection_keeps_surface_mode_after_sync():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
@@ -1213,8 +1252,9 @@ def test_degenerate_box_selection_uses_click_picker():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="volume",
@@ -1276,7 +1316,7 @@ def test_degenerate_box_selection_uses_click_picker():
         "render",
     ]
     assert state.selection_count == 1
-    assert "click selection" in state.edit_selection_status
+    assert "click selection" in state.notification_message
 
 
 def test_box_selection_scales_event_coordinates_to_paraview_view():
@@ -1287,8 +1327,9 @@ def test_box_selection_scales_event_coordinates_to_paraview_view():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="volume",
@@ -1398,8 +1439,9 @@ def test_surface_mode_click_selection_uses_surface_picker_keys():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
@@ -1464,8 +1506,9 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="inside",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
@@ -1524,7 +1567,7 @@ def test_surface_mode_box_selection_uses_surface_picker_keys():
     assert actions == [("replace", [(4, 5, 6), (7, 8, 9)], False)]
     assert calls == ["sync", "overlay", "render"]
     assert (
-        state.edit_selection_status
+        state.notification_message
         == "Selected 2 surface element(s) with box selection. 2 selected total."
     )
 
@@ -1537,8 +1580,9 @@ def test_surface_mode_box_selection_falls_back_from_inside_to_touch():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="inside",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",
@@ -1612,8 +1656,9 @@ def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="add",
         edit_geometry_mode="volume",
@@ -1679,7 +1724,7 @@ def test_pv_edit_box_selection_uses_explicit_selection_mode_from_state():
     assert state.selection_count == 5
     assert state.edit_selection_mode == "add"
     assert (
-        state.edit_selection_status
+        state.notification_message
         == "Added 2 cell(s) with box selection. 5 selected total."
     )
 
@@ -1692,8 +1737,9 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="volume",
@@ -1764,7 +1810,7 @@ def test_pv_edit_click_selection_uses_coordinates_and_updates_overlay():
     assert calls == ["sync", "overlay", "render"]
     assert state.selection_count == 1
     assert (
-        state.edit_selection_status
+        state.notification_message
         == "Selected 1 cell(s) with click selection. 1 selected total."
     )
     assert state.selection_timing_payload["interaction"] == "click"
@@ -1780,8 +1826,9 @@ def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payloa
         group_select=False,
         selection_count=2,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="volume",
@@ -1856,7 +1903,7 @@ def test_pv_edit_click_selection_replace_ignores_native_toggled_selection_payloa
     assert actions == [("replace", [1, 2, 3], False)]
     assert state.selection_count == 3
     assert (
-        state.edit_selection_status
+        state.notification_message
         == "Selected 3 cell(s) with click selection. 3 selected total."
     )
 
@@ -1869,8 +1916,9 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
         group_select=False,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="volume",
@@ -1953,7 +2001,7 @@ def test_pv_edit_box_selection_applies_replace_add_and_subtract_modes():
     assert state.selection_count == 4
     assert state.edit_selection_mode == "flip"
     assert (
-        state.edit_selection_status
+        state.notification_message
         == "Flipped 2 cell(s) with box selection. 4 selected total."
     )
     assert state.selection_timing_payload["interaction"] == "box"
@@ -1969,8 +2017,9 @@ def test_surface_selection_passes_angle_threshold_to_edit_session():
         angle_threshold=22,
         selection_count=0,
         edit_selection_event="",
-        edit_selection_status="",
-        edit_selection_status_type="info",
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
         selection_behavior="touch",
         edit_selection_mode="replace",
         edit_geometry_mode="surface",

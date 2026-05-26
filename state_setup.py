@@ -31,6 +31,9 @@ def initialize_state(
     state.available_files = available_files
     state.selected_file = initial_file
     state.error_message = ""
+    state.notification_message = ""
+    state.notification_type = "info"
+    state.notification_show = False
     state.available_arrays = initial_arrays
     state.selected_array = ARRAY_SOLID
     state.representation = DEFAULT_REPRESENTATION
@@ -68,8 +71,6 @@ def initialize_state(
     state.color_bar_visible = False
     state.orientation_axes_visible = True
     state.categorical_coloring = False
-    state.color_controls_status = ""
-    state.color_controls_status_type = "info"
 
     # Time/Simulation state
     state.time_values = []
@@ -83,8 +84,6 @@ def initialize_state(
     state.inspector_tab = 0
     state.pv_properties_dirty = False
     state.active_visibility = True
-    state.upload_status = ""
-    state.upload_status_type = "info"
     state.remote_browser_dialog = False
     state.remote_search_term = ""
     state.filtered_available_files = available_files
@@ -109,8 +108,6 @@ def initialize_state(
     state.can_edit_active = False
     state.edit_session_active = False
     state.edit_session_label = ""
-    state.edit_status = ""
-    state.edit_status_type = "info"
     state.save_target_label = "Active pipeline result"
     state.edit_geometry_mode = "volume"
     state.edit_geometry_mode_options = [
@@ -141,12 +138,8 @@ def initialize_state(
         {"text": "Point data array", "value": "point"},
     ]
     state.edit_vector_syntax = "Use arrayName[0], arrayName[1], arrayName[2]"
-    state.edit_apply_status = ""
-    state.edit_apply_status_type = "info"
     state.edit_overwrite_dialog = False
     state.edit_overwrite_field_name = ""
-    state.edit_selection_status = ""
-    state.edit_selection_status_type = "info"
     state.edit_selection_event = ""
     state.selection_timing_last = ""
     state.selection_timing_payload = {}
@@ -177,15 +170,13 @@ def initialize_state(
     state.selection_count = 0
     state.assign_id_value = "0"
     state.save_filename = "output"
-    state.save_status = ""
-    state.save_status_type = "success"
     state.state_files = []
     state.state_filename = "session.coral.state.json"
-    state.state_status = ""
-    state.state_status_type = "info"
     state.state_browser_dialog = False
     state.state_browser_search_term = ""
     state.filtered_state_files = []
+    state.save_dialog = False
+    state.save_dialog_action = ""
     state.save_overwrite_dialog = False
     state.save_overwrite_target = ""
     state.save_overwrite_action = ""

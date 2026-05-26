@@ -66,7 +66,12 @@ def test_reset_controllers_call_pv_backend_and_view_update():
 
 def test_upload_dataset_updates_state_on_success(monkeypatch):
     ctrl = FakeCtrl()
-    state = SimpleNamespace(upload_status="", upload_status_type="", selected_file=None)
+    state = SimpleNamespace(
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        selected_file=None,
+    )
     calls = []
 
     monkeypatch.setattr(common_controllers, "ClientFile", FakeClientFile)
@@ -83,13 +88,18 @@ def test_upload_dataset_updates_state_on_success(monkeypatch):
 
     assert calls == ["upload.vtu", "refresh"]
     assert state.selected_file == "/tmp/data/upload.vtu"
-    assert state.upload_status == "Loaded upload.vtu"
-    assert state.upload_status_type == "success"
+    assert state.notification_message == "Loaded upload.vtu"
+    assert state.notification_type == "success"
 
 
 def test_upload_dataset_reports_empty_and_failed_uploads(monkeypatch):
     ctrl = FakeCtrl()
-    state = SimpleNamespace(upload_status="", upload_status_type="", selected_file=None)
+    state = SimpleNamespace(
+        notification_message="",
+        notification_type="info",
+        notification_show=False,
+        selected_file=None,
+    )
 
     monkeypatch.setattr(common_controllers, "ClientFile", FakeClientFile)
 
@@ -102,12 +112,12 @@ def test_upload_dataset_reports_empty_and_failed_uploads(monkeypatch):
     )
 
     ctrl.handlers["upload_dataset"]([{"name": "empty.vtu", "is_empty": True}])
-    assert state.upload_status == "Uploaded file was empty"
-    assert state.upload_status_type == "error"
+    assert state.notification_message == "Uploaded file was empty"
+    assert state.notification_type == "error"
 
     ctrl.handlers["upload_dataset"]([{"name": "broken.vtu", "content": b"vtk"}])
-    assert state.upload_status == "Upload failed: disk full"
-    assert state.upload_status_type == "error"
+    assert state.notification_message == "Upload failed: disk full"
+    assert state.notification_type == "error"
 
 
 def test_open_remote_file_updates_state_selection():

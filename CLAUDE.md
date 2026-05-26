@@ -123,6 +123,12 @@ conda run -n coral-paraview git commit
 
 See PRs #27, #28, #29 for examples.
 
+### Base branch
+
+If the current branch was cut from a feature branch (not from `main`), open the PR against that feature branch as the base so reviewers see only the unique diff. Add a note at the top of the Overview:
+
+> **Note:** this PR targets `<base-branch>` rather than `main` because `<current-branch>` was branched from it.
+
 When opening or merging a PR, add a summary entry to `MIGRATION_LOG.md` under `## Done` (newest first).
 
 Before opening a PR, check [TODO.md](TODO.md) for related open items to update or remove. Also check and update [docs/logic_flows.md](docs/logic_flows.md) if any execution paths changed.

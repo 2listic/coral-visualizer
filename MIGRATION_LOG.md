@@ -6,6 +6,13 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- UI restructure, centralized notifications, save dialog, and categorical LUT fixes (PR #32):
+  - moved edit-panel controls into the right inspector Edit tab; added `docs/ui_structure.md`
+  - replaced 9 scattered alert state pairs with a single `VSnackbar` driven by `notifications.py`
+  - replaced inline filename field with an explicit save/commit dialog; `save_paraview_output` / `resolve_paraview_output_path` take explicit `filename` kwarg
+  - categorical LUT annotations re-applied on array/range/preset changes and on pipeline node switches; extracted shared `_refresh_categorical_annotations()` helper
+  - added `_wait_for_stable_viewport` and `_wait_for_foreground(narrower_than=...)` e2e helpers; fixed several CI timing flakiness issues
+
 - Refactored surface selection helper; replaced `ExtractSurface` with `GeometryFilter`; surface keys always use coordinate lookup.
   - `vtkExtractSurface` does not expose `PassThroughPointIds` / `PassThroughCellIds` in VTK 6.1 at either the ParaView proxy
     or raw VTK level — the original fast-path in `_surface_keys_from_selected_dataset` was always dead code.
@@ -250,7 +257,7 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - `Grow selection`
   - `Grow angle`
   - `Select All`
-  - `Clear Selection`
+  - `Clear All`
   - live selection status/event preview
 - Implemented the first working slice of the new edit architecture:
   - `Volume` mode on the local `EditSession` dataset
@@ -377,7 +384,7 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
     to keep interaction mode, box selection gating, and camera rotation synchronized.
   - Added controller regression coverage and validated browser-driven rotation lock/unlock E2E paths.
 - Improved Edit Tools responsiveness.
-  - `Select All` / `Clear Selection` buttons now wrap correctly on narrow panels and no longer overflow.
+  - `Select All` / `Clear All` buttons now wrap correctly on narrow panels and no longer overflow.
   - `Grow angle` now shows the live numeric value next to the slider.
 - Hardened dataset inspection tooling.
   - `tools/inspect_vtu.py` now supports both XML (`.vtu`) and legacy (`.vtk`) inputs with automatic reader selection.

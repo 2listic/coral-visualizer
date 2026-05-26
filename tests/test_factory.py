@@ -145,11 +145,9 @@ def test_load_file_creates_pipeline_entry(tmp_path):
     app = create_app(config=_config(tmp_path))
     app.paraview_runtime.load_file(str(DATA_DIR / "cube.vtk"))
 
-    assert app.state.error_message == ""
     assert len(app.state.pipeline_items) > 0
     assert app.state.has_boundary is False
     assert app.state.selection_count == 0
-    assert app.state.save_status == ""
     assert app.state.representation == "Surface with Edges"
     assert app.state.selected_array == ARRAY_SOLID
 
@@ -164,11 +162,10 @@ def test_load_file_exposes_arrays_for_files_with_data(tmp_path):
     assert len(app.state.available_arrays) > 1
 
 
-def test_load_file_clears_stale_error_message(tmp_path):
-    """A successful load must clear any error message left over from a prior failure."""
+def test_load_file_does_not_fire_notification_on_success(tmp_path):
+    """A successful load must not trigger a notification."""
     app = create_app(config=_config(tmp_path))
-    app.state.error_message = "stale error from previous operation"
 
     app.paraview_runtime.load_file(str(DATA_DIR / "cube.vtk"))
 
-    assert app.state.error_message == ""
+    assert app.state.notification_show is False
