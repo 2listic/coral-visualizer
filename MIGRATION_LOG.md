@@ -6,6 +6,30 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
 
 ## Done
 
+- Edit pipeline node for zero-remap picks (Step 2, issue #34, branch `perf/step2-edit-node`):
+  - replaced the per-pick remap-cache approach (Step 1, commit `298a3df`) with a real
+    pipeline node (kind="edit") that reads the same backing data as the original node,
+    so pick cell IDs directly index `working_dataset` with no coordinate-based remapping
+  - a dedicated reader proxy approach (originally planned for Step 2) was explored but
+    dismissed: it caused regressions in coloring, LUT, and representation handling because
+    those code paths all expect a regular pipeline node; a real node fits the existing
+    architecture with zero property overrides and no special-casing
+  - removed all four remap-cache fields (`_edit_source_dataset`, `_edit_source_point_indexes`,
+    `_edit_target_cell_map`, `_edit_point_id_map`) and five remap methods
+  - edit node label "✏ Editing: {original}", icon `mdi-pencil-outline`, visible in pipeline panel
+  - root readers reuse the same backing file (no write); filter nodes write a temp VTU
+  - `can_edit_active_node()` replaces the expensive export probe with a cheap `GetDataInformation` call
+  - surface picks skip a redundant `Fetch(source)` during an active session (use `working_dataset` directly)
+  - the pipeline node model is also a better foundation for future improvements: real-time
+    display updates when cell values change (update the edit node in place), and server-side
+    field-value mutations via ParaView proxies to preserve MPI distribution without collapsing
+    all ranks through `Fetch()`
+  - `docs/logic_flows.md` §5/5a/5b/6, `CLAUDE.md`, and `TODO.md` updated; issue #34 completed
+
+- Eliminate per-pick Fetch and map rebuild with edit session remap cache (Step 1, issue #34, commit `298a3df`):
+  - pre-built four coordinate-based maps at session begin to avoid O(n) rebuild on every pick
+  - subsequently superseded by Step 2 above (edit node approach makes remapping unnecessary)
+
 - UI restructure, centralized notifications, save dialog, and categorical LUT fixes (PR #32):
   - moved edit-panel controls into the right inspector Edit tab; added `docs/ui_structure.md`
   - replaced 9 scattered alert state pairs with a single `VSnackbar` driven by `notifications.py`

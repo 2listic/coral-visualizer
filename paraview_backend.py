@@ -2281,12 +2281,11 @@ class ParaViewBackend:
             selected_dataset = self.servermanager.Fetch(extract)
             record_phase("fetch_selection", phase_start)
             if source_dataset is None:
-                phase_start = time.perf_counter()
-                try:
-                    source_dataset = self.servermanager.Fetch(source)
-                except Exception:
-                    source_dataset = edit_dataset
-                record_phase("fetch_source_dataset", phase_start)
+                # In an active edit session edit_dataset is working_dataset — a DeepCopy
+                # of what was Fetch'd from the edit source at session begin.  Its geometry
+                # (points / cells) is identical to a fresh Fetch(source), so we can use it
+                # directly for coordinate mapping and avoid a second server round-trip.
+                source_dataset = edit_dataset
             phase_start = time.perf_counter()
             keys = self._surface_keys_from_selected_dataset(
                 selected_dataset,

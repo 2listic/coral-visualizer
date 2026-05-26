@@ -148,7 +148,7 @@ Before opening a PR, check [TODO.md](TODO.md) for related open items to update o
 
 ### ParaView Backend Path
 
-- `paraview_backend.py`: owns ParaView sources/displays, pipeline nodes, filters, coloring, display controls, picking, selection overlays, saving/export. `set_edit_target_dataset()` builds four remap caches at session begin (`_edit_source_dataset`, `_edit_source_point_indexes`, `_edit_target_cell_map`, `_edit_point_id_map`) so picks avoid per-pick Fetch/rebuild — see `docs/logic_flows.md §5b`.
+- `paraview_backend.py`: owns ParaView sources/displays, pipeline nodes, filters, coloring, display controls, picking, selection overlays, saving/export. At edit session begin, `export_active_dataset_for_editing()` creates a real pipeline node (kind="edit") that reads the same backing data as the original node, so pick cell IDs directly index `working_dataset` with no remapping — see `docs/logic_flows.md §5`.
 - `paraview_runtime.py`: synchronizes backend state into Trame state, handles render pushes, edit-session overlay sync. Forwards event normalization calls to `paraview_event_utils.py`.
 - `paraview_event_utils.py`: pure helpers for normalizing ParaView picking event payloads (`normalize_edit_selection_ids`, `summarize_edit_event`, coordinate mapping). No Trame dependency.
 - `paraview_controllers.py`: user actions from the UI: pipeline actions, filters, edit sessions, selection, field creation, display/color controls.
