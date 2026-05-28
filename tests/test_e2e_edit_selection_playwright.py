@@ -652,6 +652,7 @@ def test_paraview_categorical_annotations_updated_on_file_switch(shared_browser)
         _wait_for_switch_checked(
             page, "Interpret values as categories", True, timeout_s=8
         )
+        time.sleep(1.0)
         file_a_switch_png = _wait_for_stable_viewport(viewport)
 
         _set_switch(page, "Interpret values as categories", False)
@@ -667,6 +668,7 @@ def test_paraview_categorical_annotations_updated_on_file_switch(shared_browser)
         _wait_for_switch_checked(
             page, "Interpret values as categories", True, timeout_s=8
         )
+        time.sleep(1.0)
         file_b_switch_png = _wait_for_stable_viewport(viewport)
 
         _set_switch(page, "Interpret values as categories", False)
