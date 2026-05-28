@@ -156,6 +156,7 @@ class ParaViewBackend:
         self._edit_boundary_elements: dict | None = None
         self._surface_selection_helper = None
         self._last_selection_backend_timing = []
+        self._last_session_begin_timing = []
         self._boundary_cache = {}
         self._cell_type_name_aliases = {
             "Quad": "Quadrilateral",
@@ -168,18 +169,32 @@ class ParaViewBackend:
         # Edit node reads same backing data → pick IDs directly index dataset.
         self._edit_target_dataset = dataset
         # Build surface-pick caches once
+        t = time.perf_counter()
         self._edit_source_point_indexes = (
             ParaViewBackend._point_coordinate_indexes(dataset)
             if dataset is not None
             else None
         )
+        self._last_session_begin_timing = [
+            ("point_indexes", (time.perf_counter() - t) * 1000.0)
+        ]
+        t = time.perf_counter()
         self._edit_boundary_elements = (
             ParaViewBackend._boundary_codim_elements(dataset)
             if dataset is not None
             else None
         )
+        self._last_session_begin_timing.append(
+            ("boundary_elements", (time.perf_counter() - t) * 1000.0)
+        )
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
+
+    def consume_session_begin_timing(self) -> list:
+        """Return and clear timing phases from the last session begin."""
+        timing = list(self._last_session_begin_timing or [])
+        self._last_session_begin_timing = []
+        return timing
 
     def clear_edit_target_dataset(self) -> None:
         """Clear edit-session dataset context and delete the edit pipeline node."""

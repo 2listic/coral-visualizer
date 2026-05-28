@@ -549,13 +549,6 @@ def _build_selection_tools_panel(ctrl):
                     dense=True,
                     disabled=("!group_select",),
                 )
-        with vuetify.VListItem(v_show=("selection_timing_last",)):
-            with vuetify.VListItemContent():
-                vuetify.VListItemSubtitle("Last selection timing")
-                vuetify.VListItemTitle(
-                    "{{ selection_timing_last }}",
-                    style="font-family: monospace; white-space: normal; font-size: 0.78rem;",
-                )
 
 
 def _build_edit_assign_panel(ctrl):
@@ -1348,6 +1341,22 @@ def _build_paraview_inspector_panel(ctrl):
                     _build_selection_tools_panel(ctrl)
                     vuetify.VDivider(classes="my-4")
                     _build_edit_assign_panel(ctrl)
+                    vuetify.VDivider(classes="my-4")
+                    with vuetify.VList(dense=True):
+                        with vuetify.VListItem(v_show=("session_begin_timing_last",)):
+                            with vuetify.VListItemContent():
+                                vuetify.VListItemSubtitle("Last session begin timing")
+                                vuetify.VListItemTitle(
+                                    "{{ session_begin_timing_last }}",
+                                    style="font-family: monospace; white-space: normal; font-size: 0.78rem;",
+                                )
+                        with vuetify.VListItem(v_show=("selection_timing_last",)):
+                            with vuetify.VListItemContent():
+                                vuetify.VListItemSubtitle("Last selection timing")
+                                vuetify.VListItemTitle(
+                                    "{{ selection_timing_last }}",
+                                    style="font-family: monospace; white-space: normal; font-size: 0.78rem;",
+                                )
 
 
 def _build_property_list(ctrl, state_key):
