@@ -2221,17 +2221,11 @@ class ParaViewBackend:
             return None
 
         edit_dataset = self._edit_target_dataset
-        phase_start = time.perf_counter()
-        source_dataset = None
-        if edit_dataset is None:
-            try:
-                source_dataset = self.servermanager.Fetch(source)
-            except Exception:
-                return None
-            edit_dataset = source_dataset
-        record_phase("dataset", phase_start)
+        # Guard defensively against out-of-session calls.
         if edit_dataset is None:
             return None
+        phase_start = time.perf_counter()
+        record_phase("dataset", phase_start)
         if not hasattr(edit_dataset, "GetNumberOfCells") or not hasattr(
             edit_dataset, "GetCell"
         ):
@@ -2292,16 +2286,10 @@ class ParaViewBackend:
             phase_start = time.perf_counter()
             selected_dataset = self.servermanager.Fetch(extract)
             record_phase("fetch_selection", phase_start)
-            if source_dataset is None:
-                # In an active edit session edit_dataset is working_dataset — a DeepCopy
-                # of what was Fetch'd from the edit source at session begin.  Its geometry
-                # (points / cells) is identical to a fresh Fetch(source), so we can use it
-                # directly for coordinate mapping and avoid a second server round-trip.
-                source_dataset = edit_dataset
             phase_start = time.perf_counter()
             keys = self._surface_keys_from_selected_dataset(
                 selected_dataset,
-                source_dataset=source_dataset,
+                source_dataset=edit_dataset,
                 source_point_indexes=self._edit_source_point_indexes,
                 prebuilt_boundary=self._edit_boundary_elements,
             )
@@ -2320,7 +2308,7 @@ class ParaViewBackend:
                     inside_keys = []
                     for key in keys:
                         projected = self._project_points_to_display(
-                            source_dataset, key, renderer
+                            edit_dataset, key, renderer
                         )
                         if projected and all(
                             self._point_in_rect(point, rect) for point in projected
