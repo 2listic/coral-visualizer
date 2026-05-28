@@ -144,14 +144,16 @@ class ParaViewBackend:
         self._edit_selection_overlay = None
         self._edit_selection_display = None
         self._scalar_bar_visible = False
-        # Edit-session dataset reference — see docs/logic_flows.md §5b.
+        # Edit-session dataset reference
         self._edit_target_dataset: vtkDataSet | None = None  # ref to working_dataset
         # Edit pipeline node — real pipeline entry created at session begin.
         # Picks go through the edit node source → IDs already index working_dataset.
-        # No remap caches needed; see docs/step2_edit_node_plan.md.
         self._edit_node_id: str | None = None  # ID of the synthetic edit node
         self._edit_pre_node_id: str | None = None  # ID of the node active before edit
         self._edit_temp_file: str | None = None  # temp .vtu path (filter-active case)
+        # Surface-pick geometry caches — built once at session begin, cleared at end.
+        self._edit_source_point_indexes: list | None = None
+        self._edit_boundary_elements: dict | None = None
         self._surface_selection_helper = None
         self._last_selection_backend_timing = []
         self._boundary_cache = {}
@@ -162,13 +164,20 @@ class ParaViewBackend:
         }
 
     def set_edit_target_dataset(self, dataset: vtkDataSet | None) -> None:
-        """Register the edit-session working dataset.
-
-        Picks go through the edit node source (same data as working_dataset), so
-        cell IDs returned by SelectSurfaceCells already index dataset directly —
-        no remap is needed.
-        """
+        """Register the edit-session working dataset."""
+        # Edit node reads same backing data → pick IDs directly index dataset.
         self._edit_target_dataset = dataset
+        # Build surface-pick caches once
+        self._edit_source_point_indexes = (
+            ParaViewBackend._point_coordinate_indexes(dataset)
+            if dataset is not None
+            else None
+        )
+        self._edit_boundary_elements = (
+            ParaViewBackend._boundary_codim_elements(dataset)
+            if dataset is not None
+            else None
+        )
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
 
@@ -199,6 +208,8 @@ class ParaViewBackend:
             self._edit_temp_file = None
 
         self._edit_target_dataset = None
+        self._edit_source_point_indexes = None
+        self._edit_boundary_elements = None
         self._clear_surface_selection_helper()
         self._clear_boundary_cache()
 
@@ -2235,7 +2246,8 @@ class ParaViewBackend:
             default=0,
         )
         record_phase("top_dimension", phase_start)
-        # Keep old custom path for 2D/1D where ExtractSurface does not target boundary edges.
+        # GeometryFilter on a 2D mesh returns the 2D cells, not their 1D boundary edges.
+        # Use the projection-based fallback instead.
         if top_dim != 3:
             return None
 
@@ -2290,6 +2302,8 @@ class ParaViewBackend:
             keys = self._surface_keys_from_selected_dataset(
                 selected_dataset,
                 source_dataset=source_dataset,
+                source_point_indexes=self._edit_source_point_indexes,
+                prebuilt_boundary=self._edit_boundary_elements,
             )
             record_phase("map_selection_keys", phase_start)
             if keys is None:
@@ -2425,18 +2439,14 @@ class ParaViewBackend:
         selected_dataset: vtkDataSet | None,
         source_dataset: vtkDataSet | None = None,
         source_point_indexes: list[dict] | None = None,
+        prebuilt_boundary: dict | None = None,
     ) -> list | None:
         """Map selected GeometryFilter cells back to original source point-id keys.
 
         Builds a coordinate index from source_dataset and maps each selected cell's
-        XYZ corners back to source point IDs. Neither vtkOriginalPointIds nor
-        vtkOriginalCellIds is used: in ParaView 6.1 both PassThroughPointIds and
-        PassThroughCellIds on GeometryFilter produce output-geometry indices through
-        the proxy/server-fetch round-trip rather than source topology IDs (see PR #31
-        and issue #34).
+        XYZ corners back to source point IDs.
 
-        source_point_indexes may be passed as a pre-built index (cached at edit-session
-        begin, B4) to skip the O(n_source_points) build on each pick.
+        source_point_indexes and prebuilt_boundary may be passed as pre-built caches
         """
         if source_dataset is None:
             return None
@@ -2485,16 +2495,22 @@ class ParaViewBackend:
             seen.add(key)
             deduped.append(key)
         return ParaViewBackend._normalize_surface_keys_to_source_boundary(
-            deduped, source_dataset=source_dataset
+            deduped, source_dataset=source_dataset, prebuilt_boundary=prebuilt_boundary
         )
 
     @staticmethod
-    def _normalize_surface_keys_to_source_boundary(keys, source_dataset=None):
+    def _normalize_surface_keys_to_source_boundary(
+        keys, source_dataset=None, prebuilt_boundary=None
+    ):
         """Resolve partial picked keys to canonical source boundary keys when possible."""
         if not keys or source_dataset is None:
             return keys or []
 
-        boundary = ParaViewBackend._boundary_codim_elements(source_dataset)
+        boundary = (
+            prebuilt_boundary
+            if prebuilt_boundary is not None
+            else ParaViewBackend._boundary_codim_elements(source_dataset)
+        )
         if not boundary:
             return keys
 

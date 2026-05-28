@@ -1,4 +1,4 @@
-# CODEX_LOG
+# MIGRATION_LOG
 
 ## Goal
 
@@ -20,11 +20,14 @@ Evolve the current VTK/trame viewer toward a ParaView-backed application while k
   - root readers reuse the same backing file (no write); filter nodes write a temp VTU
   - `can_edit_active_node()` replaces the expensive export probe with a cheap `GetDataInformation` call
   - surface picks skip a redundant `Fetch(source)` during an active session (use `working_dataset` directly)
+  - cached surface-pick geometry at session begin (B5, B5b): `set_edit_target_dataset` builds
+    `_edit_source_point_indexes` (O(n_points) coordinate index) and `_edit_boundary_elements`
+    (O(n_cells×faces) boundary map) once;
   - the pipeline node model is also a better foundation for future improvements: real-time
     display updates when cell values change (update the edit node in place), and server-side
     field-value mutations via ParaView proxies to preserve MPI distribution without collapsing
     all ranks through `Fetch()`
-  - `docs/logic_flows.md` §5/5a/5b/6, `CLAUDE.md`, and `TODO.md` updated; issue #34 completed
+  - `docs/logic_flows/` (split from monolithic `docs/logic_flows.md`), `CLAUDE.md`, and `TODO.md` updated
 
 - Eliminate per-pick Fetch and map rebuild with edit session remap cache (Step 1, issue #34, commit `298a3df`):
   - pre-built four coordinate-based maps at session begin to avoid O(n) rebuild on every pick

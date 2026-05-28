@@ -131,7 +131,7 @@ If the current branch was cut from a feature branch (not from `main`), open the 
 
 When opening or merging a PR, add a summary entry to `MIGRATION_LOG.md` under `## Done` (newest first).
 
-Before opening a PR, check [TODO.md](TODO.md) for related open items to update or remove. Also check and update [docs/logic_flows.md](docs/logic_flows.md) if any execution paths changed.
+Before opening a PR, check [TODO.md](TODO.md) for related open items to update or remove. Also check and update [docs/logic_flows/](docs/logic_flows/) if any execution paths changed (edit_session.md for edit flows, picking.md for pick flows, etc.).
 
 ## Current Architecture
 
@@ -148,7 +148,7 @@ Before opening a PR, check [TODO.md](TODO.md) for related open items to update o
 
 ### ParaView Backend Path
 
-- `paraview_backend.py`: owns ParaView sources/displays, pipeline nodes, filters, coloring, display controls, picking, selection overlays, saving/export. At edit session begin, `export_active_dataset_for_editing()` creates a real pipeline node (kind="edit") that reads the same backing data as the original node, so pick cell IDs directly index `working_dataset` with no remapping — see `docs/logic_flows.md §5`.
+- `paraview_backend.py`: owns ParaView sources/displays, pipeline nodes, filters, coloring, display controls, picking, selection overlays, saving/export. At edit session begin, `export_active_dataset_for_editing()` creates a real pipeline node (kind="edit") that reads the same backing data as the original node, so pick cell IDs directly index `working_dataset` with no remapping — see [docs/logic_flows/edit_session.md](docs/logic_flows/edit_session.md).
 - `paraview_runtime.py`: synchronizes backend state into Trame state, handles render pushes, edit-session overlay sync. Forwards event normalization calls to `paraview_event_utils.py`.
 - `paraview_event_utils.py`: pure helpers for normalizing ParaView picking event payloads (`normalize_edit_selection_ids`, `summarize_edit_event`, coordinate mapping). No Trame dependency.
 - `paraview_controllers.py`: user actions from the UI: pipeline actions, filters, edit sessions, selection, field creation, display/color controls.
@@ -263,7 +263,7 @@ conda run -n coral-paraview pytest -q tests/ --ignore-glob=tests/test_e2e*.py
 
 ## Debugging Notes
 
-- `docs/logic_flows.md` has detailed flow diagrams.
+- [docs/logic_flows/](docs/logic_flows/) has detailed flow diagrams split by domain (`edit_session.md`, `picking.md`, `color.md`, etc.).
 - If `pytest` or `python` resolves to the wrong environment (ParaView unavailable): a stale virtualenv may be active and its `PATH` entry wins. Run `deactivate` if a venv is active (`deactivate` is only defined while a venv is sourced — if not found, no venv is active), then `conda activate coral-paraview`.
 - E2E test meshes live in `test_data/`; use them instead of writing into `data/` unless needed.
 - `tests/test_e2e_edit_selection_playwright.py` has helpers for normalized box drags and switch state checks.
