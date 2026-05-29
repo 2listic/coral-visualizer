@@ -149,6 +149,11 @@ class EditSession:
         writer.SetInputData(self.working_dataset)
         if writer.Write() != 1:
             raise RuntimeError(f"Failed to write edited dataset to {output_path}")
+        if not Path(output_path).exists():
+            raise RuntimeError(
+                f"VTK writer reported success but no file was created at {output_path}. "
+                "The data directory may not be writable."
+            )
         return str(output_path)
 
     def available_cell_variables(self) -> list[str]:
