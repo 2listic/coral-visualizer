@@ -613,7 +613,8 @@ class ParaViewBackend:
     def _resolve_temp_edit_file(self, node_id: str) -> str:
         """Return the path for the server-side temp edit file (filter-active case)."""
         base = self.data_directory or tempfile.gettempdir()
-        return os.path.join(base, f"_edit_temp_{node_id}.vtu")
+        safe_id = node_id.replace(":", "_")
+        return os.path.join(base, f"_edit_temp_{safe_id}.vtu")
 
     def set_active_node(self, node_id):
         """Make the given pipeline node active."""
