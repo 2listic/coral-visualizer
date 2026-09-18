@@ -119,6 +119,17 @@ The Docker path does not install ParaView from `setup/requirements.txt`.
 Instead, it provisions a dedicated conda environment from
 `setup/environment-docker.yml`.
 
+#### Pull the published image
+
+Every push to `main` and every `v*.*.*` tag publishes an image to the GitHub
+Container Registry. It is public, so no login is needed:
+
+```bash
+docker pull ghcr.io/2listic/coral-visualizer:main
+```
+
+The image is built for `linux/amd64` only.
+
 #### Build the image
 
 ```bash
@@ -154,6 +165,28 @@ offscreen, but on hosts without a full EGL/X stack you may still see startup
 warnings such as `bad X server connection` or `Could not initialize a device`.
 In the current setup those warnings are non-fatal: the app still starts and
 ParaView can produce screenshots offscreen.
+
+## Usage with Apptainer/Singularity
+
+On HPC systems, where no Docker daemon is available, the published image can be
+converted to a `.sif` and run unprivileged:
+
+```bash
+apptainer pull coral-visualizer.sif docker://ghcr.io/2listic/coral-visualizer:main
+apptainer run --bind /path/to/meshes:/deploy/data coral-visualizer.sif
+```
+
+The app then listens on port 8080 of the host directly — Apptainer does not use a
+network namespace, so no port mapping is needed.
+
+Two details matter here:
+
+- The container filesystem is read-only, so `--data-directory` has to point at a
+  bind-mounted directory. The command above binds the host mesh directory over
+  `/deploy/data`, which is where the image's default `--data-directory` points.
+- Apptainer ignores the image `WORKDIR` and starts in the host's current
+  directory. The image's startup command uses absolute paths for this reason; keep
+  them absolute when editing the `CMD` in the `Dockerfile`.
 
 ## Tests
 
