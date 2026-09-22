@@ -139,13 +139,25 @@ docker build -t coral-visualizer-standalone .
 #### Run the image on port 8008
 
 ```bash
-docker run -it --rm -p 8008:8080 coral-visualizer-standalone
+docker run -it --rm -p 8008:8080 \
+  -v "$(pwd)/data:/deploy/data" \
+  coral-visualizer-standalone
 ```
+
+Then open at `http://127.0.0.1:8008/`.
+
+Mount a data directory. `--data-directory` defaults to `/deploy/data`, which is
+both what the file selector lists and where saves are written. The image ships it
+empty, so without a mount there is nothing to open and saved work is discarded
+when `--rm` removes the container.
 
 Or if you need some prefix
 
 ```bash
-docker run -it --rm -p 8008:8080 -e TRAME_URL_PREFIX=/my-app/sub/path coral-visualizer-standalone
+docker run -it --rm -p 8008:8080 \
+  -v "$(pwd)/data:/deploy/data" \
+  -e TRAME_URL_PREFIX=/my-app/sub/path \
+  coral-visualizer-standalone
 ```
 
 #### Verify the container serves HTTP
