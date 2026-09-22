@@ -129,9 +129,13 @@ If the current branch was cut from a feature branch (not from `main`), open the 
 
 > **Note:** this PR targets `<base-branch>` rather than `main` because `<current-branch>` was branched from it.
 
-When opening or merging a PR, add a summary entry to `MIGRATION_LOG.md` under `## Done` (newest first).
+Open work is tracked in GitHub issues. Before opening a PR, check for related open issues to reference or close.
 
-Before opening a PR, check [TODO.md](TODO.md) for related open items to update or remove. Also check and update [docs/logic_flows.md](docs/logic_flows.md) if any execution paths changed.
+[docs/archived/MIGRATION_LOG.md](docs/archived/MIGRATION_LOG.md) is a historical record of the VTK→ParaView migration, which has landed. Do not add entries to it.
+
+[docs/TODO.md](docs/TODO.md) is an untriaged backlog awaiting conversion into issues — read it for context, but do not treat it as the list of active work.
+
+Check and update [docs/logic_flows.md](docs/logic_flows.md) if any execution paths changed.
 
 ## Current Architecture
 
