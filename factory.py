@@ -18,6 +18,7 @@ from paraview_runtime import ParaViewRuntime
 from runtime_setup import RuntimeContext, create_runtime_context
 from state_setup import initialize_state, resolve_initial_file
 from trame.app import get_server
+from trame_vtk_patches import apply_all as apply_trame_vtk_patches
 from ui import build_ui
 from view_controls import ViewControllerProxy
 
@@ -49,6 +50,9 @@ def create_app(
     if config is None:
         config = configure_app()
     set_devtools_enabled(config.devtools_enabled)
+
+    # Must run before any client connects and the web protocols are registered.
+    apply_trame_vtk_patches()
 
     runtime_context = create_runtime_context(config)
     data_directory = config.data_directory
