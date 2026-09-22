@@ -73,7 +73,7 @@ Verified on this development machine and in the Docker image on 2026-04-25.
 | Component | Local `coral-paraview` env | Docker `coral` env |
 | --- | ---: | ---: |
 | Python | 3.10.20 | 3.10.20 |
-| ParaView | 6.1 | 6.1 |
+| ParaView | 6.1.0 | 6.1.0 |
 | VTK | 9.6.1 | 9.6.1 |
 | trame | 3.12.0 | 3.12.0 |
 | trame-vuetify | 3.2.1 | 3.2.1 |
@@ -257,6 +257,9 @@ lifecycle, filter system, and a breakpoint guide for debugging with VS Code.
 
 - `ModuleNotFoundError: No module named 'trame'` or `'paraview'`: use the conda
   `coral-paraview` environment or rebuild the Docker image.
+- `ImportError: libhdf5.so.*` on `import paraview.simple`: the environment
+  resolved a ParaView build linked against a different hdf5. Keep the patch pins
+  in `setup/environment-docker.yml` and `tools/setup_pv_env.sh`, then recreate it.
 - **ParaView unavailable even with `conda run`**: if a stale virtualenv is
   active in your shell, `conda run` inherits its `PATH` and `python` may
   resolve to the wrong interpreter. Run `deactivate` first, then retry.
