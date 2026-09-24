@@ -140,6 +140,7 @@ docker build -t coral-visualizer-standalone .
 
 ```bash
 docker run -it --rm -p 8008:8080 \
+  --user "$(id -u):$(id -g)" \
   -v "$(pwd)/data:/deploy/data" \
   coral-visualizer-standalone
 ```
@@ -151,10 +152,16 @@ both what the file selector lists and where saves are written. The image ships i
 empty, so without a mount there is nothing to open and saved work is discarded
 when `--rm` removes the container.
 
+`--user` runs the container as your own user. Without it the app runs as the
+image's `mambauser` (UID 57439), which on Linux cannot write into a mounted
+directory owned by you, so opening files works but saving fails with a permission
+error.
+
 Or if you need some prefix
 
 ```bash
 docker run -it --rm -p 8008:8080 \
+  --user "$(id -u):$(id -g)" \
   -v "$(pwd)/data:/deploy/data" \
   -e TRAME_URL_PREFIX=/my-app/sub/path \
   coral-visualizer-standalone
@@ -199,6 +206,21 @@ Two details matter here:
 - Apptainer ignores the image `WORKDIR` and starts in the host's current
   directory. The image's startup command uses absolute paths for this reason; keep
   them absolute when editing the `CMD` in the `Dockerfile`.
+- Apptainer runs the container as your own user, not the image's `mambauser`. The
+  startup command therefore calls the environment's Python directly instead of
+  `micromamba run`, which fails for any user other than `mambauser`.
+
+Because the network is shared with the host, two people running the image on the
+same node both try to use port 8080. To pick another port, pass the full command:
+
+```bash
+apptainer exec --bind /path/to/meshes:/deploy/data coral-visualizer.sif \
+  /opt/conda/envs/coral/bin/python /deploy/app.py --server \
+  --host 127.0.0.1 --port 8123 --data-directory /deploy/data
+```
+
+Binding to `127.0.0.1` keeps the app off the node's public interfaces; reach it
+from your machine through an SSH tunnel (`ssh -L 8123:localhost:8123 <node>`).
 
 ## Tests
 

@@ -61,4 +61,8 @@ EXPOSE 8080
 # Paths here must stay absolute. Apptainer/Singularity ignore the image WORKDIR and
 # start in the host's current directory, where "app.py" and the "./data" default for
 # --data-directory would not resolve.
-CMD ["micromamba", "run", "-n", "coral", "python", "/deploy/app.py", "--server", "--host", "0.0.0.0", "--port", "8080", "--data-directory", "/deploy/data"]
+# The env's python is called directly rather than through "micromamba run": that
+# needs a lockfile under /home/mambauser/.cache, which is not writable when the
+# container runs as another UID (always the case under Apptainer, and under Docker
+# with --user).
+CMD ["/opt/conda/envs/coral/bin/python", "/deploy/app.py", "--server", "--host", "0.0.0.0", "--port", "8080", "--data-directory", "/deploy/data"]
