@@ -119,6 +119,17 @@ The Docker path does not install ParaView from `setup/requirements.txt`.
 Instead, it provisions a dedicated conda environment from
 `setup/environment-docker.yml`.
 
+#### Pull the published image
+
+Every push to `main` and every `v*.*.*` tag publishes an image to the GitHub
+Container Registry. It is public, so no login is needed:
+
+```bash
+docker pull ghcr.io/2listic/coral-visualizer:main
+```
+
+The image is built for `linux/amd64` only.
+
 #### Build the image
 
 ```bash
@@ -128,13 +139,32 @@ docker build -t coral-visualizer-standalone .
 #### Run the image on port 8008
 
 ```bash
-docker run -it --rm -p 8008:8080 coral-visualizer-standalone
+docker run -it --rm -p 8008:8080 \
+  --user "$(id -u):$(id -g)" \
+  -v "$(pwd)/data:/deploy/data" \
+  coral-visualizer-standalone
 ```
+
+Then open at `http://127.0.0.1:8008/`.
+
+Mount a data directory. `--data-directory` defaults to `/deploy/data`, which is
+both what the file selector lists and where saves are written. The image ships it
+empty, so without a mount there is nothing to open and saved work is discarded
+when `--rm` removes the container.
+
+`--user` runs the container as your own user. Without it the app runs as the
+image's `mambauser` (UID 57439), which on Linux cannot write into a mounted
+directory owned by you, so opening files works but saving fails with a permission
+error.
 
 Or if you need some prefix
 
 ```bash
-docker run -it --rm -p 8008:8080 -e TRAME_URL_PREFIX=/my-app/sub/path coral-visualizer-standalone
+docker run -it --rm -p 8008:8080 \
+  --user "$(id -u):$(id -g)" \
+  -v "$(pwd)/data:/deploy/data" \
+  -e TRAME_URL_PREFIX=/my-app/sub/path \
+  coral-visualizer-standalone
 ```
 
 #### Verify the container serves HTTP
@@ -154,6 +184,43 @@ offscreen, but on hosts without a full EGL/X stack you may still see startup
 warnings such as `bad X server connection` or `Could not initialize a device`.
 In the current setup those warnings are non-fatal: the app still starts and
 ParaView can produce screenshots offscreen.
+
+## Usage with Apptainer/Singularity
+
+On HPC systems, where no Docker daemon is available, the published image can be
+converted to a `.sif` and run unprivileged:
+
+```bash
+apptainer pull coral-visualizer.sif docker://ghcr.io/2listic/coral-visualizer:main
+apptainer run --bind /path/to/meshes:/deploy/data coral-visualizer.sif
+```
+
+The app then listens on port 8080 of the host directly — Apptainer does not use a
+network namespace, so no port mapping is needed.
+
+Two details matter here:
+
+- The container filesystem is read-only, so `--data-directory` has to point at a
+  bind-mounted directory. The command above binds the host mesh directory over
+  `/deploy/data`, which is where the image's default `--data-directory` points.
+- Apptainer ignores the image `WORKDIR` and starts in the host's current
+  directory. The image's startup command uses absolute paths for this reason; keep
+  them absolute when editing the `CMD` in the `Dockerfile`.
+- Apptainer runs the container as your own user, not the image's `mambauser`. The
+  startup command therefore calls the environment's Python directly instead of
+  `micromamba run`, which fails for any user other than `mambauser`.
+
+Because the network is shared with the host, two people running the image on the
+same node both try to use port 8080. To pick another port, pass the full command:
+
+```bash
+apptainer exec --bind /path/to/meshes:/deploy/data coral-visualizer.sif \
+  /opt/conda/envs/coral/bin/python /deploy/app.py --server \
+  --host 127.0.0.1 --port 8123 --data-directory /deploy/data
+```
+
+Binding to `127.0.0.1` keeps the app off the node's public interfaces; reach it
+from your machine through an SSH tunnel (`ssh -L 8123:localhost:8123 <node>`).
 
 ## Tests
 
