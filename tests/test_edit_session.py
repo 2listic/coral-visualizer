@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from edit_session import EditSession
@@ -64,6 +66,34 @@ def test_edit_session_save_rejects_unsupported_extension(tmp_path):
 
     with pytest.raises(ValueError, match="Use .vtu or .vtk"):
         session.save(str(tmp_path / "edited.foo"))
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root ignores directory permissions",
+)
+@pytest.mark.parametrize(
+    "filename, message",
+    [
+        # vtkXMLUnstructuredGridWriter.Write() returns 1 without creating the file.
+        ("edited.vtu", "reported success but no file was created"),
+        # vtkUnstructuredGridWriter.Write() returns 0.
+        ("edited.vtk", "Failed to write edited dataset"),
+    ],
+)
+def test_edit_session_save_raises_when_directory_is_read_only(
+    tmp_path, filename, message
+):
+    session = EditSession()
+    session.begin("node-1", "source", "/tmp/mesh.vtu", _single_cell_grid())
+    read_only_dir = tmp_path / "read_only"
+    read_only_dir.mkdir()
+    read_only_dir.chmod(0o555)
+    try:
+        with pytest.raises(RuntimeError, match=message):
+            session.save(str(read_only_dir / filename))
+    finally:
+        read_only_dir.chmod(0o755)
 
 
 def test_surface_mode_materialize_adds_missing_boundary_faces_once():
