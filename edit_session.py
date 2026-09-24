@@ -1,5 +1,7 @@
 """Edit-session scaffolding for the ParaView-backed workflow."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from math import acos, degrees, sqrt
 from typing import TypedDict
@@ -28,26 +30,32 @@ class EditSession:
     """Owns the temporary editable dataset derived from the active pipeline node."""
 
     def __init__(self):
-        self.active = False
-        self.source_node_id = None
-        self.source_label = ""
-        self.source_filename = ""
-        self.working_dataset = None
-        self.dirty = False
-        self.geometry_mode = "volume"
-        self.field_name = ""
-        self.expression = ""
-        self.default_value = "0"
-        self.selected_cell_ids = set()
-        self.selected_surface_keys = set()
-        self.selected_point_ids = set()
-        self._volume_adjacency = None
-        self._surface_boundary_map = None
-        self._existing_codim_keys_cache = {}
-        self._surface_adjacency = None
-        self._surface_element_vectors = None
+        self.active: bool = False
+        self.source_node_id: str | None = None
+        self.source_label: str = ""
+        self.source_filename: str = ""
+        self.working_dataset: vtkUnstructuredGrid | None = (
+            None  # DeepCopy of source, mutation target — see docs/logic_flows.md §5b
+        )
+        self.dirty: bool = False
+        self.geometry_mode: str = "volume"
+        self.field_name: str = ""
+        self.expression: str = ""
+        self.default_value: str = "0"
+        self.selected_cell_ids: set[int] = set()
+        self.selected_surface_keys: set[tuple[int, ...]] = set()
+        self.selected_point_ids: set[int] = set()
+        self._volume_adjacency: dict[int, set[int]] | None = None
+        self._surface_boundary_map: dict[tuple[int, ...], tuple] | None = None
+        self._existing_codim_keys_cache: dict[int, set[tuple[int, ...]]] = {}
+        self._surface_adjacency: dict[tuple[int, ...], set[tuple[int, ...]]] | None = (
+            None
+        )
+        self._surface_element_vectors: (
+            dict[tuple[int, ...], tuple[float, float, float]] | None
+        ) = None
 
-    def clear(self):
+    def clear(self) -> None:
         """Reset the session to an inactive state."""
         self.active = False
         self.source_node_id = None
@@ -104,7 +112,7 @@ class EditSession:
         self._surface_element_vectors = None
         self._ensure_cell_centers_array()
 
-    def default_output_filename(self):
+    def default_output_filename(self) -> str:
         """Return a suggested filename for the current edit-session output."""
         label = (
             self.source_label or Path(self.source_filename or "edited").stem or "edited"
@@ -118,7 +126,7 @@ class EditSession:
             safe_label = f"{safe_label}_edited"
         return safe_label + ".vtu"
 
-    def save(self, output_path):
+    def save(self, output_path: str | Path) -> str:
         """Persist the working dataset to disk."""
         if not self.active or self.working_dataset is None:
             raise RuntimeError("No active edit session to save")
@@ -143,7 +151,7 @@ class EditSession:
             raise RuntimeError(f"Failed to write edited dataset to {output_path}")
         return str(output_path)
 
-    def available_cell_variables(self):
+    def available_cell_variables(self) -> list[str]:
         """Return cell-data variable names available to the edit calculator."""
         if not self.active or self.working_dataset is None:
             return []
@@ -155,7 +163,7 @@ class EditSession:
             if cell_data.GetArrayName(i)
         ]
 
-    def available_point_variables(self):
+    def available_point_variables(self) -> list[str]:
         """Return point-data variable names available to the edit calculator."""
         if not self.active or self.working_dataset is None:
             return []
@@ -166,7 +174,7 @@ class EditSession:
             if point_data.GetArrayName(i)
         ]
 
-    def available_fields(self):
+    def available_fields(self) -> list[dict[str, str]]:
         """Return both point and cell scalar/vector arrays for field selection."""
         fields = []
         for name in self.available_cell_variables():
@@ -176,7 +184,7 @@ class EditSession:
         fields.sort(key=lambda item: item["text"].lower())
         return fields
 
-    def has_cell_field(self, field_name):
+    def has_cell_field(self, field_name: str) -> bool:
         """Return True when a cell-data field with ``field_name`` already exists."""
         if not self.active or self.working_dataset is None:
             return False
@@ -185,12 +193,12 @@ class EditSession:
             return False
         return self.working_dataset.GetCellData().GetArray(name) is not None
 
-    def has_field(self, field_name, association):
+    def has_field(self, field_name: str, association: str) -> bool:
         """Return True when the requested data array already exists."""
         array = self._get_data_array((field_name or "").strip(), association)
         return array is not None
 
-    def infer_field_association(self, field_name):
+    def infer_field_association(self, field_name: str) -> str | None:
         """Best-effort association lookup for an existing field name."""
         name = (field_name or "").strip()
         if not name or not self.active or self.working_dataset is None:
@@ -201,7 +209,7 @@ class EditSession:
             return "point"
         return None
 
-    def selected_count(self):
+    def selected_count(self) -> int:
         """Return the number of currently selected cells."""
         if self.geometry_mode == "surface":
             return len(self.selected_surface_keys)
@@ -209,13 +217,13 @@ class EditSession:
             return len(self.selected_point_ids)
         return len(self.selected_cell_ids)
 
-    def clear_selection(self):
+    def clear_selection(self) -> None:
         """Drop the current volume-cell selection."""
         self.selected_cell_ids.clear()
         self.selected_surface_keys.clear()
         self.selected_point_ids.clear()
 
-    def select_all_cells(self):
+    def select_all_cells(self) -> int:
         """Select every cell in the working dataset."""
         if not self.active or self.working_dataset is None:
             return 0
@@ -230,7 +238,12 @@ class EditSession:
         self.selected_cell_ids = set(range(self.working_dataset.GetNumberOfCells()))
         return len(self.selected_cell_ids)
 
-    def toggle_cell_selection(self, cell_id, grow=False, angle_threshold=None):
+    def toggle_cell_selection(
+        self,
+        cell_id: int | float | tuple[int, ...],
+        grow: bool = False,
+        angle_threshold: float | None = None,
+    ) -> int:
         """Toggle a single picked cell, optionally growing by adjacency."""
         if not self.active or self.working_dataset is None:
             return 0
@@ -283,7 +296,9 @@ class EditSession:
 
         return len(self.selected_cell_ids)
 
-    def replace_selection(self, cell_ids, grow=False, angle_threshold=None):
+    def replace_selection(
+        self, cell_ids: list, grow: bool = False, angle_threshold: float | None = None
+    ) -> int:
         """Replace the current selection with the provided cell IDs."""
         if not self.active or self.working_dataset is None:
             return 0
@@ -318,7 +333,9 @@ class EditSession:
         self.selected_cell_ids = normalized
         return len(self.selected_cell_ids)
 
-    def add_selection(self, cell_ids, grow=False, angle_threshold=None):
+    def add_selection(
+        self, cell_ids: list, grow: bool = False, angle_threshold: float | None = None
+    ) -> int:
         """Union the provided cell IDs into the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
@@ -354,7 +371,9 @@ class EditSession:
         self.selected_cell_ids |= normalized
         return len(self.selected_cell_ids)
 
-    def subtract_selection(self, cell_ids, grow=False, angle_threshold=None):
+    def subtract_selection(
+        self, cell_ids: list, grow: bool = False, angle_threshold: float | None = None
+    ) -> int:
         """Remove the provided cell IDs from the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
@@ -390,7 +409,9 @@ class EditSession:
         self.selected_cell_ids -= normalized
         return len(self.selected_cell_ids)
 
-    def flip_selection(self, cell_ids, grow=False, angle_threshold=None):
+    def flip_selection(
+        self, cell_ids: list, grow: bool = False, angle_threshold: float | None = None
+    ) -> int:
         """Toggle the provided cell IDs against the current selection."""
         if not self.active or self.working_dataset is None:
             return 0
@@ -439,7 +460,13 @@ class EditSession:
                 self.selected_cell_ids.add(cell_id)
         return len(self.selected_cell_ids)
 
-    def create_field(self, field_name, association, default_value, overwrite=False):
+    def create_field(
+        self,
+        field_name: str,
+        association: str,
+        default_value: float | str,
+        overwrite: bool = False,
+    ) -> str:
         """Create a scalar field across all tuples in the chosen association."""
         if not self.active or self.working_dataset is None:
             raise RuntimeError("No active edit session")
@@ -476,7 +503,9 @@ class EditSession:
         self.dirty = True
         return field_name
 
-    def assign_to_selected(self, field_name, association, expression):
+    def assign_to_selected(
+        self, field_name: str, association: str, expression: str
+    ) -> str:
         """Assign the expression value to selected entities in the target field."""
         if not self.active or self.working_dataset is None:
             raise RuntimeError("No active edit session")
@@ -558,11 +587,11 @@ class EditSession:
             values[idx] = float(result_array.GetTuple1(idx))
         return values
 
-    def build_selected_volume_dataset(self):
+    def build_selected_volume_dataset(self) -> vtkUnstructuredGrid | None:
         """Return a lightweight dataset containing the currently selected cells."""
         return self.build_selected_dataset()
 
-    def build_selected_dataset(self):
+    def build_selected_dataset(self) -> vtkUnstructuredGrid | None:
         """Return a lightweight dataset containing currently selected editable entities."""
         if not self.active or self.working_dataset is None:
             return None
@@ -599,7 +628,7 @@ class EditSession:
         output.DeepCopy(extractor.GetOutput())
         return output
 
-    def materialize_surface_selection(self):
+    def materialize_surface_selection(self) -> int:
         """Append selected boundary faces/edges as missing codim-1 cells."""
         if not self.active or self.working_dataset is None:
             return 0
@@ -642,7 +671,7 @@ class EditSession:
         return len(missing_keys)
 
     @staticmethod
-    def _normalize_association(association):
+    def _normalize_association(association: str) -> str:
         value = (association or "cell").strip().lower()
         if value not in {"cell", "point"}:
             raise ValueError("Field association must be 'cell' or 'point'")
@@ -656,7 +685,7 @@ class EditSession:
             else self.working_dataset.GetCellData()
         )
 
-    def _tuple_count_for_association(self, association):
+    def _tuple_count_for_association(self, association: str) -> int:
         association = self._normalize_association(association)
         if association == "point":
             return self.working_dataset.GetNumberOfPoints()
@@ -681,7 +710,7 @@ class EditSession:
             return sorted(self._selected_surface_cell_ids())
         return sorted(int(cell_id) for cell_id in self.selected_cell_ids)
 
-    def _grow_volume_selection(self, seed_ids):
+    def _grow_volume_selection(self, seed_ids) -> set[int]:
         """Expand a set of cells by shared-face/shared-edge adjacency."""
         seeds = set(seed_ids or [])
         if not seeds:
@@ -701,7 +730,9 @@ class EditSession:
 
         return visited
 
-    def _grow_surface_selection(self, seed_keys, angle_threshold=None):
+    def _grow_surface_selection(
+        self, seed_keys, angle_threshold: float | None = None
+    ) -> set[tuple[int, ...]]:
         """Expand surface keys transitively while respecting neighbor-angle threshold."""
         seeds = {tuple(key) for key in (seed_keys or [])}
         if not seeds:
@@ -725,7 +756,7 @@ class EditSession:
                 pending.append(neighbor)
         return grown
 
-    def _top_dimension(self):
+    def _top_dimension(self) -> int:
         if self.working_dataset is None:
             return 0
         return max(
@@ -923,7 +954,7 @@ class EditSession:
         self._surface_adjacency = None
         self._surface_element_vectors = None
 
-    def _ensure_surface_adjacency(self):
+    def _ensure_surface_adjacency(self) -> dict[tuple[int, ...], set[tuple[int, ...]]]:
         """Build and cache codim-1 adjacency graph for surface-mode grow selection."""
         if self._surface_adjacency is not None:
             return self._surface_adjacency
@@ -968,7 +999,7 @@ class EditSession:
         return self._surface_adjacency
 
     @staticmethod
-    def _normalized_angle_threshold(angle_threshold):
+    def _normalized_angle_threshold(angle_threshold) -> float | None:
         if angle_threshold is None:
             return None
         try:
@@ -981,7 +1012,9 @@ class EditSession:
             return 180.0
         return threshold
 
-    def _surface_neighbor_angle_degrees(self, key_a, key_b):
+    def _surface_neighbor_angle_degrees(
+        self, key_a: tuple[int, ...], key_b: tuple[int, ...]
+    ) -> float:
         """Return angle between surface element directions in degrees."""
         vectors = self._ensure_surface_element_vectors()
         va = vectors.get(tuple(key_a))
@@ -992,7 +1025,9 @@ class EditSession:
         dot = max(-1.0, min(1.0, abs(dot)))
         return degrees(acos(dot))
 
-    def _ensure_surface_element_vectors(self):
+    def _ensure_surface_element_vectors(
+        self,
+    ) -> dict[tuple[int, ...], tuple[float, float, float]]:
         """Build and cache representative unit vectors for selectable surface elements."""
         if self._surface_element_vectors is not None:
             return self._surface_element_vectors
@@ -1099,7 +1134,7 @@ class EditSession:
                         # Best effort: keep tuple resize even if component assignment is unsupported.
                         break
 
-    def _ensure_volume_adjacency(self):
+    def _ensure_volume_adjacency(self) -> dict[int, set[int]]:
         """Build and cache a face/edge adjacency graph for top-dimensional cells."""
         if self._volume_adjacency is not None:
             return self._volume_adjacency
@@ -1164,7 +1199,7 @@ class EditSession:
         self._volume_adjacency = adjacency
         return self._volume_adjacency
 
-    def _ensure_cell_centers_array(self):
+    def _ensure_cell_centers_array(self) -> None:
         """Ensure the working dataset exposes ``CellCenters`` in cell data."""
         if self.working_dataset is None:
             return
@@ -1197,7 +1232,7 @@ class EditSession:
         cell_data.AddArray(array)
         self.working_dataset.Modified()
 
-    def _remove_internal_edit_arrays(self):
+    def _remove_internal_edit_arrays(self) -> None:
         """Drop edit-only helper arrays before persisting user data."""
         if self.working_dataset is None:
             return
@@ -1207,6 +1242,6 @@ class EditSession:
             self.working_dataset.Modified()
 
     @staticmethod
-    def is_supported_dataset(dataset):
+    def is_supported_dataset(dataset) -> bool:
         """Return True when the dataset type is currently editable."""
         return isinstance(dataset, vtkUnstructuredGrid)

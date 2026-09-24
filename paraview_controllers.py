@@ -730,7 +730,10 @@ def register_paraview_controllers(
                 exported["filename"],
                 exported["dataset"],
             )
-            pv_backend.set_edit_target_dataset(edit_session.working_dataset)
+            pv_backend.set_edit_target_dataset(
+                edit_session.working_dataset,
+                source_dataset=exported["dataset"],
+            )
 
             pv_backend.apply_representation("Surface with Edges")
             state.pick_mode = True

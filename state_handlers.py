@@ -17,6 +17,7 @@ def register_state_handlers(
     state,
     *,
     paraview_runtime: ParaViewRuntime,
+    edit_session,
     interaction_quality_presets,
 ):
     """Register state callbacks for the ParaView backend."""
@@ -57,6 +58,12 @@ def register_state_handlers(
     def on_active_pipeline_item_change(active_pipeline_item, **kwargs):
         """Switch active ParaView node when the pipeline selection changes."""
         if not active_pipeline_item:
+            return
+        if edit_session.active:
+            notify(
+                state, "Cannot switch pipeline node during an edit session.", "warning"
+            )
+            state.active_pipeline_item = paraview_runtime.pv_backend.active_node_id
             return
         if not paraview_runtime.pv_backend.set_active_node(active_pipeline_item):
             return

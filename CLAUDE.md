@@ -147,12 +147,12 @@ Check and update [docs/logic_flows.md](docs/logic_flows.md) if any execution pat
 - `runtime_setup.py`: `RuntimeContext` dataclass and `create_runtime_context()` — ParaView objects created before Trame is available. `ParaViewRuntime` is constructed in `factory.py` once `state` and `view_controls` exist.
 - `handler_registration.py`: wires controllers and state handlers.
 - `state_setup.py`: initializes all Trame state. If adding UI controls, add defaults here.
-- `state_handlers.py`: shared `@state.change(...)` callbacks for selected file, color-by, representation, active pipeline node, interaction quality, edit mode.
+- `state_handlers.py`: shared `@state.change(...)` callbacks for selected file, color-by, representation, active pipeline node, interaction quality, edit mode. Pipeline node switches are blocked during an active edit session — the handler emits a warning and resets `state.active_pipeline_item` to snap the UI selection back.
 - `view_controls.py`: central wrapper for Trame view update callbacks and optional ParaView diagnostics.
 
 ### ParaView Backend Path
 
-- `paraview_backend.py`: owns ParaView sources/displays, pipeline nodes, filters, coloring, display controls, picking, selection overlays, saving/export.
+- `paraview_backend.py`: owns ParaView sources/displays, pipeline nodes, filters, coloring, display controls, picking, selection overlays, saving/export. `set_edit_target_dataset()` builds four remap caches at session begin (`_edit_source_dataset`, `_edit_source_point_indexes`, `_edit_target_cell_map`, `_edit_point_id_map`) so picks avoid per-pick Fetch/rebuild — see `docs/logic_flows.md §5b`.
 - `paraview_runtime.py`: synchronizes backend state into Trame state, handles render pushes, edit-session overlay sync. Forwards event normalization calls to `paraview_event_utils.py`.
 - `paraview_event_utils.py`: pure helpers for normalizing ParaView picking event payloads (`normalize_edit_selection_ids`, `summarize_edit_event`, coordinate mapping). No Trame dependency.
 - `paraview_controllers.py`: user actions from the UI: pipeline actions, filters, edit sessions, selection, field creation, display/color controls.
@@ -204,6 +204,12 @@ The dialog supports Cell data and Point data arrays. Selecting a point field for
 Do not implement replace as a toggle. ParaView native payloads can contain toggled selection IDs, so `paraview_runtime.normalize_edit_selection_ids()` prefers event coordinates when available and the backend repicks cleanly.
 
 Selection overlays can interfere with native picking. `paraview_backend.py` clears transient edit-selection overlays before pick queries.
+
+### Pipeline Lock During Edit Session
+
+`state_handlers.py` blocks `active_pipeline_item` changes while an edit session is active. When blocked, it emits a warning notification and resets `state.active_pipeline_item` to `pv_backend.active_node_id`, which snaps the pipeline tree UI back to the current node. The reset triggers a second `@state.change` event that is a no-op (Trame suppresses events when the value is unchanged), so there is no infinite loop.
+
+No pre-change hook exists in Vuetify/Trame — `VListItemGroup v_model` writes state immediately on click — so interception must happen inside the callback after the write.
 
 ### EditSession Geometry Modes
 

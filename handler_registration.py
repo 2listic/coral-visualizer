@@ -55,6 +55,7 @@ def register_app_handlers(
     register_state_handlers(
         state,
         paraview_runtime=paraview_runtime,
+        edit_session=edit_session,
         interaction_quality_presets=interaction_quality_presets,
     )
 
