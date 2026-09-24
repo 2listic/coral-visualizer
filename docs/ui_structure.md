@@ -154,7 +154,7 @@ Toolbar buttons
                                      └── Overwrite → retry with overwrite=True
 ```
 
-## Planned split (from TODO.md)
+## Planned split (from [docs/TODO.md](TODO.md))
 
 When `ui.py` is split into modules, the mapping will be:
 

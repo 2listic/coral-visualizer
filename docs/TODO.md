@@ -1,12 +1,16 @@
 # TODO
 
+> Untriaged backlog, pending conversion into GitHub issues. Active work is tracked
+> in issues, not here — some items below are already covered by an open issue and
+> some are already done.
+
 ## Priorita alta
 
 - Separare `paraview_backend.py` in servizi di dominio più piccoli (3900 righe).
   Iniziare da moduli con dipendenze unidirezionali (`backend/display.py`,
   `backend/coloring.py`, `backend/pipeline.py`) — più self-contained e a minor rischio
   di regressione rispetto alla selezione, che dipende trasversalmente dallo stato del
-  backend. La selezione segue dopo. Vedi [docs/backend_refactor.md](docs/backend_refactor.md)
+  backend. La selezione segue dopo. Vedi [docs/backend_refactor.md](backend_refactor.md)
   per strategia, layout moduli e firme.
 
 ## Priorita media

@@ -15,3 +15,6 @@ data/uploads/
 data/*_edited.vtu
 test_data/*_edited.vtu
 out.txt
+
+# AI session notes (local only)
+.ai/

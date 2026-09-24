@@ -21,7 +21,7 @@ fi
 
 "${CONDA_BIN}" create -y -n "${ENV_NAME}" -c conda-forge \
     "python=${PYTHON_VERSION}" \
-    "paraview=6.1" \
+    "paraview=6.1.0" `# patch-pinned: see setup/environment-docker.yml` \
     trame \
     trame-vtk \
     trame-vuetify

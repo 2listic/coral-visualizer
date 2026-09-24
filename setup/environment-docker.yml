@@ -4,4 +4,5 @@ channels:
 dependencies:
   - python=3.10.20
   - pip
-  - paraview=6.1
+  # Patch-pinned: 6.1.0 resolves an hdf5 with the soname paraview links against.
+  - paraview=6.1.0

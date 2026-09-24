@@ -5,6 +5,7 @@
 ```
 app.py
  ├── configure_app()              → parse CLI flags, devtools, hot-reload
+ ├── apply_trame_vtk_patches()    → guarded runtime patches for upstream trame-vtk defects (see rendering.md)
  ├── create_runtime_context()     → instantiate ParaViewBackend, initialize_view(), EditSession
  ├── get_server()                 → Trame websocket server (Vue 2)
  ├── initialize_state()           → seed all Trame state variables with defaults
