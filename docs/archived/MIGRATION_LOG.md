@@ -1,8 +1,13 @@
 # CODEX_LOG
 
+> **Archived 2026-09-22.** Historical record of the VTK→ParaView migration, which
+> has landed. Kept for context only — no new entries. Open work is tracked in
+> GitHub issues; for current architecture see [CLAUDE.md](../../CLAUDE.md).
+> Statements below were accurate when written and have not been revised.
+
 ## Goal
 
-Evolve the current VTK/trame viewer toward a ParaView-backed application while keeping the existing project aesthetic. The VTK→ParaView migration is complete. For current architecture see [CLAUDE.md](CLAUDE.md); for active work see [TODO.md](TODO.md).
+Evolve the current VTK/trame viewer toward a ParaView-backed application while keeping the existing project aesthetic. The VTK→ParaView migration is complete. For current architecture see [CLAUDE.md](../../CLAUDE.md); for active work see [TODO.md](TODO.md).
 
 ## Done
 

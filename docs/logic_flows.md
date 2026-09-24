@@ -7,6 +7,7 @@ A walkthrough of the main execution paths in the Trame/ParaView visualizer.
 ```
 app.py
  ├── configure_app()              → parse CLI flags, devtools, hot-reload
+ ├── apply_trame_vtk_patches()    → guarded runtime patches for upstream trame-vtk defects (see §9)
  ├── create_runtime_context()     → instantiate ParaViewBackend, initialize_view(), EditSession
  ├── get_server()                 → Trame websocket server (Vue 2)
  ├── initialize_state()           → seed all Trame state variables with defaults
@@ -595,3 +596,48 @@ pv_backend.get_color_control_state()           [paraview_backend.py:773]
           categorical_coloring          — bool
      }
 ```
+
+## 9. Image Delivery (`render_and_push` → browser)
+
+Every `render_and_push()` above ends in an image reaching the browser. That last
+hop lives in trame-vtk, not in this repo:
+
+```
+render_and_push()                              [paraview_runtime.py]
+ ├── pv_backend.render()                       — ParaView Render(); fires UpdateEvent
+ │    └── observer → push_render()             — trame-vtk, mtime-deduped
+ └── call_view_update()
+      └── ctrl.view_update → VtkRemoteLocalView.update()
+           ├── update_image()  → push_image() → RPC "viewport.image.push"
+           │    └── image_push() → InvalidateCache() + push_render()
+           └── update_geometry() → publish "trame.vtk.delta"
+```
+
+`push_render()` calls `still_render()`, which returns `stale=True` while the
+renderer is still settling. A frame delivered while stale may be a pre-settle
+frame, so the protocol schedules `render_stale_image()` to retry.
+
+### The stale-retry patch (`trame_vtk_patches.py`)
+
+Upstream `push_render` always arms that retry for `delta_stale_time_before_render`
+(D = 0.1s), but `render_stale_image` only retries once it has waited
+`D * (stale_count + 1)`, and only re-arms the timer when it waited *less* than D.
+From the second round on the callback fires at delta of about D while needing 2D:
+neither branch runs, `stale_handler_count` has already been decremented, and the
+retry chain dies without pushing and without rescheduling. The effective retry
+limit is 1, not `stale_count_limit = 10`.
+
+Consequence: if the renderer had not settled by then, **no further image was ever
+pushed** and the browser kept the pre-settle frame until unrelated activity
+triggered another render. Two display switches toggled in quick succession could
+leave the viewport showing the intermediate state.
+
+`apply_stale_retry_fix()` replaces `render_stale_image` so the non-retry case
+re-arms for the time still owed instead of dropping the chain. `stale_count` still
+only advances through `push_render`, so `stale_count_limit` continues to bound the
+loop. The patch is guarded and no-ops with a warning if upstream changes the
+method, and must run before any client connects — hence its position in §1.
+
+Measured in Docker at `--cpus=2`: 14/20 passing without it, 20/20 with it.
+Reported upstream; remove this module once the fix ships and the pinned
+trame-vtk version is raised. Details in `.ai/issue-draft.md`.
