@@ -101,6 +101,10 @@ class FakeParaViewBackend:
     def default_output_filename(self):
         return "pipeline_result.vtu"
 
+    def can_edit_active_node(self):
+        self.calls.append("can_edit_active_node")
+        return True
+
     def export_active_dataset_for_editing(self):
         self.calls.append("export_active_dataset_for_editing")
         return {"dataset": object()}

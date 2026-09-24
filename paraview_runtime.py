@@ -327,11 +327,7 @@ class ParaViewRuntime:
                 else "Active pipeline result"
             )
         )
-        try:
-            self.pv_backend.export_active_dataset_for_editing()
-            self.state.can_edit_active = True
-        except Exception:
-            self.state.can_edit_active = False
+        self.state.can_edit_active = self.pv_backend.can_edit_active_node()
         self.sync_edit_session_state()
 
     def load_file(self, selected_file):

@@ -6,11 +6,6 @@
 
 ## Priorita alta
 
-- **Performance selezione su dataset grandi** — bottleneck documentati in
-  `docs/logic_flows.md` §5a e §6. Piano a step progressivi in [issue #34](https://github.com/2listic/coral-visualizer/issues/34); ogni step
-  è indipendente e lascia i test esistenti verdi. Step 1 può essere fatto direttamente
-  su `paraview_backend.py` senza refactor preventivo.
-
 - Separare `paraview_backend.py` in servizi di dominio più piccoli (3900 righe).
   Iniziare da moduli con dipendenze unidirezionali (`backend/display.py`,
   `backend/coloring.py`, `backend/pipeline.py`) — più self-contained e a minor rischio

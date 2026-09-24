@@ -143,6 +143,8 @@ def initialize_state(
     state.edit_selection_event = ""
     state.selection_timing_last = ""
     state.selection_timing_payload = {}
+    state.session_begin_timing_last = ""
+    state.session_begin_timing_payload = {}
     state.edit_selection_mode = "replace"
     state.edit_selection_mode_options = [
         {"text": "Replace", "value": "replace"},

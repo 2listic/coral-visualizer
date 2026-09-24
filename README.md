@@ -314,7 +314,7 @@ Two workflows run on push and pull requests to `main`:
 
 ## Architecture
 
-[docs/logic_flows.md](docs/logic_flows.md) documents the main execution paths:
+[docs/logic_flows/](docs/logic_flows/) documents the main execution paths:
 startup, file load, UI state sync, the controller → backend pattern, edit session
 lifecycle, filter system, and a breakpoint guide for debugging with VS Code.
 

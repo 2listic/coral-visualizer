@@ -149,6 +149,11 @@ class EditSession:
         writer.SetInputData(self.working_dataset)
         if writer.Write() != 1:
             raise RuntimeError(f"Failed to write edited dataset to {output_path}")
+        if not Path(output_path).exists():
+            raise RuntimeError(
+                f"VTK writer reported success but no file was created at {output_path}. "
+                "The data directory may not be writable."
+            )
         return str(output_path)
 
     def available_cell_variables(self) -> list[str]:
@@ -630,6 +635,8 @@ class EditSession:
 
     def materialize_surface_selection(self) -> int:
         """Append selected boundary faces/edges as missing codim-1 cells."""
+        # Guard: nothing to do if session inactive, no data, wrong mode, nothing selected,
+        # or mesh is 1D (codim-1 of edges has no meaning).
         if not self.active or self.working_dataset is None:
             return 0
         if self.geometry_mode != "surface":
@@ -642,9 +649,15 @@ class EditSession:
         if top_dim < 2:
             return 0
 
+        # Strip scratch arrays (e.g. CellCenters) before modifying dataset structure.
         self._remove_internal_edit_arrays()
+        # Faces appearing exactly once across all top cells — the true boundary.
+        # {sorted_point_ids_tuple: (cell_type, ordered_point_ids, owner_cell_id)}
         boundary_map = self._surface_boundary_map_for_top_cells()
+        # Codim-1 cells already present in the dataset — skip to avoid duplicates.
         existing = self._existing_codim_keys(top_dim - 1)
+        # Only insert faces that are selected, confirmed boundary, and not yet physical cells.
+        # Sorted for deterministic insertion order; idempotent on repeated calls.
         missing_keys = [
             key
             for key in sorted(self.selected_surface_keys)
@@ -654,6 +667,7 @@ class EditSession:
             return 0
 
         old_cell_count = dataset.GetNumberOfCells()
+        # new_cell_id → owner_volume_cell_id; used below to copy field values.
         owner_cell_ids = {}
         for key in missing_keys:
             cell_type, point_ids, owner_cell_id = boundary_map[key]
@@ -663,10 +677,13 @@ class EditSession:
             dataset.InsertNextCell(int(cell_type), id_list)
             owner_cell_ids[dataset.GetNumberOfCells() - 1] = int(owner_cell_id)
 
+        # Copy every cell data array tuple from the owner volume cell to the new face,
+        # keeping array lengths consistent with the new cell count.
         self._extend_cell_data_for_new_cells(dataset, old_cell_count, owner_cell_ids)
 
         dataset.Modified()
         self.dirty = True
+        # Dataset shape changed — invalidate boundary/adjacency caches.
         self._invalidate_geometry_caches()
         return len(missing_keys)
 
@@ -1245,3 +1262,11 @@ class EditSession:
     def is_supported_dataset(dataset) -> bool:
         """Return True when the dataset type is currently editable."""
         return isinstance(dataset, vtkUnstructuredGrid)
+
+    @staticmethod
+    def is_supported_dataset_type(type_string: str) -> bool:
+        """Return True when a DataInformation type string is currently editable.
+
+        Used for the cheap probe in can_edit_active_node() — avoids a Fetch.
+        """
+        return type_string == "vtkUnstructuredGrid"

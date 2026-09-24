@@ -28,7 +28,7 @@ class SelectionTiming:
     def add_phase(self, name, duration_ms):
         self._phases.append((name, float(duration_ms)))
 
-    def emit(self, state=None, status="ok"):
+    def emit(self, state=None, status="ok", state_key="selection_timing"):
         total_ms = (time.perf_counter() - self._start) * 1000.0
         phases = [
             {"name": name, "ms": round(duration_ms, 3)}
@@ -43,8 +43,8 @@ class SelectionTiming:
         }
         print("[selection-timing] " + json.dumps(payload, sort_keys=True, default=str))
         if state is not None:
-            state.selection_timing_payload = payload
-            state.selection_timing_last = self._format_summary(total_ms)
+            setattr(state, f"{state_key}_payload", payload)
+            setattr(state, f"{state_key}_last", self._format_summary(total_ms))
 
     def _format_summary(self, total_ms):
         phase_text = ", ".join(

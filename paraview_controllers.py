@@ -723,17 +723,20 @@ def register_paraview_controllers(
 
         try:
             debug_view("pv_begin_edit_session.start", mode=state.mainViewMode)
-            exported = pv_backend.export_active_dataset_for_editing()
-            edit_session.begin(
-                exported["node_id"],
-                exported["label"],
-                exported["filename"],
-                exported["dataset"],
-            )
-            pv_backend.set_edit_target_dataset(
-                edit_session.working_dataset,
-                source_dataset=exported["dataset"],
-            )
+            timing = SelectionTiming("session_begin")
+            with timing.phase("export"):
+                exported = pv_backend.export_active_dataset_for_editing()
+            with timing.phase("edit_begin"):
+                edit_session.begin(
+                    exported["node_id"],
+                    exported["label"],
+                    exported["filename"],
+                    exported["dataset"],
+                )
+            with timing.phase("set_target"):
+                pv_backend.set_edit_target_dataset(edit_session.working_dataset)
+            for name, ms in pv_backend.consume_session_begin_timing():
+                timing.add_phase(f"target.{name}", ms)
 
             pv_backend.apply_representation("Surface with Edges")
             state.pick_mode = True
@@ -749,9 +752,11 @@ def register_paraview_controllers(
             state.selection_count = 0
             state.inspector_tab = 3
             _set_selection_mode("replace")
+            update_paraview_ui_state()
             sync_edit_session_state()
             sync_paraview_edit_selection_overlay()
             render_and_push()
+            timing.emit(state, state_key="session_begin_timing")
             debug_view("pv_begin_edit_session.end", mode=state.mainViewMode)
             notify(state, f"Edit session initialized for {exported['label']}.", "info")
         except Exception as exc:
@@ -765,6 +770,7 @@ def register_paraview_controllers(
         debug_view("pv_discard_edit_session.start", mode=state.mainViewMode)
         edit_session.clear()
         pv_backend.clear_edit_target_dataset()
+        update_paraview_ui_state()
         sync_edit_session_state()
         sync_paraview_edit_selection_overlay()
         state.save_filename = pv_backend.default_output_filename()
