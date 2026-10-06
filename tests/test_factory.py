@@ -1,12 +1,19 @@
 """Integration tests for the application factory."""
 
+import asyncio
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
 from app_config import AppConfig
 from constants import ARRAY_SOLID
-from factory import AppComponents, create_app
+from factory import (
+    AppComponents,
+    create_app,
+    make_open_file_handler,
+    resolve_requested_vtk_file,
+)
 from file_operations import FileOperationService
 from paraview_runtime import ParaViewRuntime
 from view_controls import ViewControllerProxy
@@ -127,6 +134,61 @@ def test_create_app_with_initial_file():
     )
     components = create_app(config=config)
     assert components.state.selected_file == initial
+
+
+def test_resolve_requested_vtk_file_stays_inside_configured_data_directory(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    vtk_file = data_dir / "results" / "solution.vtu"
+    vtk_file.parent.mkdir()
+    vtk_file.write_text("vtk")
+
+    assert resolve_requested_vtk_file(
+        str(data_dir), str(data_dir), "results/solution.vtu"
+    ) == str(vtk_file)
+
+
+def test_resolve_requested_vtk_file_rejects_other_directories(tmp_path):
+    data_dir = tmp_path / "data"
+    other_dir = tmp_path / "other"
+    data_dir.mkdir()
+    other_dir.mkdir()
+    outside = other_dir / "solution.vtu"
+    outside.write_text("vtk")
+
+    with pytest.raises(PermissionError, match="data directory"):
+        resolve_requested_vtk_file(str(data_dir), str(other_dir), outside.name)
+
+
+def test_resolve_requested_vtk_file_rejects_traversal(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    with pytest.raises(PermissionError, match="remain inside"):
+        resolve_requested_vtk_file(str(data_dir), str(data_dir), "../solution.vtu")
+
+
+def test_open_file_handler_selects_file_and_redirects_to_visualizer(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    vtk_file = data_dir / "results" / "solution.vtu"
+    vtk_file.parent.mkdir()
+    vtk_file.write_text("vtk")
+    state = SimpleNamespace(selected_file=None)
+    request = SimpleNamespace(
+        path="/api/open",
+        rel_url=SimpleNamespace(
+            query={
+                "working_directory": str(data_dir),
+                "file": "results/solution.vtu",
+            }
+        ),
+    )
+
+    response = asyncio.run(make_open_file_handler(str(data_dir), state)(request))
+
+    assert response.status == 302
+    assert response.location == "/"
+    assert state.selected_file == str(vtk_file)
 
 
 # ---------------------------------------------------------------------------
