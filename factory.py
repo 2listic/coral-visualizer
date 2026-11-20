@@ -152,21 +152,12 @@ def make_download_handler(data_directory: str):
     return _handle
 
 
-def resolve_requested_vtk_file(
-    data_directory: str,
-    working_directory: str,
-    filename: str,
-) -> str:
+def resolve_requested_vtk_file(data_directory: str, filename: str) -> str:
     """Resolve a VTK file only inside the visualizer's configured data directory."""
     root = os.path.realpath(os.path.abspath(data_directory))
-    requested_root = os.path.realpath((working_directory or "").strip())
     file_value = (filename or "").strip()
-    if not requested_root or requested_root != root:
-        raise PermissionError(
-            "working_directory must match the visualizer data directory"
-        )
     if not file_value or os.path.isabs(file_value):
-        raise ValueError("file must be relative to working_directory")
+        raise ValueError("file must be relative to the data directory")
 
     candidate = os.path.realpath(os.path.join(root, file_value))
     try:
@@ -174,7 +165,7 @@ def resolve_requested_vtk_file(
     except ValueError:
         inside_root = False
     if not inside_root:
-        raise PermissionError("file must remain inside working_directory")
+        raise PermissionError("file must remain inside the data directory")
     if not candidate.lower().endswith(SUPPORTED_VTK_EXTENSIONS):
         raise ValueError("unsupported VTK file extension")
     if not os.path.isfile(candidate):
@@ -188,10 +179,11 @@ def make_open_file_handler(data_directory: str, state):
     async def _handle(request):
         from aiohttp import web
 
+        # `working_directory` is ignored: callers name the shared folder by
+        # their own mount path, which differs from this container's.
         try:
             selected_file = resolve_requested_vtk_file(
                 data_directory,
-                request.rel_url.query.get("working_directory", ""),
                 request.rel_url.query.get("file", ""),
             )
         except PermissionError as exc:
