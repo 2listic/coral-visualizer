@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+from trame.app import get_server
+
 from app_config import AppConfig, configure_app
 from constants import INTERACTION_QUALITY_PRESETS
 from diagnostics import set_devtools_enabled
@@ -17,10 +19,11 @@ from handler_registration import register_app_handlers
 from paraview_runtime import ParaViewRuntime
 from runtime_setup import RuntimeContext, create_runtime_context
 from state_setup import initialize_state, resolve_initial_file
-from trame.app import get_server
 from trame_vtk_patches import apply_all as apply_trame_vtk_patches
 from ui import build_ui
 from view_controls import ViewControllerProxy
+
+SUPPORTED_VTK_EXTENSIONS = (".pvd", ".pvtu", ".vtu", ".vtk")
 
 
 @dataclass
@@ -138,12 +141,60 @@ def make_download_handler(data_directory: str):
             return Response(status=404, text="Not found")
         filename = os.path.basename(abs_path)
         mime = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
-        with open(abs_path, "rb") as fh:
+        with open(abs_path, "rb") as fh:  # noqa: ASYNC230 — small local file
             content = fh.read()
         return Response(
             body=content,
             content_type=mime,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    return _handle
+
+
+def resolve_requested_vtk_file(data_directory: str, filename: str) -> str:
+    """Resolve a VTK file only inside the visualizer's configured data directory."""
+    root = os.path.realpath(os.path.abspath(data_directory))
+    file_value = (filename or "").strip()
+    if not file_value or os.path.isabs(file_value):
+        raise ValueError("file must be relative to the data directory")
+
+    candidate = os.path.realpath(os.path.join(root, file_value))
+    try:
+        inside_root = os.path.commonpath((root, candidate)) == root
+    except ValueError:
+        inside_root = False
+    if not inside_root:
+        raise PermissionError("file must remain inside the data directory")
+    if not candidate.lower().endswith(SUPPORTED_VTK_EXTENSIONS):
+        raise ValueError("unsupported VTK file extension")
+    if not os.path.isfile(candidate):
+        raise FileNotFoundError(candidate)
+    return candidate
+
+
+def make_open_file_handler(data_directory: str, state):
+    """Return a deep-link handler that appends one VTK file to the pipeline."""
+
+    async def _handle(request):
+        from aiohttp import web
+
+        # `working_directory` is ignored: callers name the shared folder by
+        # their own mount path, which differs from this container's.
+        try:
+            selected_file = resolve_requested_vtk_file(
+                data_directory,
+                request.rel_url.query.get("file", ""),
+            )
+        except PermissionError as exc:
+            return web.Response(status=403, text=str(exc))
+        except FileNotFoundError:
+            return web.Response(status=404, text="VTK file not found")
+        except ValueError as exc:
+            return web.Response(status=400, text=str(exc))
+
+        state.selected_file = selected_file
+        prefix = request.path.rsplit("/api/open", 1)[0]
+        return web.HTTPFound(prefix or "/")
 
     return _handle

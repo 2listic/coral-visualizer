@@ -26,6 +26,8 @@ Two-phase construction is intentional: `ParaViewBackend` / `EditSession` are cre
 
 Triggered when the user picks a file in the left drawer → `state.selected_file` changes.
 
+Also triggered by `GET /api/open?file=<relative path>` (`make_open_file_handler` in `factory.py`), which sets `state.selected_file` and redirects to the visualizer.
+
 ```
 state.selected_file change
  └── on_file_change()                          [state_handlers.py]

@@ -1,12 +1,20 @@
 """Integration tests for the application factory."""
 
+import asyncio
 import pathlib
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
 from app_config import AppConfig
 from constants import ARRAY_SOLID
-from factory import AppComponents, create_app
+from factory import (
+    AppComponents,
+    create_app,
+    make_open_file_handler,
+    resolve_requested_vtk_file,
+)
 from file_operations import FileOperationService
 from paraview_runtime import ParaViewRuntime
 from view_controls import ViewControllerProxy
@@ -127,6 +135,86 @@ def test_create_app_with_initial_file():
     )
     components = create_app(config=config)
     assert components.state.selected_file == initial
+
+
+@pytest.fixture
+def vtk_data_dir(tmp_path):
+    """A data directory holding results/solution.vtu, plus a VTK file beside it."""
+    data_dir = tmp_path / "data"
+    vtk_file = data_dir / "results" / "solution.vtu"
+    vtk_file.parent.mkdir(parents=True)
+    vtk_file.write_text("vtk")
+    (tmp_path / "outside.vtu").write_text("vtk")
+    return data_dir
+
+
+def _open_request(query):
+    return SimpleNamespace(path="/api/open", rel_url=SimpleNamespace(query=query))
+
+
+def _run_handler(handler, request):
+    # pytest-playwright leaves an event loop running on the main thread.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, handler(request)).result()
+
+
+def test_resolve_requested_vtk_file_stays_inside_configured_data_directory(
+    vtk_data_dir,
+):
+    assert resolve_requested_vtk_file(str(vtk_data_dir), "results/solution.vtu") == str(
+        vtk_data_dir / "results" / "solution.vtu"
+    )
+
+
+def test_resolve_requested_vtk_file_rejects_traversal(vtk_data_dir):
+    with pytest.raises(PermissionError, match="remain inside"):
+        resolve_requested_vtk_file(str(vtk_data_dir), "../outside.vtu")
+
+
+def test_resolve_requested_vtk_file_rejects_absolute_path(vtk_data_dir):
+    absolute = str(vtk_data_dir / "results" / "solution.vtu")
+    with pytest.raises(ValueError, match="relative"):
+        resolve_requested_vtk_file(str(vtk_data_dir), absolute)
+
+
+@pytest.mark.parametrize(
+    "working_directory",
+    ["same-as-data-dir", "/app/shared-data", "", None],
+    ids=["data-dir", "platform-mount", "empty", "absent"],
+)
+def test_open_file_handler_ignores_working_directory(vtk_data_dir, working_directory):
+    query = {"file": "results/solution.vtu"}
+    if working_directory == "same-as-data-dir":
+        query["working_directory"] = str(vtk_data_dir)
+    elif working_directory is not None:
+        query["working_directory"] = working_directory
+    state = SimpleNamespace(selected_file=None)
+
+    handler = make_open_file_handler(str(vtk_data_dir), state)
+    response = _run_handler(handler, _open_request(query))
+
+    assert response.status == 302
+    assert response.location == "/"
+    assert state.selected_file == str(vtk_data_dir / "results" / "solution.vtu")
+
+
+@pytest.mark.parametrize(
+    ("file", "status"),
+    [("../outside.vtu", 403), ("/etc/passwd", 400)],
+    ids=["escaping", "absolute"],
+)
+def test_open_file_handler_refuses_files_outside_data_directory(
+    vtk_data_dir, file, status
+):
+    state = SimpleNamespace(selected_file=None)
+
+    handler = make_open_file_handler(str(vtk_data_dir), state)
+    response = _run_handler(
+        handler, _open_request({"working_directory": "/app/shared-data", "file": file})
+    )
+
+    assert response.status == status
+    assert state.selected_file is None
 
 
 # ---------------------------------------------------------------------------
