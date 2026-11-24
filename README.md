@@ -121,14 +121,17 @@ Instead, it provisions a dedicated conda environment from
 
 #### Pull the published image
 
-Every push to `main` and every `v*.*.*` tag publishes an image to the GitHub
-Container Registry. It is public, so no login is needed:
+Every push to the default branch, `main`, publishes a tested development
+image to the GitHub Container Registry. The registry package is public:
 
 ```bash
 docker pull ghcr.io/2listic/coral-visualizer:main
 ```
 
-The image is built for `linux/amd64` only.
+New images include `linux/amd64` and `linux/arm64`. A stable Git tag
+(`vX.Y.Z`) on `main` publishes the same explicit container tag. The
+`latest` alias follows the highest published stable version. Use an explicit
+tag to keep a deployment on a particular release.
 
 #### Build the image
 
@@ -310,7 +313,9 @@ Two workflows run on push and pull requests to `main`:
 - **CI** (`.github/workflows/test.yml`): builds the Docker image and runs the full
   test suite inside it via `micromamba run -n coral pytest -v tests/`.
 - **Publish** (`.github/workflows/docker-publish.yml`): builds and pushes the Docker
-  image to the GitHub Container Registry on pushes to `main` and on version tags (`v*.*.*`).
+  image for both architectures. Pull requests run the native unit and HTTP
+  checks. Pushes to `main` and stable tag pushes publish only after both
+  architectures pass.
 
 ## Architecture
 
